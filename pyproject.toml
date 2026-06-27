@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sift"
+version = "0.0.0"
+description = "Knowledge ingestion & retrieval service — RAG as a Lego block"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+# Heavy/optional inference + storage deps stay out of the base install so Step-0 CI
+# (base + dev) installs fast and needs no Turso/Ollama/TEI. Adapters opt in per group.
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff", "pyright"]
+store = ["libsql-experimental"]
+parsing = ["markitdown"]
+inference = ["httpx"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sift"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+extraPaths = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
