@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: sift
+Version: 0.0.0
+Requires-Python: >=3.12
+Requires-Dist: pydantic>=2.9
+Requires-Dist: pydantic-settings>=2.14
+Requires-Dist: fastapi>=0.128
+Requires-Dist: uvicorn[standard]>=0.34
+Requires-Dist: httpx>=0.27
+Requires-Dist: openai>=1.50
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
+Requires-Dist: pyright>=1.1; extra == "dev"

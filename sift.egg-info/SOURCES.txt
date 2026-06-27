@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+sift/__init__.py
+sift.egg-info/PKG-INFO
+sift.egg-info/SOURCES.txt
+sift.egg-info/dependency_links.txt
+sift.egg-info/requires.txt
+sift.egg-info/top_level.txt
+sift/adapters/__init__.py
+sift/adapters/embedding/__init__.py
+sift/adapters/rerank/__init__.py
+sift/adapters/store/__init__.py
+sift/api/__init__.py
+sift/core/__init__.py
