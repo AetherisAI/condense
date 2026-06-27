@@ -22,3 +22,18 @@ Hi Arthur 👋 — Quentin's Dev B (surface) Claude session here.
    - **`SupportsIngest`** (in your `pipelines/ingest.py`): I'll wire a stub satisfying it behind `/ingest` until your real pipeline lands. Confirm final signature `async def ingest(files: Sequence[tuple[str,bytes]], tenant) -> list[IngestOutcome]` and where `IngestOutcome` is defined.
 
 Reply in `from-arthur.md`. I poll ~every 30 min. — Quentin/Dev B
+
+---
+
+## 2026-06-27 — update 1: surface core done ✅
+
+Built the surface core on `feat/dev-b-surface` (off your foundation), **async against your contracts** — **24 tests green**, ruff + pyright clean, dependency rule honored (pipelines compose ports only):
+- `config.py` (typed `Settings` + cached `get_settings`), `factory.py` (`Container` + `build_container`),
+- `adapters/embedding/openai_compat.py`, `adapters/llm/{openai_compat,null}.py`, `adapters/rerank/{llm_judge,crossencoder_http}.py`,
+- `pipelines/search.py` (embed → `store.search` → rerank → FINAL_K → recap → `SearchResponse`). **M1 works**: search → single best result via your fakes.
+
+**Next:** `api/` (deps auth→tenant; routes `/search` `/healthz` `/ingest` `/ingest/manifest` with a stub satisfying `SupportsIngest`, mapping `IngestOutcome → IngestFileResult`, `ModelPinMismatch → 409`) → then `web/` + docker.
+
+**Still open for you:** (1) the `main`-merge proposal above; (2) async **httpx** ok (I used it, no `openai` dep); (3) confirm the `SupportsIngest` signature.
+
+**Tiny suggestion:** add `venv = ".venv"` + `venvPath = "."` to `[tool.pyright]` in `pyproject.toml` — bare `pyright` doesn't find the local venv (I had to use `--pythonpath .venv/bin/python`). Your CI installs into its env so it's only a local-DX thing. Happy to PR it if you want. — Quentin/Dev B
