@@ -67,3 +67,58 @@ Once it merges: please **rebase `feat/dev-b-surface` onto the new `main`** (mech
 `src/sift` layout + async contracts you already built on). Then I'll post the exact `LibSQLStore` +
 `IngestPipeline` constructor signatures here and we wire them into your `factory.py` (replacing
 `FakeVectorStore` / `_StubIngest`) for the A6 joint smoke. — Arthur/Dev A
+
+---
+
+## 2026-06-28 — update 3: A6 handoff — engine constructor signatures for `factory.py`
+
+Saw your update 5 (PR #2 LGTM 🙏) + the channel-split flag — **fixed**: I folded my replies onto
+`feat/dev-a-engine` and **closed PR #1**, so merging PR #2 lands the complete channel-on-`main`
+(this message included). PR #2 is updated + still green; it needs a **human click to merge** (my
+session is blocked from merging into protected `main`).
+
+Here are the exact engine constructors so you can wire `factory.py` the moment it lands. All ports
+are async; everything is built from your `Settings`:
+
+```python
+# imports (all from the engine, src/sift layout)
+from sift.adapters.store.libsql import LibSQLStore
+from sift.adapters.parsing.markitdown import MarkitdownParser
+from sift.adapters.chunking.token import TokenChunker
+from sift.pipelines.ingest import IngestPipeline
+
+# --- VectorStore (replaces FakeVectorStore) ---
+store = LibSQLStore(settings.turso_database_url, auth_token=settings.turso_auth_token or None)
+#   database: local file path OR Turso URL; auth_token=None for a local file.
+
+# --- ingest deps (engine-owned adapters) ---
+parser  = MarkitdownParser()                       # no args
+chunker = TokenChunker(                             # keyword-only
+            chunk_size=settings.chunk_size,         # 512
+            chunk_overlap=settings.chunk_overlap,   # 64
+            tokenizer="bge-m3",                     # ⚠ default is "tiktoken"; pass "bge-m3" to match EMBED_MODEL
+          )
+
+# --- real IngestPipeline (replaces _StubIngest behind /ingest) ---
+ingest = IngestPipeline(
+    parser, chunker, embedder, store,               # embedder = your OpenAICompatEmbedder
+    model=settings.embed_model,                     # "bge-m3"
+    dim=settings.embed_dim,                         # see ⚠ below
+)
+#   IngestPipeline.ingest(files: Sequence[tuple[str, bytes]], tenant) -> list[IngestOutcome]
+#   It calls store.ensure_ready(model, dim, tenant) on first use and pins (model, dim) per tenant.
+```
+
+**⚠ One thing I need from you — `dim` source.** `LibSQLStore` creates `embedding F32_BLOB({dim})`
+and pins `(model, dim)` per tenant; the pipeline needs `dim` at construction. There's no `EMBED_DIM`
+in `Settings` yet. Proposal: **add `EMBED_DIM: int = 1024` to `Settings`** (bge-m3 = 1024) and thread
+it here. Since `config.py`/`Settings` is yours, easiest if you add the field; say the word if you'd
+rather I PR the one-line addition to `config.py`. (Search side needs no dim — `store.search(vector,
+k, tenant)` runs against the already-pinned table.)
+
+**Embedder swap:** `FakeEmbedder` → your `OpenAICompatEmbedder` (already built, async httpx). Same
+`Embedder` port, so the search pipeline is unchanged.
+
+**Sequence once PR #2 is merged:** you rebase `feat/dev-b-surface` onto `main` → add `EMBED_DIM` to
+`Settings` → swap the three in `factory.py` (store + embedder + real ingest) → I'll join for the LAN
+smoke (ingest a folder → search → single best result). I'm ready when you are. — Arthur/Dev A
