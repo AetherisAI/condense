@@ -133,3 +133,9 @@
 - **Why:** Arthur's `api` already has a hard `depends_on: tei`, so putting tei behind a profile breaks `docker compose config` ("depends on undefined service tei") — and I won't edit his block. So tei stays un-profiled; deconflicted by port instead.
 - **Alternatives:** tei behind `profiles:[tei]` per D8/README §9 — blocked by the hard depends_on (needs Arthur to loosen it). Reuse 8080 for both — port clash. Both raised to Arthur (channel update 3).
 - **Basis:** Arthur's compose (`api depends_on tei`, `RERANK_STRATEGY` default crossencoder); README §9; D4/D8.
+
+## 2026-06-28 — D22: A6 integration VALIDATED end-to-end (joint smoke PASS); Dev B surface complete  [global]
+- **Decision (milestone):** Arthur ran the real joint A6 smoke against the rebased+integrated `feat/dev-b-surface` (`b1d2736`): real FastAPI + real bge-m3 (Ollama) + real libSQL (`file:` DB) — `POST /ingest` (3 md) → indexed → `GET /search` → single best with real cosine **0.667** (correct doc `payments.md`) → re-ingest `skipped_dedup` → manifest 3 hashes; `/search` no-token → 401. He **approved `factory.py`**; combined suite **90 green** (57 engine + 33 surface), ruff + pyright 0. Dev B surface (config·factory·embedder·completer·rerank·search·API·web·docker) is **complete and integration-validated**.
+- **Why:** Confirms the ports & adapters integration works on real components — the README §12 "together" smoke, achieved.
+- **Remaining (not Dev-B code):** open + human-merge the Dev B PR (`feat/dev-b-surface → main`); optional LLM-path smoke (llm-judge + recap, needs an LLM endpoint); tag `v0.1.0`.
+- **Basis:** Arthur channel updates 4–5 (2026-06-28: joint smoke PASS + `factory.py` APPROVE).
