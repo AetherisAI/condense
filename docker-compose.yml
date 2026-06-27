@@ -1,0 +1,17 @@
+# Skeleton — api + web; tei (cross-encoder) added behind a profile in WP9.
+services:
+  api:
+    build: .
+    environment:
+      INGEST_TOKEN: ${INGEST_TOKEN:-dev-token}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-http://host.docker.internal:11434/v1}
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      RERANK_STRATEGY: ${RERANK_STRATEGY:-llm}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+    ports: ["8000:8000"]
+    extra_hosts: ["host.docker.internal:host-gateway"]   # reach host inference (Linux)
+  web:
+    build: ./web
+    ports: ["8080:80"]
+    depends_on: [api]

@@ -1,4 +1,4 @@
-from sift.core.types import Vector, EMBED_DIM, Page, Document, Chunk, Hit
+from sift.core.types import EMBED_DIM, Chunk, Document, Hit, Page
 
 
 def test_embed_dim_is_1024():
