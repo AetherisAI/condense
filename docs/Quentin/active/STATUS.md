@@ -1,0 +1,1 @@
+- WP0 feat/contracts: 994dbd4 — contracts (core types+ports, api schemas) + fakes (FakeEmbedder/FakeVectorStore/NullReranker) + compose skeleton — tests: 11 passed, ruff clean

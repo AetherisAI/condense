@@ -41,6 +41,8 @@ pythonVersion = "3.12"
 typeCheckingMode = "standard"
 include = ["src", "tests"]
 extraPaths = ["src"]
+venv = ".venv"          # local-DX: bare `pyright` finds the project venv (per Dev B)
+venvPath = "."
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

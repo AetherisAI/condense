@@ -21,7 +21,7 @@ services:
       EMBED_BASE_URL: ${EMBED_BASE_URL:-} # host Ollama, e.g. http://host.docker.internal:11434/v1
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
-      RERANK_STRATEGY: ${RERANK_STRATEGY:-crossencoder}
+      RERANK_STRATEGY: ${RERANK_STRATEGY:-llm}
       RERANK_BASE_URL: ${RERANK_BASE_URL:-http://tei:80}
       RERANK_MODEL: ${RERANK_MODEL:-bge-reranker-v2-m3}
       RETRIEVE_K: ${RETRIEVE_K:-30}
@@ -35,8 +35,8 @@ services:
       API_BIND: ${API_BIND:-0.0.0.0}
     ports:
       - "${API_PORT:-8000}:8000"
-    depends_on:
-      - tei
+    # No hard dependency on tei: the default PoC path is RERANK_STRATEGY=llm (D4,
+    # zero-infra). Start the cross-encoder only with `--profile tei` (see tei below).
 
   web:
     build:
@@ -50,10 +50,15 @@ services:
 
   tei:
     # Cross-encoder reranker (README §7): bge-reranker-v2-m3 via Text Embeddings Inference.
+    # Opt-in only — gated behind the `tei` profile so the default `docker compose up` runs
+    # the zero-infra llm-judge path and never pulls the reranker model. Enable with
+    # `docker compose --profile tei up` + RERANK_STRATEGY=crossencoder. Port 8081 to leave
+    # 8080 for Dev B's web/nginx.
+    profiles: ["tei"]
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
     command: ["--model-id", "${RERANK_HF_MODEL:-BAAI/bge-reranker-v2-m3}"]
     ports:
-      - "${TEI_PORT:-8080}:80"
+      - "${TEI_PORT:-8081}:80"
 
   # Optional local LLM for recap. Alternatively point LLM_BASE_URL at host Ollama.
   # local-llm:

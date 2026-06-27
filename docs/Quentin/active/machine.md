@@ -8,7 +8,7 @@
 The first, unblocking work package. Freeze the interfaces Dev B builds against (`core/` types + ports, `api/schemas.py`) and ship the three fakes (`FakeEmbedder`, `FakeVectorStore`, `NullReranker`) that let every later slice be tested with no Turso/Ollama/TEI. `core/` is co-owned — this is our **proposal**, flagged for Arthur's sign-off.
 
 **Goal:** importable contracts + green fakes + compose skeleton.
-**Tech:** Python 3.13, stdlib-only `core/`, pydantic for schemas, pytest/ruff/pyright.
+**Tech:** Python 3.12, stdlib-only `core/`, pydantic for schemas, pytest/ruff/pyright.
 
 ## 2. Design
 - **Package root:** `sift/` (README §2 module map; placeholder codename — see `DECISIONS.md` D11, rename-later is a config/import sweep).
@@ -44,7 +44,7 @@ docker-compose.yml  .env.example       (Create — skeleton)
 [project]
 name = "sift"
 version = "0.0.0"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = ["pydantic>=2.9", "pydantic-settings>=2.14", "fastapi>=0.128",
                 "uvicorn[standard]>=0.34", "httpx>=0.27", "openai>=1.50"]
 [project.optional-dependencies]

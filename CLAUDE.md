@@ -48,7 +48,7 @@ Quentin builds **retrieve + rank + recap + serve + UI**. Arthur builds **the eng
 - **`docs/Quentin/ROADMAP.md`** — the master plan across all work packages (living, not archived).
 
 ## 7. Tech stack (verified Jun 2026)
-Python 3.13 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `httpx` / `openai` client at custom base_url for embed+chat · plain `httpx` for TEI `/rerank` · libSQL client · `markitdown` (Arthur) · React + Vite 7 (TS) · ruff + pyright + pytest · Docker (`python:3.13-slim`, multi-arch via buildx).
+Python 3.12 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `httpx` / `openai` client at custom base_url for embed+chat · plain `httpx` for TEI `/rerank` · libSQL client · `markitdown` (Arthur) · React + Vite 7 (TS) · ruff + pyright + pytest · Docker (`python:3.12-slim`, multi-arch via buildx).
 
 ## 8. Config / env keys (README §8 — the single source of values)
 ```
