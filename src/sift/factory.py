@@ -13,6 +13,7 @@ configured) so the default/test path never needs the ``libsql`` extra installed.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sift.adapters.embedding.fake import FakeEmbedder
@@ -24,16 +25,44 @@ from sift.adapters.rerank.llm_judge import LlmJudgeReranker
 from sift.adapters.rerank.null import NullReranker
 from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
+from sift.core.hashing import content_hash
 from sift.core.ports import Completer, Embedder, Reranker, VectorStore
+from sift.pipelines.ingest import IngestOutcome, SupportsIngest
 from sift.pipelines.search import SearchPipeline
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Container:
-    """The assembled application: the wired pipeline plus the settings it was built from."""
+    """The assembled application: the wired pipeline, its store and ingest, plus the settings.
+
+    ``store`` and ``ingest`` are exposed alongside ``search`` because Dev B's ingest/manifest
+    routes need them directly: the manifest reads ``store.known_hashes`` and ``/ingest`` drives
+    the ingest seam. They share the same store instance the pipeline searches.
+    """
 
     search: SearchPipeline
+    store: VectorStore
+    ingest: SupportsIngest
     settings: Settings
+
+
+class _StubIngest:
+    """Placeholder :class:`~sift.pipelines.ingest.SupportsIngest` until the real pipeline lands.
+
+    Reports every file ``indexed`` with its real content-hash and a single chunk, so Dev B's
+    ``/ingest`` route is exercisable end-to-end before Arthur's parse/chunk wiring arrives at
+    integration time.
+    """
+
+    async def ingest(
+        self, files: Sequence[tuple[str, bytes]], tenant: str
+    ) -> list[IngestOutcome]:
+        return [
+            IngestOutcome(
+                path=name, status="indexed", content_hash=content_hash(data), chunks=1
+            )
+            for name, data in files
+        ]
 
 
 def build_container(settings: Settings) -> Container:
@@ -43,7 +72,9 @@ def build_container(settings: Settings) -> Container:
     completer = _build_completer(settings)
     reranker = _build_reranker(settings, completer)
     search = SearchPipeline(embedder, store, reranker, completer, settings)
-    return Container(search=search, settings=settings)
+    # The real IngestPipeline (parser + chunker) is wired at integration time; until then a
+    # stub keeps the route green. ``store`` is shared so the manifest reflects every ingest.
+    return Container(search=search, store=store, ingest=_StubIngest(), settings=settings)
 
 
 def _build_embedder(settings: Settings) -> Embedder:
