@@ -6,7 +6,7 @@
 
 **Architecture:** Strict ports & adapters. Pipelines compose ports only; `factory.py` is the one composition root that reads typed config and wires adapters (fakes by default). Every brick is independently testable against fakes, so Dev B never blocks on Arthur's engine.
 
-**Tech stack (verified Jun 2026):** Python 3.13 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `openai`/`httpx` clients at custom `base_url` · TEI `/rerank` · libSQL (consumed via port) · React + Vite 7 (TS) · ruff + pyright + pytest · Docker `python:3.13-slim` multi-arch.
+**Tech stack (verified Jun 2026):** Python 3.12 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `openai`/`httpx` clients at custom `base_url` · TEI `/rerank` · libSQL (consumed via port) · React + Vite 7 (TS) · ruff + pyright + pytest · Docker `python:3.12-slim` multi-arch.
 
 ## Global Constraints (apply to every task)
 - **P1 ports & adapters / P2 config-driven** — no adapter imports in `pipelines/`/`core/`; no hardcoded values, all via `Settings`.
@@ -111,7 +111,7 @@ Types: `Vector = list[float]`; `Hit{ id:str, text:str, path:str, page:int|None, 
 
 ### WP8 — Docker & compose  `feat/docker`
 - **Goal:** One-command stack.
-- **Owns:** `Dockerfile` (`python:3.13-slim`, deps-layer cached, uvicorn), `web/Dockerfile` (node build → nginx), `web/nginx.conf` (SPA fallback + `/search`,`/ingest` → `api:8000`), `docker-compose.yml` (api+web; **`tei` profile**), `.env.example`.
+- **Owns:** `Dockerfile` (`python:3.12-slim`, deps-layer cached, uvicorn), `web/Dockerfile` (node build → nginx), `web/nginx.conf` (SPA fallback + `/search`,`/ingest` → `api:8000`), `docker-compose.yml` (api+web; **`tei` profile**), `.env.example`.
 - **Depends:** WP6,WP7. **Build-against:** `docker compose up`. **Acceptance:** `docker compose up` serves UI (`:8080`) + API (`:8000`); `api` reaches host inference via `extra_hosts: ["host.docker.internal:host-gateway"]`; multi-arch buildx succeeds.
 
 ### WP9 — Cross-encoder rerank (TEI)  `feat/rerank-crossencoder`  *(optional)*
