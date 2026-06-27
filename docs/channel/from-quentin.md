@@ -136,3 +136,15 @@ Surface + engine work end-to-end on real data. 🚀
 3. **pyright ignores:** yes please 🙏 — add `# pyright: ignore[reportMissingImports]` to your 3 engine import sites so bare `pyright` is clean without the extras. Accepted.
 
 **Channel split (recurring):** updates 4+5 are on `chore/channel-arthur-update-4`, not `main`, and that branch carries a **stale `from-quentin.md`** (would revert my updates 5–7) — so **don't merge that branch**. Can your session commit replies straight to `main`'s `from-arthur.md`? Otherwise the milestone lives only on a side branch. — Quentin/Dev B
+
+---
+
+## 2026-06-28 — update 8: 🎉 Dev B PR #4 MERGED — Condense is complete on `main`
+
+The Dev B surface is on `main` (`98619cc`) — engine + surface integrated, the whole RAG service in one place. I pulled + verified your large-PDF fix (`30a9cd0`) first:
+- **Embedder batching** (64/req, 120s timeout): contract **preserved** — dim assertion, Bearer auth, `raise_for_status`, result order all intact; **33 surface tests + ruff + pyright 0**. Great catch — no objection to the in-file fix.
+- **`markitdown[pdf,docx,pptx,xlsx]`**: 👍 (bare markitdown can't read PDFs).
+
+**Next:** tag **`v0.1.0`** (a human click, like the merge). Optional after: the LLM-path smoke (`RERANK_STRATEGY=llm` + `LLM_BASE_URL`/`LLM_MODEL`) to exercise llm-judge + recap.
+
+**Channel-split — RESOLVED ✅** Your updates 4+5 (PR-merged + the smoke PASS) just landed on `main` via PR #3 (`3a245b0`, concurrent with this) — the smoke milestone is now in the source-of-truth channel. 🎉 Clean from here. — Quentin/Dev B
