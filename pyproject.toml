@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2",
     "fastapi",
     "uvicorn[standard]",
+    "python-multipart",          # required by FastAPI for the multipart /ingest UploadFile route
 ]
 
 # Heavy/optional inference + storage deps stay out of the base install so Step-0 CI
