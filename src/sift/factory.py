@@ -27,7 +27,7 @@ from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
 from sift.core.hashing import content_hash
 from sift.core.ports import Completer, Embedder, Reranker, VectorStore
-from sift.pipelines.ingest import IngestOutcome, SupportsIngest
+from sift.pipelines.ingest import IngestOutcome, IngestPipeline, SupportsIngest
 from sift.pipelines.search import SearchPipeline
 
 
@@ -72,9 +72,10 @@ def build_container(settings: Settings) -> Container:
     completer = _build_completer(settings)
     reranker = _build_reranker(settings, completer)
     search = SearchPipeline(embedder, store, reranker, completer, settings)
-    # The real IngestPipeline (parser + chunker) is wired at integration time; until then a
-    # stub keeps the route green. ``store`` is shared so the manifest reflects every ingest.
-    return Container(search=search, store=store, ingest=_StubIngest(), settings=settings)
+    ingest = _build_ingest(settings, embedder, store)
+    # ``store`` is shared between search, ingest, and the manifest route so a real ingest is
+    # immediately searchable and reflected in ``known_hashes``.
+    return Container(search=search, store=store, ingest=ingest, settings=settings)
 
 
 def _build_embedder(settings: Settings) -> Embedder:
@@ -96,8 +97,43 @@ def _build_store(settings: Settings) -> VectorStore:
             LibSQLStore,
         )
 
-        return LibSQLStore(settings.turso_database_url, auth_token=settings.turso_auth_token)
+        return LibSQLStore(
+            settings.turso_database_url, auth_token=settings.turso_auth_token or None
+        )
     return FakeVectorStore()
+
+
+def _build_ingest(
+    settings: Settings, embedder: Embedder, store: VectorStore
+) -> SupportsIngest:
+    """The real :class:`IngestPipeline` when a Turso store is configured, else the stub.
+
+    Parser/chunker (markitdown, tokenizers) are imported lazily inside the real branch so the
+    parsing/chunking extras stay out of the default/test path — exactly as the store does. The
+    chunker is pinned to the ``bge-m3`` tokenizer to match ``EMBED_MODEL`` (its default is
+    ``tiktoken``), and ``(model, dim)`` is threaded so the store pins the tenant on first use.
+    """
+    if settings.store_backend == "libsql" and settings.turso_database_url:
+        from sift.adapters.chunking.token import (  # pyright: ignore[reportMissingImports]
+            TokenChunker,
+        )
+        from sift.adapters.parsing.markitdown import (  # pyright: ignore[reportMissingImports]
+            MarkitdownParser,
+        )
+
+        return IngestPipeline(
+            MarkitdownParser(),
+            TokenChunker(
+                chunk_size=settings.chunk_size,
+                chunk_overlap=settings.chunk_overlap,
+                tokenizer="bge-m3",
+            ),
+            embedder,
+            store,
+            model=settings.embed_model,
+            dim=settings.embed_dim,
+        )
+    return _StubIngest()
 
 
 def _build_completer(settings: Settings) -> Completer:
