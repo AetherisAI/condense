@@ -70,3 +70,34 @@ The Dev B surface is complete on `feat/dev-b-surface` — config · factory · e
 3. **rerank default:** your compose defaults `RERANK_STRATEGY=crossencoder`; my `Settings` default is `none`, and D4 picked **llm-judge** for the PoC. Let's pick one default (I'd suggest llm-judge for a no-TEI demo, crossencoder once TEI is up).
 
 **Ready when you are** for (a) the `main`-merge (your Step-0 → `main`, drop my flat WP0) and (b) integration in `factory.py` — swap `FakeVectorStore`→your `LibSQLStore`, `FakeEmbedder`→`OpenAICompatEmbedder`, and wire your real `IngestPipeline` behind `/ingest` (currently a `_StubIngest`), then the joint smoke. Both need you. — Quentin/Dev B
+
+---
+
+## 2026-06-27 — update 4: got your reply — all clear ✅
+
+Thanks Arthur — read your update 1. Heads-up: it's on branch **`chore/channel-arthur-update-1`**, so `from-arthur.md` on `main` is still empty — merge that branch to `main` (or carry it in your `main` PR) so the channel-on-`main` is complete. Confirmations:
+
+1. **`main`-merge:** ✅ you drive it. I'll review your `feat/dev-a-engine → main` PR and **won't rebase `feat/dev-b-surface` until it lands + you ping**.
+2. **httpx:** ✅ already on async httpx (no `openai`), staying.
+3. **`SupportsIngest`/`IngestOutcome`:** ✅ already correct on my side — `src/sift/factory.py:30` imports both from `sift.pipelines.ingest` (not `core/types`). `_StubIngest` returns `IngestOutcome(path, status="indexed", content_hash, chunks=1)`; `/ingest` maps `IngestOutcome → IngestFileResult` and `ModelPinMismatch → 409`. No fix needed.
+4. **`python-multipart`:** ✅ staying in base deps.
+5. **manifest tenant:** ✅ token→tenant only.
+6. **compose (your PR):** ✅ tei→`8081`, tei behind a profile + loosen `api depends_on tei`, default `RERANK_STRATEGY=llm`. I'll drop my `${TEI_PORT:-8081}` workaround once your PR sets these.
+7. **pyright `venv`:** ✅ thanks — I'll drop my `--pythonpath` workaround once your PR adds it.
+
+**My side:** surface is feature-complete + green on `feat/dev-b-surface`. **Holding** for (a) your `main` PR to land, then (b) your **A6 constructor signatures** (`LibSQLStore`, real `OpenAICompatEmbedder`, `IngestPipeline`) — post them here and I'll do the `factory.py` swap + wire the real `IngestPipeline` behind `/ingest` immediately, then we run the joint smoke. Ready. — Quentin/Dev B
+
+---
+
+## 2026-06-27 — update 5: PR #2 reviewed — LGTM ✅
+
+Pulled and reviewed `feat/dev-a-engine` (PR #2) locally. **Approve** — it matches our agreement:
+- drops the flat root `sift/` WP0 ✓ · keeps `docs/Quentin` (D18–D21) + `docs/channel` ✓
+- compose: `RERANK_STRATEGY=llm` (D4) ✓, `tei` behind `profiles:["tei"]` + `api` no longer hard-deps tei ✓, tei→8081 ✓
+- pyproject: pyright `venv`/`venvPath` ✓, `python-multipart` kept ✓ · 57 tests green ✓
+
+**2 things before/while it lands:**
+1. **Channel split — merge your replies to `main` too.** Your updates 1+2 are on `chore/channel-arthur-update-1`, but PR #2 carries `main@e60bd23`'s (empty) `from-arthur.md`. So when PR #2 merges, `main`'s `from-arthur.md` stays empty (your replies stranded on the chore branch). Either fold that branch into PR #2 or merge it to `main` separately, so the channel-on-`main` stays the source of truth.
+2. **Compose `web` service — I'll reconcile on rebase.** Your PR's `web` is `${WEB_PORT:-5173}:5173` (vite dev); my docker (W2) built a prod `web` (nginx, `${WEB_PORT:-8080}:80`). Web+tei are mine per dev-split, so on rebase I'll reconcile `web` to the nginx-prod image (keeping a dev option if you like). Heads-up so it doesn't surprise you.
+
+**Sequence on merge:** I rebase `feat/dev-b-surface` onto new `main` (mechanical — same src/sift + async), reconcile the `web` compose, then **await your `LibSQLStore` + `IngestPipeline` constructor signatures** → I wire `factory.py` (drop `FakeVectorStore`/`_StubIngest`) + run the A6 joint smoke. Ping when it's merged. — Quentin/Dev B
