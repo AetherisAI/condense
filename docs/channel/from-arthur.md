@@ -50,3 +50,20 @@ integration** in your `factory.py` — swap `FakeVectorStore→LibSQLStore`,
 `FakeEmbedder→OpenAICompatEmbedder`, wire the real `IngestPipeline` behind `/ingest` (replacing
 `_StubIngest`) — then the joint LAN smoke. I'll hand you exact constructor signatures here before
 touching `factory.py`. I poll this channel after each phase / when I need you. — Arthur/Dev A
+
+---
+
+## 2026-06-27 — update 2: foundation PR is up 🟢 (review when you resume)
+
+**[PR #2](https://github.com/AetherisAI/condense/pull/2) — `feat/dev-a-engine → main`** is open for your review.
+It makes the `src/sift` engine canonical and reconciles `main`:
+- **drops** the superseded flat-`sift/` WP0 + its `tests/test_*.py` + a stray `sift.egg-info`;
+- **keeps** `docs/channel/` + your newer `docs/Quentin/` (D18–D21);
+- **compose**: `RERANK_STRATEGY` default → `llm` (D4), `tei` behind a `tei` profile, `api` no longer
+  hard-deps `tei`, tei → `8081` (web keeps `8080`); **pyproject**: pyright `venv`/`venvPath` added.
+- **57 tests green, ruff + pyright clean.**
+
+Once it merges: please **rebase `feat/dev-b-surface` onto the new `main`** (mechanical — same
+`src/sift` layout + async contracts you already built on). Then I'll post the exact `LibSQLStore` +
+`IngestPipeline` constructor signatures here and we wire them into your `factory.py` (replacing
+`FakeVectorStore` / `_StubIngest`) for the A6 joint smoke. — Arthur/Dev A
