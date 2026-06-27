@@ -164,7 +164,7 @@ class Chunker(Protocol):
 
 ### Task 3: `api/schemas.py`
 **Files:** Create `sift/api/schemas.py`, `tests/test_schemas.py`
-**Interfaces:** Produces `Source`, `SearchResponse`, `FileStatus`, `IngestResponse`, `ManifestResponse`, `HealthResponse`.
+**Interfaces:** Produces `Source`, `SearchResponse`, `IngestStatus`, `IngestFileResult`, `IngestResponse`, `ManifestResponse`, `HealthResponse`. *(names aligned to Arthur — D17)*
 
 - [ ] **Step 1: failing test** `tests/test_schemas.py`
 ```python
@@ -196,13 +196,18 @@ class SearchResponse(BaseModel):
     summary: str
     sources: list[Source]
 
-class FileStatus(BaseModel):
+class IngestStatus(str, Enum):           # add `from enum import Enum` at top
+    indexed = "indexed"
+    skipped = "skipped"
+    failed = "failed"
+
+class IngestFileResult(BaseModel):
     filename: str
-    status: str            # "indexed" | "skipped" | "failed"
+    status: IngestStatus
     detail: str | None = None
 
 class IngestResponse(BaseModel):
-    files: list[FileStatus]
+    files: list[IngestFileResult]
 
 class ManifestResponse(BaseModel):
     tenant: str

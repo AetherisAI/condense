@@ -71,3 +71,39 @@
 - **Why:** Aligns our imports with Arthur's plan exactly (avoids a contract mismatch in shared `core/`); renaming later is a mechanical import/path sweep, cheap to defer.
 - **Alternatives:** Name the package `condense` now — rejected: diverges from the README structure Arthur is also coding to; premature given the codename is explicitly TBD.
 - **Basis:** README §2 ("`sift/` ...") and §3; codename marked TBD in README header. **Flagged for Arthur's confirmation** (co-owned `core/`).
+
+## 2026-06-27 — D12: Autonomous run — feature branch per WP, push regularly, auto-merge Dev-B files to main  [global]
+- **Decision:** Each work package = a `feat/<slice>` branch off `main`, pushed to origin. When green (tests + ruff + pyright), Dev-B-owned files (adapters/embedding · rerank · llm · store/fake · pipelines/search · api · config · factory · web · docker) squash-merge to `main` so the next WP builds on them. Shared seam (`core/`, `api/schemas.py`, `factory.py`) stays provisional until reconciled with Arthur.
+- **Why:** User authorized fully autonomous weekend execution (skip-permissions) with regular commits/pushes; Arthur's synchronous review isn't available. Auto-merging our own files is low-risk to Arthur (no overlap); source-of-truth docs + git history allow post-hoc review.
+- **Alternatives:** Open PRs and wait (blocks the run); stacked branches without merging (next WP can't see prior). Rejected for the weekend cadence.
+- **Basis:** User instruction (autonomous, push regularly, branch per WP, stop only if truly critical). Deliberate, temporary deviation from README §11 (PR+review).
+
+## 2026-06-27 — D13: `/ingest` route → pipeline directly (no `IngestPort`); stub + `SupportsIngest`  [WP: api]
+- **Decision:** Per Arthur, there is **no formal `IngestPort`** (dependency rule: `api/`→pipelines+factory). Build route+UI+auth against the frozen schemas (`IngestResponse`/`IngestFileResult`/`IngestStatus`) with a **stub pipeline** returning canned results. Internal call shape: `IngestPipeline.ingest(files: Sequence[tuple[str,bytes]], tenant) -> list[IngestOutcome]` (`IngestOutcome` = Arthur's dataclass in `pipelines/ingest.py`, mirrors `IngestFileResult`); route maps `IngestOutcome → IngestFileResult`. Add a thin **`SupportsIngest` Protocol** in `pipelines/` so the route depends on the Protocol, not Arthur's concrete class.
+- **Why:** Unblocks WP6/WP7 today against the locked wire contract while keeping the route decoupled without inventing a port the architecture forbids.
+- **Alternatives:** Put an `IngestPort` in `core/` (would make `core/` import the pipeline's `IngestOutcome` — violates dependency rule); depend on Arthur's concrete class (couples api→engine). Rejected.
+- **Basis:** Arthur's contract clarification (2026-06-27); README dependency rule §2/§13.
+
+## 2026-06-27 — D14: Shared source-of-truth docs on `main` — `docs/Quentin/` + `docs/Arthur/`  [global]
+- **Decision:** Planning/docs live under `docs/Quentin/` (ours) beside an initially-empty `docs/Arthur/` (his), both on `main`, so we can see the two halves stay aligned.
+- **Why:** User wants one place on `main` to cross-check that both devs' planning moves in the same direction.
+- **Alternatives:** Docs only on a feature branch (not shared); one merged tree without per-dev split (harder to spot divergence). Rejected.
+- **Basis:** User instruction.
+
+## 2026-06-27 — D15: ~45-min cron to re-sync with Arthur's engine branch  [global]
+- **Decision:** A recurring (~45 min) cron fires a prompt to fetch origin, inspect Arthur's engine work (`core/`, `api/schemas.py`, `pipelines/ingest.py`, `ModelPinMismatch`, `IngestOutcome`), reconcile contract drift, log it here, and continue the next pending Dev B WP.
+- **Why:** Keeps Dev B continuously aligned with the engine during the autonomous run. Cron can't express exact 45-min spacing → `8,53 * * * *` re-checks at least every 45 min. Session crons auto-expire after 7 days.
+- **Alternatives:** Per-WP fetch only (slower to catch mid-WP pushes); Monitor (live file watch, not periodic remote checks). Cron fits "periodic remote re-check."
+- **Basis:** User instruction.
+
+## 2026-06-27 — D16: Lean implementation docs (no 40-page per-WP plans)  [global]
+- **Decision:** During implementation, the ROADMAP entry is the plan; each WP keeps a short `human.md` + lean `machine.md` (file list + checklist + test notes). Code + tests are the detailed artifact. First iteration fast, then iterate.
+- **Why:** User: weekend build — move fast, don't spend days documenting WP0.
+- **Alternatives:** Full writing-plans code-level doc per WP (too slow). Kept only for WP0 (already written) as the worked example.
+- **Basis:** User instruction.
+
+## 2026-06-27 — D17: Schema names aligned to Arthur; `EMBED_DIM` in core; `ModelPinMismatch` is Arthur's  [WP: contracts]
+- **Decision:** Adopt Arthur's exact names — `IngestStatus` (enum), `IngestFileResult`, `IngestResponse`. `EMBED_DIM=1024` lives in `core/types.py`. The model-pin mismatch exception (`ModelPinMismatch`) is raised by Arthur's `LibSQLStore`, not us — our search passes `EMBED_MODEL`/dim through `ensure_ready`.
+- **Why:** Zero-friction merge with the engine; our earlier proposal used `FileStatus`, now renamed.
+- **Alternatives:** Keep our names and map at the seam (needless adapter). Rejected.
+- **Basis:** Arthur's contract clarification (2026-06-27).

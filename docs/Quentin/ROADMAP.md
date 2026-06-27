@@ -46,11 +46,11 @@ VectorStore.known_hashes(tenant: str) -> set[str]
 ```
 Types: `Vector = list[float]`; `Hit{ id:str, text:str, path:str, page:int|None, score:float }`; `Chunk{ id, text, path, page, content_hash, tenant, embedding:Vector|None }`.
 
-## 3. Integration contract with Arthur (the engine)
-- **We consume** the `VectorStore` port (`search`, `ensure_ready`, `known_hashes`) — never his `libsql.py` directly. Tests use `adapters/store/fake.py`.
-- **Shared seam:** `core/` (types+ports), `api/schemas.py`, and `factory.py` wiring. Treat changes as joint; **fetch `origin` every work package** and reconcile drift immediately.
-- **`/ingest` route** (Dev B) delegates to `pipelines/ingest.py` (Arthur). Until his pipeline lands, the route is wired to a fake/stub behind the same `IngestPort`-shaped call so the UI + auth can be built and tested.
-- **Integration point (M5):** in `factory.py` swap `FakeVectorStore` → his `LibSQLStore`, run the joint smoke test.
+## 3. Integration contract with Arthur (the engine)  *(reconciled with Arthur 2026-06-27)*
+- **We consume** the `VectorStore` port — **split by side:** Dev B calls `search` (search pipeline), `ensure_ready` (model-pin check on every search, §6), `known_hashes` (the `/ingest/manifest` route). Dev A owns `upsert` — **we never call it**. We type against the Protocol, receive the instance from the factory, never import `adapters/store/libsql.py`; tests use `adapters/store/fake.py`.
+- **Shared seam:** `core/` (types+ports), `api/schemas.py`, `factory.py`. Changes to `core/`/schema → dedicated small PR both review; `factory.py` → joint. **Fetch `origin` at the start of every WP** and reconcile drift.
+- **`/ingest` route → pipeline directly (no formal `IngestPort`).** By the dependency rule (`api/`→pipelines+factory) the route depends on the pipeline, not a swappable port. The HTTP contract is frozen in Step 0 (`IngestResponse`/`IngestFileResult`/`IngestStatus`) — build route+UI+auth against those now with a **stub pipeline** returning canned results. The only Dev-A-coupled internal detail is the call shape `IngestPipeline.ingest(files: Sequence[tuple[str, bytes]], tenant) -> list[IngestOutcome]` (`IngestOutcome` = Arthur's dataclass in `pipelines/ingest.py`, mirrors `IngestFileResult`); the route maps `IngestOutcome → IngestFileResult`. We add a thin **`SupportsIngest` Protocol** in `pipelines/` so the route depends on the Protocol, not Arthur's concrete class (both stub + real pipeline satisfy it). See `DECISIONS.md` D13.
+- **Integration point (M5):** in `factory.py` swap `FakeVectorStore → LibSQLStore` (and `FakeEmbedder → OpenAICompatEmbedder`), run the joint smoke (agent ingests sample folder → search via UI → single best + path + recap → re-run agent → dedup skips all). **Gotcha:** model-pin must agree (`EMBED_MODEL=bge-m3` / `EMBED_DIM=1024`) on both sides or `LibSQLStore` raises `ModelPinMismatch`.
 
 ---
 

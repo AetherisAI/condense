@@ -1,6 +1,6 @@
 # CLAUDE.md — Condense (Dev B operating manual)
 
-> Loaded every session. This is the durable context: what we're building, the rules we obey, how we work, and where the live plan lives. If you're starting fresh, read this top to bottom, then `docs/ROADMAP.md` and `docs/active/human.md`.
+> Loaded every session. This is the durable context: what we're building, the rules we obey, how we work, and where the live plan lives. If you're starting fresh, read this top to bottom, then `docs/Quentin/ROADMAP.md` and `docs/Quentin/active/human.md`.
 
 ## 1. What this is
 **Condense** (codename *Sift*) — a self-contained "LM Studio for documents": point an agent at a folder → every file is parsed, chunked, embedded into a **Turso/libSQL** vector store → a search bar returns the **single best result** (two-stage: retrieve wide → rerank → top-1) with a recap + source path. Full plan: [`README.md`](./README.md). Strict **ports & adapters**, **config-driven**, all ML inference external over HTTP (no torch in the app).
@@ -31,20 +31,21 @@ Quentin builds **retrieve + rank + recap + serve + UI**. Arthur builds **the eng
 - Contract changes (`core/` or API schema) get their own small PR both review.
 - Commit trailer: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 - **Fetch `origin` regularly** to stay aligned with Arthur; reconcile any `core/` drift immediately.
+- **Autonomous run:** one `feat/<slice>` branch per WP, pushed to origin regularly; Dev-B-owned files auto-merge to `main` when green (D12); the shared seam (`core/`, `api/schemas.py`, `factory.py`) stays provisional until reconciled with Arthur's push. A ~45-min cron re-syncs with his engine branch (D15).
 
 ## 5. How we plan — superpowers, then implement
 1. **Brainstorm** the slice (superpowers:brainstorming) → short design.
-2. **writing-plans** → bite-sized TDD tasks into `docs/active/machine.md`.
+2. **writing-plans** → bite-sized TDD tasks into `docs/Quentin/active/machine.md`.
 3. **Implement** task-by-task, ideally **subagent-driven** (superpowers:subagent-driven-development), TDD, commit per task.
-4. **At every important fork, log a decision** in `docs/DECISIONS.md` (Decision · Why · Alternatives · Basis). Take the best guess from the architecture + plan and move on — don't block.
+4. **At every important fork, log a decision** in `docs/Quentin/DECISIONS.md` (Decision · Why · Alternatives · Basis). Take the best guess from the architecture + plan and move on — don't block.
 
 ## 6. Documentation rules — ENFORCED
 - **Human doc always beside machine doc.** Never write/update one without the other. A commit that adds a machine plan without its human digest is incomplete.
 - **`human.md` ≤ 500 words, decision-first** — what/why, key decisions, risks, status. For deciding fast without reading the full plan.
 - **`machine.md`** — full design + plan (checkbox tasks) + implementation log.
-- **`docs/active/` holds the CURRENT work package only.** On merge: bump version, move `active/*` → `docs/archive/v0.<n>.0-<slice>/`, reset `active/` from `docs/templates/`.
-- **`docs/DECISIONS.md`** — global, append-only, **never archived**.
-- **`docs/ROADMAP.md`** — the master plan across all work packages (living, not archived).
+- **`docs/Quentin/active/` holds the CURRENT work package only.** On merge: bump version, move `active/*` → `docs/Quentin/archive/v0.<n>.0-<slice>/`, reset `active/` from `docs/Quentin/templates/`.
+- **`docs/Quentin/DECISIONS.md`** — global, append-only, **never archived**.
+- **`docs/Quentin/ROADMAP.md`** — the master plan across all work packages (living, not archived).
 
 ## 7. Tech stack (verified Jun 2026)
 Python 3.13 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `httpx` / `openai` client at custom base_url for embed+chat · plain `httpx` for TEI `/rerank` · libSQL client · `markitdown` (Arthur) · React + Vite 7 (TS) · ruff + pyright + pytest · Docker (`python:3.13-slim`, multi-arch via buildx).
@@ -73,9 +74,10 @@ web/             Vite+React test UI (search + ingest panels)
 docker-compose.yml (api · web · tei profile)
 ```
 
-## 10. Pointers
+## 10. Pointers & shared source of truth
+Our planning lives under **`docs/Quentin/`**; Arthur's under **`docs/Arthur/`** — both on `main`, side by side, so we can see the two halves stay aligned (D14).
 - Full product/architecture plan: `README.md` (§-referenced throughout).
-- Master roadmap + work-package order: `docs/ROADMAP.md`.
-- Current work package: `docs/active/human.md` (fast) → `docs/active/machine.md` (full).
-- Decisions & rationale: `docs/DECISIONS.md`.
-- Templates for new work packages: `docs/templates/`.
+- Master roadmap + work-package order: `docs/Quentin/ROADMAP.md`.
+- Current work package: `docs/Quentin/active/human.md` (fast) → `docs/Quentin/active/machine.md` (full).
+- Decisions & rationale: `docs/Quentin/DECISIONS.md`.
+- Templates for new work packages: `docs/Quentin/templates/`.
