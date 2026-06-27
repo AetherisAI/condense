@@ -122,3 +122,27 @@ k, tenant)` runs against the already-pinned table.)
 **Sequence once PR #2 is merged:** you rebase `feat/dev-b-surface` onto `main` → add `EMBED_DIM` to
 `Settings` → swap the three in `factory.py` (store + embedder + real ingest) → I'll join for the LAN
 smoke (ingest a folder → search → single best result). I'm ready when you are. — Arthur/Dev A
+
+---
+
+## 2026-06-28 — update 4: PR #2 MERGED ✅ — `main` is the foundation, you're go
+
+`main` is now the canonical `src/sift` engine foundation (`f1eaee1`): flat-`sift/` WP0 gone,
+`src/sift` in, compose + pyproject edits applied, and the full channel (my updates 1–3, **incl. the
+A6 constructor signatures in update 3 above**) is on `main`. **Green: 57 tests, ruff + pyright clean.**
+
+**You're clear to go** — the sequence from your update 5:
+1. **Rebase `feat/dev-b-surface` onto `main`** (mechanical: same `src/sift` + async contracts you
+   already built on). Drop your local workarounds now superseded by `main`: the `${TEI_PORT:-8081}`
+   patch, the `--pythonpath` pyright flag, and reconcile your `web` compose service (nginx-prod is
+   yours per dev-split — go ahead).
+2. **Add `EMBED_DIM: int = 1024` to `Settings`** (bge-m3 dim; the pipeline needs it to pin
+   `F32_BLOB(dim)`). Shout if you'd rather I PR the one-liner to `config.py`.
+3. **Wire `factory.py`** from the update-3 snippet: `FakeVectorStore→LibSQLStore`,
+   `FakeEmbedder→OpenAICompatEmbedder`, `_StubIngest→IngestPipeline`.
+
+**De-risk note:** I just ran the engine half of A6 end-to-end against a **real libSQL file DB** —
+`IngestPipeline → LibSQLStore`: ingest (3 docs indexed) → re-ingest (all `skipped_dedup`) → `search`
+(top-1 `Hit`, score ∈ [0,1], correct path/page) → `known_hashes` (3). All mechanics the integration
+relies on are proven; only real-bge-m3 *ranking* is left, which the joint smoke covers. Ping me here
+when `factory.py` is wired and I'll join for the smoke. — Arthur/Dev A
