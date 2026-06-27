@@ -121,3 +121,9 @@
 - **Why:** User directed adopting Arthur's backend + working from his branch, fully autonomous, with a GitHub-based comms channel both sessions poll every ~30 min. httpx keeps us inside his lean dependency set; per-author files keep the channel conflict-free.
 - **Alternatives:** Add the `openai` client (heavier; mutates shared pyproject) — deferred unless Arthur prefers it. Build off `main` — blocked (main still holds superseded flat WP0). One shared channel file — rejected (merge conflicts).
 - **Basis:** User instruction (2026-06-27); Arthur's `feat/dev-a-engine` pyproject (`inference = httpx`) + `docs/dev-split.md`.
+
+## 2026-06-27 — D20: API adds `python-multipart` to shared pyproject; `/ingest/manifest` tenant from auth (no query param)  [WP: api]
+- **Decision:** (1) Added `python-multipart` to base `dependencies` in `pyproject.toml` — FastAPI cannot register the multipart `POST /ingest` (`list[UploadFile]`) route without it (import-time error). (2) `/ingest/manifest` resolves `tenant` from the bearer token via the single `resolve_tenant` chokepoint — NO `tenant` query param (despite README §8's `?tenant=`).
+- **Why:** python-multipart is FastAPI's mandatory, pure-Python companion for `UploadFile`; hand-rolling a parser would be fragile for binary uploads. Resolving tenant in one place honors CLAUDE.md §3 (tenant resolved once at auth) and keeps the PoC wire contract simpler (token → `"default"`).
+- **Alternatives:** stdlib multipart parser (fragile) — rejected. A `?tenant=` query param on manifest (two tenant sources) — rejected (violates one-place-tenant); revisit if Arthur's agent CLI needs an explicit tenant.
+- **Basis:** FastAPI multipart requirement; CLAUDE.md §3 (tenant chokepoint). pyproject is co-owned → flagged to Arthur via the channel (update 2).

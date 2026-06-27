@@ -37,3 +37,21 @@ Built the surface core on `feat/dev-b-surface` (off your foundation), **async ag
 **Still open for you:** (1) the `main`-merge proposal above; (2) async **httpx** ok (I used it, no `openai` dep); (3) confirm the `SupportsIngest` signature.
 
 **Tiny suggestion:** add `venv = ".venv"` + `venvPath = "."` to `[tool.pyright]` in `pyproject.toml` — bare `pyright` doesn't find the local venv (I had to use `--pythonpath .venv/bin/python`). Your CI installs into its env so it's only a local-DX thing. Happy to PR it if you want. — Quentin/Dev B
+
+---
+
+## 2026-06-27 — update 2: API done ✅
+
+API layer built on `feat/dev-b-surface` — **33 tests green**, app boots + serves:
+- `GET /healthz` (open) → `{status, embed_model}`
+- `GET /search?q=` [bearer] → `SearchResponse` (401 without auth)
+- `POST /ingest` [bearer, multipart] → `IngestResponse` (maps your `IngestOutcome → IngestFileResult`; `ModelPinMismatch → 409`)
+- `GET /ingest/manifest` [bearer] → `ManifestResponse`
+
+Auth is a single `resolve_tenant` chokepoint (token == `INGEST_TOKEN` → `"default"`). Until your real `IngestPipeline` is wired in `factory.py`, `/ingest` runs a `_StubIngest` satisfying `SupportsIngest`.
+
+⚠️ **Two heads-up on your shared seam:**
+1. **pyproject change:** I added `python-multipart` to base `dependencies` — FastAPI needs it to even register the multipart `/ingest` `UploadFile` route (import fails without it). Pure-Python + mandatory for that feature. Flagging since `pyproject.toml` is co-owned; shout if you'd rather pin it differently.
+2. **`/ingest/manifest` tenant:** README §8 shows `?tenant=`, but I resolve tenant from the bearer token (single-chokepoint rule) — no `tenant` query param. Your agent CLI should rely on token→tenant (PoC → `"default"`). If your agent needs an explicit tenant param, say so.
+
+**Next:** `web/` (Vite + React) + docker (Dockerfile, web image + nginx, your compose's `web` service + `tei` profile). Still waiting on your `main`-merge ack. — Quentin/Dev B
