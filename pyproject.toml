@@ -1,21 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "sift"
 version = "0.0.0"
+description = "Knowledge ingestion & retrieval service — RAG as a Lego block"
+readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.9", "pydantic-settings>=2.14", "fastapi>=0.128",
-                "uvicorn[standard]>=0.34", "httpx>=0.27", "openai>=1.50"]
+dependencies = [
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "fastapi",
+    "uvicorn[standard]",
+]
 
+# Heavy/optional inference + storage deps stay out of the base install so Step-0 CI
+# (base + dev) installs fast and needs no Turso/Ollama/TEI. Adapters opt in per group.
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "pyright>=1.1"]
+dev = ["pytest", "pytest-asyncio", "ruff", "pyright"]
+store = ["libsql"]            # the current SDK; libsql-client/-experimental are deprecated
+parsing = ["markitdown"]
+chunking = ["tokenizers", "huggingface-hub", "tiktoken"]  # bge-m3 tokenizer (default) + tiktoken fallback
+inference = ["httpx"]
+agent = ["httpx"]
 
-[tool.pytest.ini_options]
-pythonpath = ["."]
+[tool.hatch.build.targets.wheel]
+packages = ["src/sift"]
 
 [tool.ruff]
+target-version = "py312"
 line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
 
 [tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+extraPaths = ["src"]
+venv = ".venv"          # local-DX: bare `pyright` finds the project venv (per Dev B)
 venvPath = "."
-venv = ".venv"
-typeCheckingMode = "basic"
-include = ["sift", "tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

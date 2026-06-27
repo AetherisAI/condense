@@ -1,8 +1,23 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+.env
+
+# Tooling caches
 .pytest_cache/
 .ruff_cache/
-node_modules/
-dist/
-*.db
+.pyright/
+
+# Local agent/editor config
+.claude/
+
+# OS
+.DS_Store
