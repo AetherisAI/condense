@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2",
     "fastapi",
     "uvicorn[standard]",
+    "python-multipart",          # required by FastAPI for the multipart /ingest UploadFile route
 ]
 
 # Heavy/optional inference + storage deps stay out of the base install so Step-0 CI
@@ -20,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff", "pyright"]
 store = ["libsql"]            # the current SDK; libsql-client/-experimental are deprecated
-parsing = ["markitdown"]
+parsing = ["markitdown[pdf,docx,pptx,xlsx]"]  # format converters: bare markitdown can't read PDFs
 chunking = ["tokenizers", "huggingface-hub", "tiktoken"]  # bge-m3 tokenizer (default) + tiktoken fallback
 inference = ["httpx"]
 agent = ["httpx"]

@@ -6,20 +6,19 @@
 #
 # Hard rule (README §9): private LAN + bearer token only. Bind to the LAN interface and
 # never port-forward to the public internet.
-#
-# Skeleton only: the api/ and web/ Dockerfiles are added later by Dev A/B.
 
 services:
   api:
     build:
       context: .
-      dockerfile: api.Dockerfile # added later (Dev B)
+      dockerfile: api.Dockerfile
     environment:
       STORE_BACKEND: ${STORE_BACKEND:-libsql}
       TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
       TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
       EMBED_BASE_URL: ${EMBED_BASE_URL:-} # host Ollama, e.g. http://host.docker.internal:11434/v1
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_DIM: ${EMBED_DIM:-1024}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
       RERANK_STRATEGY: ${RERANK_STRATEGY:-llm}
       RERANK_BASE_URL: ${RERANK_BASE_URL:-http://tei:80}
@@ -35,27 +34,31 @@ services:
       API_BIND: ${API_BIND:-0.0.0.0}
     ports:
       - "${API_PORT:-8000}:8000"
-    # No hard dependency on tei: the default PoC path is RERANK_STRATEGY=llm (D4,
-    # zero-infra). Start the cross-encoder only with `--profile tei` (see tei below).
+    # No hard dependency on tei: the default PoC path is RERANK_STRATEGY=llm (D4, zero-infra).
+    # Start the cross-encoder only with `docker compose --profile tei up` (see tei below).
+    # Linux: let the container reach host-side inference (Ollama/LLM) at
+    # http://host.docker.internal:<port> just like on Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   web:
+    # Dev B: built Vite UI served by nginx, which reverse-proxies the API surface
+    # (/search, /ingest, /healthz) to the api container (web/nginx.conf).
     build:
-      context: ./web # added later (Dev B): Vite dev server, or built UI behind nginx
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      context: ./web
     ports:
-      - "${WEB_PORT:-5173}:5173"
+      - "${WEB_PORT:-8080}:80"
     depends_on:
       - api
 
   tei:
     # Cross-encoder reranker (README §7): bge-reranker-v2-m3 via Text Embeddings Inference.
-    # Opt-in only — gated behind the `tei` profile so the default `docker compose up` runs
-    # the zero-infra llm-judge path and never pulls the reranker model. Enable with
-    # `docker compose --profile tei up` + RERANK_STRATEGY=crossencoder. Port 8081 to leave
+    # Opt-in only — gated behind the `tei` profile so the default `docker compose up` runs the
+    # zero-infra llm-judge path and never pulls the reranker model. Enable with
+    # `docker compose --profile tei up` + RERANK_STRATEGY=crossencoder. Port 8081 leaves
     # 8080 for Dev B's web/nginx.
     profiles: ["tei"]
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
     command: ["--model-id", "${RERANK_HF_MODEL:-BAAI/bge-reranker-v2-m3}"]
     ports:
       - "${TEI_PORT:-8081}:80"
