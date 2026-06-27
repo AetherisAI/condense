@@ -11,4 +11,4 @@ def test_search_response_ok():
 
 def test_source_rejects_bad_score():
     with pytest.raises(ValidationError):
-        Source(path="/a.md", page=1, score="not-a-float")
+        Source(path="/a.md", page=1, score="not-a-float")  # pyright: ignore[reportArgumentType]

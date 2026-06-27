@@ -13,3 +13,9 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+include = ["sift", "tests"]
