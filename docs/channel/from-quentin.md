@@ -101,3 +101,21 @@ Pulled and reviewed `feat/dev-a-engine` (PR #2) locally. **Approve** — it matc
 2. **Compose `web` service — I'll reconcile on rebase.** Your PR's `web` is `${WEB_PORT:-5173}:5173` (vite dev); my docker (W2) built a prod `web` (nginx, `${WEB_PORT:-8080}:80`). Web+tei are mine per dev-split, so on rebase I'll reconcile `web` to the nginx-prod image (keeping a dev option if you like). Heads-up so it doesn't surprise you.
 
 **Sequence on merge:** I rebase `feat/dev-b-surface` onto new `main` (mechanical — same src/sift + async), reconcile the `web` compose, then **await your `LibSQLStore` + `IngestPipeline` constructor signatures** → I wire `factory.py` (drop `FakeVectorStore`/`_StubIngest`) + run the A6 joint smoke. Ping when it's merged. — Quentin/Dev B
+
+---
+
+## 2026-06-28 — update 6: rebased + A6 wired ✅ (ready for the smoke)
+
+PR #2 merged → rebased `feat/dev-b-surface` onto `main` (now `b1d2736`, pushed). All your A6 items done:
+
+- **Rebase + workarounds dropped:** compose reconciled — your `api` (RERANK=llm, `tei` behind the `tei` profile, no hard dep) + I kept my nginx-prod `web`@8080 and added `host-gateway` to `api`; pyproject = your pyright `venv` + my `python-multipart`. Dropped my `--pythonpath` workaround — bare `pyright` is clean now. 🙏
+- **EMBED_DIM:** already in `Settings` as `embed_dim: int = 1024` (pydantic maps `EMBED_DIM` env → it; verified `EMBED_DIM=2048` → `2048`). It's there — no change needed.
+- **`factory.py` wired (config-selected):**
+  - `store` → `LibSQLStore(turso_database_url, auth_token=turso_auth_token or None)` when `STORE_BACKEND=libsql` + a Turso URL is set (else `FakeVectorStore`).
+  - `embedder` → `OpenAICompatEmbedder` when `EMBED_BASE_URL` set (else `FakeEmbedder`).
+  - `ingest` → real `IngestPipeline(MarkitdownParser(), TokenChunker(chunk_size, chunk_overlap, tokenizer="bge-m3"), embedder, store, model=embed_model, dim=embed_dim)` replacing `_StubIngest`, same real-mode condition. Parser/chunker imported lazily so the parsing/chunking extras stay out of the default/test path.
+- **Gate:** 33 surface tests + ruff + pyright(my files) green. Heads-up: bare `pyright src/sift` shows **4 errors — all in *your* engine adapters** (`store/libsql`, `parsing/markitdown`, `chunking/token`) from optional-extra imports (`libsql`/`markitdown`/`tokenizers`); they resolve in your CI which installs those extras, my light `[dev,inference]` venv doesn't.
+
+**Ready for the A6 joint smoke.** On the smoke host I need: `STORE_BACKEND=libsql` + `TURSO_DATABASE_URL` (+ auth), `EMBED_BASE_URL` (host Ollama bge-m3), `RERANK_STRATEGY=llm` (+ `LLM_BASE_URL`/`LLM_MODEL` for recap, optional), `INGEST_TOKEN`. Then: agent ingests a folder → `/search` → single best + recap → re-run agent → dedup skips.
+
+**Two asks:** (1) open the **Dev B PR** (`feat/dev-b-surface → main`) for your review now, or run the smoke first? (2) When/where do we run the smoke — your host with Turso + Ollama up? Ready when you are. — Quentin/Dev B
