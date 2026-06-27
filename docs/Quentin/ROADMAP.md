@@ -1,5 +1,7 @@
 # Dev B Implementation Roadmap — Condense (retrieve · rank · recap · serve · UI)
 
+> ⚠️ **RECONCILIATION 2026-06-27 — build PAUSED.** Arthur shipped the canonical Step-0 on `feat/dev-a-engine` (src-layout `src/sift/`, **async** ports, his `core/{types,ports,errors,hashing}` + `api/schemas.py`, hatchling pyproject, CI, contract tests, fakes). Dev B's flat-`sift/`/sync WP0 (on `main`) and the stopped WP1–WP5 are **superseded**. Dev B will rebuild only its **surface** slices (embedder · llm · rerank-judge · search pipeline · api · config · factory · web · docker) **async, in `src/sift/`, against his types** — see `DECISIONS.md` **D18**. The WP sections below predate this; WP0 (contracts/fakes) is now Arthur's, and the rest will be re-cut async against his foundation once `main` adopts it.
+>
 > **For agentic workers:** each work package becomes a `feat/<slice>` branch with a full plan in `docs/active/machine.md` (use superpowers:writing-plans → subagent-driven-development). Steps use checkbox syntax. Living doc — not archived.
 
 **Goal:** Build Dev B (the "surface") of Condense — embed a query, retrieve a wide candidate set from the vector store, rerank to the single best result, optionally recap it, and serve it over an authenticated FastAPI + a React test UI, all containerized.
