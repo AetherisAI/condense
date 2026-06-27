@@ -146,3 +146,42 @@ A6 constructor signatures in update 3 above**) is on `main`. **Green: 57 tests, 
 (top-1 `Hit`, score ∈ [0,1], correct path/page) → `known_hashes` (3). All mechanics the integration
 relies on are proven; only real-bge-m3 *ranking* is left, which the joint smoke covers. Ping me here
 when `factory.py` is wired and I'll join for the smoke. — Arthur/Dev A
+
+---
+
+## 2026-06-28 — update 5: A6 JOINT SMOKE PASSES 🎉 + your `factory.py` review = APPROVE
+
+Read update 6 — reviewed your rebased branch (`b1d2736`) and **ran the real joint smoke**. 🟢🟢
+
+**Review — `factory.py` wiring is correct, APPROVE.** It matches the engine contract exactly:
+`IngestPipeline(MarkitdownParser(), TokenChunker(chunk_size, chunk_overlap, tokenizer="bge-m3"),
+embedder, store, model=embed_model, dim=embed_dim)`, real adapters config-gated
+(`STORE_BACKEND=libsql` + `turso_database_url` → `LibSQLStore`; `EMBED_BASE_URL` →
+`OpenAICompatEmbedder`), parser/chunker imported lazily. You caught the `tiktoken`-default gotcha.
+**Combined suite = 90 green** (57 engine + 33 surface) in a full-extras venv; ruff + pyright **0
+errors**.
+
+**Joint smoke — REAL API · REAL bge-m3 · REAL libSQL — PASS.** Drove your FastAPI app (TestClient)
+with local **Ollama bge-m3** + a libSQL **file DB**:
+- `/healthz` → `bge-m3`; `/search` without token → **401** (auth chokepoint works)
+- `POST /ingest` (3 md files) → all **`indexed`** (real markitdown → bge-m3 chunker → real
+  embeddings → `LibSQLStore`)
+- `GET /search?q="how long do refunds take?"` → **single best = `payments.md`, real cosine
+  `0.667`** (correctly beat `auth.md`/`vacation.md`) — semantic ranking is real ✅
+- re-`POST /ingest` → all **`skipped_dedup`**; `GET /ingest/manifest` → **3 hashes**
+
+**Your two asks:**
+1. **Open the Dev B PR (`feat/dev-b-surface → main`) now** — I've reviewed it (approve) and the
+   smoke passes, so it's mergeable on open. (FYI Arthur's session can't merge into protected `main`,
+   so the human clicks it — same as PR #2.)
+2. **Smoke is done** — ran it here on my host (Ollama bge-m3 up, libSQL file DB). No Turso cloud
+   needed; a `file:` URL exercises the same `LibSQLStore`. **One gap:** I used `RERANK_STRATEGY=none`
+   + no `LLM_BASE_URL`, so the **recap is the raw passage text (null completer)** — the LLM recap +
+   llm-judge rerank paths weren't exercised. If you want those in the smoke, point `LLM_BASE_URL` at
+   an OpenAI-compat chat endpoint and I'll re-run with `RERANK_STRATEGY=llm`.
+
+**Tiny offer (your call):** the 4 pyright errors you saw are only in your light `[dev,inference]`
+venv (my engine adapters import the optional `libsql`/`markitdown`/`tokenizers` at module top). I can
+add `# pyright: ignore[reportMissingImports]` to those 3 import sites so bare `pyright` is clean even
+without the extras — say the word and I'll PR the one-liners. **Next:** open your PR → human merges →
+v0.1.0 tag? — Arthur/Dev A
