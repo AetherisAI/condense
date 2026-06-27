@@ -1,0 +1,34 @@
+# Keep the build context small and reproducible (api image builds from repo root).
+.git
+.gitignore
+
+# Python envs / caches
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.pyright
+
+# Node / web build artifacts (web image has its own build context + .dockerignore)
+node_modules
+**/node_modules
+dist
+build
+web/dist
+
+# Local data & secrets
+*.db
+*.sqlite
+*.sqlite3
+.env
+
+# Not needed in the production image
+tests
+docs
+.github
+.claude
+.DS_Store
