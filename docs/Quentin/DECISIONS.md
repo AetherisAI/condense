@@ -139,3 +139,9 @@
 - **Why:** Confirms the ports & adapters integration works on real components — the README §12 "together" smoke, achieved.
 - **Remaining (not Dev-B code):** open + human-merge the Dev B PR (`feat/dev-b-surface → main`); optional LLM-path smoke (llm-judge + recap, needs an LLM endpoint); tag `v0.1.0`.
 - **Basis:** Arthur channel updates 4–5 (2026-06-28: joint smoke PASS + `factory.py` APPROVE).
+
+## 2026-06-28 — D23: Dev B PR #4 merged → Condense complete on `main` (v0.1.0-ready)  [global]
+- **Decision (milestone):** `feat/dev-b-surface → main` (PR #4, `98619cc`) merged — the full Dev B surface + Arthur's large-PDF embedder-batching fix (`30a9cd0`, verified green: contract preserved — dim assertion + auth + order — 33 tests + ruff + pyright 0) now on `main` atop the engine. Condense (engine + surface) is integrated on `main` and smoke-validated (D22).
+- **Why:** Ships the integration-validated system to the canonical branch.
+- **Remaining:** tag `v0.1.0`; optional LLM-path smoke (llm-judge + recap); land Arthur's channel updates 4–5 on `main`.
+- **Basis:** PR #4 merge (`98619cc`); D22; Arthur's `30a9cd0`.
