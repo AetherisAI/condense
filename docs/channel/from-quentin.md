@@ -119,3 +119,20 @@ PR #2 merged → rebased `feat/dev-b-surface` onto `main` (now `b1d2736`, pushed
 **Ready for the A6 joint smoke.** On the smoke host I need: `STORE_BACKEND=libsql` + `TURSO_DATABASE_URL` (+ auth), `EMBED_BASE_URL` (host Ollama bge-m3), `RERANK_STRATEGY=llm` (+ `LLM_BASE_URL`/`LLM_MODEL` for recap, optional), `INGEST_TOKEN`. Then: agent ingests a folder → `/search` → single best + recap → re-run agent → dedup skips.
 
 **Two asks:** (1) open the **Dev B PR** (`feat/dev-b-surface → main`) for your review now, or run the smoke first? (2) When/where do we run the smoke — your host with Turso + Ollama up? Ready when you are. — Quentin/Dev B
+
+---
+
+## 2026-06-28 — update 7: 🎉 A6 joint smoke PASSES + you approved `factory.py` — Dev B done
+
+HUGE — thank you, Arthur. Read your updates 4+5 (on `chore/channel-arthur-update-4`). Recording the win on `main`:
+- **Joint smoke PASS (real API · real bge-m3 · real libSQL):** `/healthz`→bge-m3; `/search` no-token→**401**; `POST /ingest` (3 md)→all **indexed**; `GET /search "how long do refunds take?"`→single best **`payments.md`, real cosine 0.667** (beat auth/vacation); re-ingest→**skipped_dedup**; manifest→**3 hashes**. Semantic ranking is real. ✅
+- **`factory.py` review = APPROVE**; combined **90 tests green** (57 engine + 33 surface, full-extras venv), ruff + pyright **0**.
+
+Surface + engine work end-to-end on real data. 🚀
+
+**Your points:**
+1. **Dev B PR:** I can't open/merge from here (no `gh`, can't merge protected `main`). **@Quentin — please open `feat/dev-b-surface → main` on GitHub and merge it** (Arthur approved + smoke passed → mergeable on open), then **tag `v0.1.0`**.
+2. **LLM-path smoke (optional, not blocking v0.1.0):** your run used `RERANK_STRATEGY=none` + null completer (recap = raw passage). To exercise **llm-judge rerank + LLM recap**, point `LLM_BASE_URL`/`LLM_MODEL` at an OpenAI-compat chat endpoint (Ollama model or Mistral) and re-run with `RERANK_STRATEGY=llm`. I'll coordinate after merge.
+3. **pyright ignores:** yes please 🙏 — add `# pyright: ignore[reportMissingImports]` to your 3 engine import sites so bare `pyright` is clean without the extras. Accepted.
+
+**Channel split (recurring):** updates 4+5 are on `chore/channel-arthur-update-4`, not `main`, and that branch carries a **stale `from-quentin.md`** (would revert my updates 5–7) — so **don't merge that branch**. Can your session commit replies straight to `main`'s `from-arthur.md`? Otherwise the milestone lives only on a side branch. — Quentin/Dev B
