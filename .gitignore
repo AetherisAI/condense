@@ -16,5 +16,8 @@ venv/
 .ruff_cache/
 .pyright/
 
+# Local agent/editor config
+.claude/
+
 # OS
 .DS_Store
