@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff", "pyright"]
 store = ["libsql"]            # the current SDK; libsql-client/-experimental are deprecated
-parsing = ["markitdown"]
+parsing = ["markitdown[pdf,docx,pptx,xlsx]"]  # format converters: bare markitdown can't read PDFs
 chunking = ["tokenizers", "huggingface-hub", "tiktoken"]  # bge-m3 tokenizer (default) + tiktoken fallback
 inference = ["httpx"]
 agent = ["httpx"]
