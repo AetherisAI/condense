@@ -65,3 +65,9 @@
 - **Why:** Keeps outward-facing/shared-space changes under user control while still giving local commit traceability.
 - **Alternatives:** Commit straight on `Quentin` or push to `main` — rejected: branch hygiene per README; avoid surprising Arthur.
 - **Basis:** README §11 (protected main, PR + review); user asked to commit regularly (local commits satisfy this).
+
+## 2026-06-27 — D11: Python package root is `sift/` (placeholder codename)  [WP: contracts]
+- **Decision:** The importable package is `sift/` (e.g. `sift.core.ports`), matching the README §2 module map. Product/repo name is "Condense"; "Sift" is the placeholder codename.
+- **Why:** Aligns our imports with Arthur's plan exactly (avoids a contract mismatch in shared `core/`); renaming later is a mechanical import/path sweep, cheap to defer.
+- **Alternatives:** Name the package `condense` now — rejected: diverges from the README structure Arthur is also coding to; premature given the codename is explicitly TBD.
+- **Basis:** README §2 ("`sift/` ...") and §3; codename marked TBD in README header. **Flagged for Arthur's confirmation** (co-owned `core/`).
