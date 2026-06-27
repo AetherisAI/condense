@@ -127,3 +127,9 @@
 - **Why:** python-multipart is FastAPI's mandatory, pure-Python companion for `UploadFile`; hand-rolling a parser would be fragile for binary uploads. Resolving tenant in one place honors CLAUDE.md §3 (tenant resolved once at auth) and keeps the PoC wire contract simpler (token → `"default"`).
 - **Alternatives:** stdlib multipart parser (fragile) — rejected. A `?tenant=` query param on manifest (two tenant sources) — rejected (violates one-place-tenant); revisit if Arthur's agent CLI needs an explicit tenant.
 - **Basis:** FastAPI multipart requirement; CLAUDE.md §3 (tenant chokepoint). pyproject is co-owned → flagged to Arthur via the channel (update 2).
+
+## 2026-06-27 — D21: Docker/compose topology — web@8080, tei@8081 always-on, host-gateway on api  [WP: docker]
+- **Decision:** `api.Dockerfile` (python:3.12-slim, installs `.[store,parsing,chunking,inference]`, uvicorn). `web/Dockerfile` multi-stage node→nginx; nginx SPA fallback + proxy to `api:8000`. `docker-compose.yml` extended **additively**: `web` service @`${WEB_PORT:-8080}`; `api` gains `extra_hosts: host.docker.internal:host-gateway` (reach host inference on Linux); `tei` kept **always-on** (NOT behind a profile) and republished to `${TEI_PORT:-8081}` to avoid the web 8080 clash. Arthur's `api` env block untouched.
+- **Why:** Arthur's `api` already has a hard `depends_on: tei`, so putting tei behind a profile breaks `docker compose config` ("depends on undefined service tei") — and I won't edit his block. So tei stays un-profiled; deconflicted by port instead.
+- **Alternatives:** tei behind `profiles:[tei]` per D8/README §9 — blocked by the hard depends_on (needs Arthur to loosen it). Reuse 8080 for both — port clash. Both raised to Arthur (channel update 3).
+- **Basis:** Arthur's compose (`api depends_on tei`, `RERANK_STRATEGY` default crossencoder); README §9; D4/D8.

@@ -55,3 +55,18 @@ Auth is a single `resolve_tenant` chokepoint (token == `INGEST_TOKEN` → `"defa
 2. **`/ingest/manifest` tenant:** README §8 shows `?tenant=`, but I resolve tenant from the bearer token (single-chokepoint rule) — no `tenant` query param. Your agent CLI should rely on token→tenant (PoC → `"default"`). If your agent needs an explicit tenant param, say so.
 
 **Next:** `web/` (Vite + React) + docker (Dockerfile, web image + nginx, your compose's `web` service + `tei` profile). Still waiting on your `main`-merge ack. — Quentin/Dev B
+
+---
+
+## 2026-06-27 — update 3: surface FEATURE-COMPLETE ✅ (web + docker)
+
+The Dev B surface is complete on `feat/dev-b-surface` — config · factory · embedder · completer · rerank (llm-judge + cross-encoder) · search pipeline · API · **web** · **docker** — all async on your contracts, all green, all pushed.
+- `web/`: Vite+React+TS test UI (bearer token + search panel + multipart ingest panel; dev proxy → `:8000`). `npm run build` green.
+- Docker: `api.Dockerfile` (python:3.12-slim, installs `.[store,parsing,chunking,inference]`, `uvicorn sift.api.main:app`); `web/Dockerfile` (node build → nginx) + `web/nginx.conf` (SPA + proxy to `api:8000`); `.dockerignore` + `.env.example`. `INGEST_TOKEN=t docker compose config` validates.
+
+⚠️ **3 coordination points on your shared compose/topology** (I didn't touch your `api` block):
+1. **tei port:** web took `8080`, so I republished tei to `${TEI_PORT:-8081}`. Change if you prefer.
+2. **tei is a hard dep:** your `api depends_on: tei` means `docker compose up` always starts tei (pulls the reranker model). For the zero-infra PoC path (llm-judge), tei should sit behind a compose **profile** — but that needs your `depends_on` loosened. Your call.
+3. **rerank default:** your compose defaults `RERANK_STRATEGY=crossencoder`; my `Settings` default is `none`, and D4 picked **llm-judge** for the PoC. Let's pick one default (I'd suggest llm-judge for a no-TEI demo, crossencoder once TEI is up).
+
+**Ready when you are** for (a) the `main`-merge (your Step-0 → `main`, drop my flat WP0) and (b) integration in `factory.py` — swap `FakeVectorStore`→your `LibSQLStore`, `FakeEmbedder`→`OpenAICompatEmbedder`, and wire your real `IngestPipeline` behind `/ingest` (currently a `_StubIngest`), then the joint smoke. Both need you. — Quentin/Dev B
