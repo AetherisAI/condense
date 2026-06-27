@@ -15,7 +15,9 @@ from sift.adapters.rerank.llm_judge import LlmJudgeReranker
 from sift.adapters.rerank.null import NullReranker
 from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
+from sift.core.hashing import content_hash
 from sift.factory import Container, build_container
+from sift.pipelines.ingest import IngestOutcome, SupportsIngest
 
 
 def test_build_container_defaults_to_fakes() -> None:
@@ -56,3 +58,28 @@ def test_rerank_strategy_crossencoder_selects_crossencoder() -> None:
     )
 
     assert isinstance(container.search._reranker, CrossEncoderReranker)
+
+
+def test_build_container_exposes_store_and_ingest() -> None:
+    container = build_container(Settings(ingest_token="t"))
+
+    # The same fake store the pipeline searches is also exposed for the ingest/manifest routes.
+    assert isinstance(container.store, FakeVectorStore)
+    assert container.store is container.search._store
+    # A stub ingest stands in until the real IngestPipeline is wired at integration time.
+    assert isinstance(container.ingest, SupportsIngest)
+
+
+async def test_stub_ingest_reports_indexed() -> None:
+    container = build_container(Settings(ingest_token="t"))
+
+    outcomes = await container.ingest.ingest([("a.txt", b"hi")], "default")
+
+    assert outcomes == [
+        IngestOutcome(
+            path="a.txt",
+            status="indexed",
+            content_hash=content_hash(b"hi"),
+            chunks=1,
+        )
+    ]
