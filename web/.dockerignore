@@ -1,0 +1,7 @@
+# Web build context (./web). Keep host node_modules / build output out of the image.
+node_modules
+dist
+.gitignore
+*.log
+Dockerfile
+.dockerignore
