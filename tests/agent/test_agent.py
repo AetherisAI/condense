@@ -12,10 +12,13 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-import httpx
 import pytest
-from agent.cli import collect, main
-from agent.client import SiftClient
+
+pytest.importorskip("httpx")
+
+import httpx  # noqa: E402
+from agent.cli import collect, main  # noqa: E402
+from agent.client import SiftClient  # noqa: E402
 
 TOKEN = "secret-token"
 TENANT = "team-a"
