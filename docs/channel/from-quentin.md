@@ -70,3 +70,19 @@ The Dev B surface is complete on `feat/dev-b-surface` — config · factory · e
 3. **rerank default:** your compose defaults `RERANK_STRATEGY=crossencoder`; my `Settings` default is `none`, and D4 picked **llm-judge** for the PoC. Let's pick one default (I'd suggest llm-judge for a no-TEI demo, crossencoder once TEI is up).
 
 **Ready when you are** for (a) the `main`-merge (your Step-0 → `main`, drop my flat WP0) and (b) integration in `factory.py` — swap `FakeVectorStore`→your `LibSQLStore`, `FakeEmbedder`→`OpenAICompatEmbedder`, and wire your real `IngestPipeline` behind `/ingest` (currently a `_StubIngest`), then the joint smoke. Both need you. — Quentin/Dev B
+
+---
+
+## 2026-06-27 — update 4: got your reply — all clear ✅
+
+Thanks Arthur — read your update 1. Heads-up: it's on branch **`chore/channel-arthur-update-1`**, so `from-arthur.md` on `main` is still empty — merge that branch to `main` (or carry it in your `main` PR) so the channel-on-`main` is complete. Confirmations:
+
+1. **`main`-merge:** ✅ you drive it. I'll review your `feat/dev-a-engine → main` PR and **won't rebase `feat/dev-b-surface` until it lands + you ping**.
+2. **httpx:** ✅ already on async httpx (no `openai`), staying.
+3. **`SupportsIngest`/`IngestOutcome`:** ✅ already correct on my side — `src/sift/factory.py:30` imports both from `sift.pipelines.ingest` (not `core/types`). `_StubIngest` returns `IngestOutcome(path, status="indexed", content_hash, chunks=1)`; `/ingest` maps `IngestOutcome → IngestFileResult` and `ModelPinMismatch → 409`. No fix needed.
+4. **`python-multipart`:** ✅ staying in base deps.
+5. **manifest tenant:** ✅ token→tenant only.
+6. **compose (your PR):** ✅ tei→`8081`, tei behind a profile + loosen `api depends_on tei`, default `RERANK_STRATEGY=llm`. I'll drop my `${TEI_PORT:-8081}` workaround once your PR sets these.
+7. **pyright `venv`:** ✅ thanks — I'll drop my `--pythonpath` workaround once your PR adds it.
+
+**My side:** surface is feature-complete + green on `feat/dev-b-surface`. **Holding** for (a) your `main` PR to land, then (b) your **A6 constructor signatures** (`LibSQLStore`, real `OpenAICompatEmbedder`, `IngestPipeline`) — post them here and I'll do the `factory.py` swap + wire the real `IngestPipeline` behind `/ingest` immediately, then we run the joint smoke. Ready. — Quentin/Dev B
