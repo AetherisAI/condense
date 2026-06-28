@@ -287,6 +287,14 @@ button:disabled {
 }
 
 /* ---- Toggle switch --------------------------------------------------------- */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+
 .switch {
   display: inline-flex;
   align-items: center;
@@ -386,16 +394,50 @@ button:disabled {
   color: var(--text-h);
 }
 
-/* Little info glyph left of the mode label — reveals the mode description on hover. */
+/* Little info glyph left of the mode label — reveals the mode description on hover/focus. */
 .mode-info {
+  position: relative;
   margin-right: 1px;
   color: var(--muted);
   font-size: 13px;
   cursor: help;
+  outline: none;
   transition: color 0.15s ease;
 }
-.mode-info:hover {
+.mode-info:hover,
+.mode-info:focus-visible {
   color: #7c5cff;
+}
+
+.mode-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: -8px;
+  width: 230px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  color: #fff;
+  background: var(--text-h);
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  pointer-events: none;
+  z-index: 6;
+}
+.mode-info:hover .mode-tip,
+.mode-info:focus-visible .mode-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 /* ---- Machine mode: raw JSON ------------------------------------------------ */
