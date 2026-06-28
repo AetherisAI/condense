@@ -146,6 +146,18 @@ def test_status_exposes_config_but_redacts_secrets(client: TestClient) -> None:
         assert settings[secret] in ("set", None)
 
 
+def test_status_reports_component_health(client: TestClient) -> None:
+    response = client.get("/status", headers=_AUTH)
+
+    assert response.status_code == 200
+    comps = response.json()["components"]
+    assert set(comps) == {"embeddings", "llm", "reranker", "storage"}
+    # The fake store is reachable; remote deps are unconfigured offline (no base URLs in tests).
+    assert comps["storage"]["status"] == "ok"
+    assert comps["embeddings"]["status"] == "not_configured"
+    assert comps["llm"]["status"] == "not_configured"
+
+
 def test_ingest_indexes_uploaded_file(client: TestClient) -> None:
     response = client.post(
         "/ingest",

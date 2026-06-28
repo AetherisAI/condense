@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** Mirrors api.schemas.StatusResponse — health + the effective config (secrets redacted). */
+/** One dependency's reachability (mirrors api.schemas.ComponentHealth). */
+type ComponentHealth = {
+  status: string // "ok" | "down" | "not_configured"
+  model?: string | null
+  detail?: string | null
+}
+
+/** Mirrors api.schemas.StatusResponse — health + components + the config (secrets redacted). */
 type StatusResponse = {
   status: string
   embed_model: string | null
+  components: Record<string, ComponentHealth>
   settings: Record<string, unknown>
 }
 
@@ -13,6 +21,13 @@ function fmt(v: unknown): string {
   if (v === null || v === undefined) return '—'
   if (typeof v === 'boolean') return v ? 'true' : 'false'
   return String(v)
+}
+
+/** Map a component status onto a status-dot modifier (no green — bluish-purple = ok). */
+function dotFor(status: string): string {
+  if (status === 'ok') return 'sys-dot-up'
+  if (status === 'down') return 'sys-dot-down'
+  return '' // not_configured → neutral grey
 }
 
 /**
@@ -98,6 +113,8 @@ export default function SystemMenu({ token }: { token: string }) {
             {data?.embed_model && <span className="sys-muted">· {data.embed_model}</span>}
           </div>
 
+          <div className="sys-divider" />
+
           <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
             API documentation
             <span aria-hidden="true">↗</span>
@@ -107,7 +124,22 @@ export default function SystemMenu({ token }: { token: string }) {
           {loading && <p className="sys-muted">Loading…</p>}
 
           {data && (
-            <div className="sys-settings">
+            <div className="sys-section">
+              <div className="sys-label">Components</div>
+              {Object.entries(data.components).map(([name, c]) => (
+                <div className="sys-comp" key={name}>
+                  <span className={`sys-dot ${dotFor(c.status)}`} />
+                  <span className="sys-comp-name">{name}</span>
+                  <span className="sys-comp-detail">
+                    {c.status === 'not_configured' ? 'off' : (c.model ?? c.detail ?? 'ok')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {data && (
+            <div className="sys-section">
               <div className="sys-label">Settings</div>
               {Object.entries(data.settings).map(([k, v]) => (
                 <div className="sys-row" key={k}>

@@ -68,9 +68,18 @@ class HealthResponse(BaseModel):
     embed_model: str | None = None
 
 
+class ComponentHealth(BaseModel):
+    """Reachability of one configured dependency (embeddings, llm, reranker, storage)."""
+
+    status: str  # "ok" | "down" | "not_configured"
+    model: str | None = None
+    detail: str | None = None
+
+
 class StatusResponse(BaseModel):
     """Response for ``GET /status`` — health plus the effective config (secrets redacted)."""
 
     status: str = "ok"
     embed_model: str | None = None
+    components: dict[str, ComponentHealth] = {}
     settings: dict[str, Any]
