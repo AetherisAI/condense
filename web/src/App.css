@@ -689,8 +689,3 @@ button:disabled {
 .sys-docs:hover {
   text-decoration: underline;
 }
-.sys-docs-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-}
