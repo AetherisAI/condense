@@ -287,6 +287,14 @@ button:disabled {
 }
 
 /* ---- Toggle switch --------------------------------------------------------- */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+
 .switch {
   display: inline-flex;
   align-items: center;
@@ -381,15 +389,88 @@ button:disabled {
   display: block;
 }
 
+/* ---- AI recap switch — same format as the mode switch (icon thumb) ---------- */
+.recap-switch .switch-track {
+  width: 52px;
+  height: 28px;
+  background: var(--border-strong); /* OFF — neutral grey */
+  transition: background 0.2s ease;
+}
+
+.recap-switch .switch-thumb {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted); /* glyph colour while OFF */
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
+}
+
+.recap-switch input:checked + .switch-track {
+  background: #7c5cff; /* ON — blue-purple, matches the logo */
+}
+
+.recap-switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(24px);
+  color: #7c5cff; /* glyph colour while ON */
+}
+
+.recap-switch input:focus-visible + .switch-track {
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+}
+
 .mode-switch .switch-label {
   min-width: 58px; /* reserve space so the row doesn't jump on Human↔Machine */
   color: var(--text-h);
 }
 
-.mode-hint {
-  margin: -2px 0 0;
-  font-size: 12.5px;
+/* Little info glyph left of the mode label — reveals the mode description on hover/focus. */
+.mode-info {
+  position: relative;
+  margin-right: 1px;
   color: var(--muted);
+  font-size: 13px;
+  cursor: help;
+  outline: none;
+  transition: color 0.15s ease;
+}
+.mode-info:hover,
+.mode-info:focus-visible {
+  color: #7c5cff;
+}
+
+.mode-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: -8px;
+  width: 230px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  color: #fff;
+  background: var(--text-h);
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  pointer-events: none;
+  z-index: 6;
+}
+.mode-info:hover .mode-tip,
+.mode-info:focus-visible .mode-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 /* ---- Machine mode: raw JSON ------------------------------------------------ */
@@ -752,10 +833,29 @@ button:disabled {
   color: var(--muted);
   margin-bottom: 8px;
 }
-.sys-settings {
+.sys-section {
   border-top: 1px solid var(--border);
   margin-top: 12px;
   padding-top: 12px;
+}
+
+.sys-comp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.sys-comp-name {
+  color: var(--text-h);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.sys-comp-detail {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
 }
 .sys-row {
   display: flex;
@@ -790,6 +890,12 @@ button:disabled {
   color: #6a45f0; /* blue-purple, matches the buttons/logo */
   text-decoration: none;
 }
+.sys-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 12px 0;
+}
+
 .sys-docs:hover {
   text-decoration: underline;
 }
@@ -1143,4 +1249,28 @@ button:disabled {
 .drawer-del:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Editable settings (pencil-marked, inline-edited in the system popover) */
+.sys-pencil {
+  margin-left: 6px;
+  color: #7c5cff;
+  font-size: 11px;
+}
+.sys-edit {
+  width: 116px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--page-bg);
+  color: var(--text-h);
+  outline: none;
+}
+.sys-edit:focus-visible {
+  border-color: #7c5cff;
+  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.2);
+  background: var(--bg);
 }

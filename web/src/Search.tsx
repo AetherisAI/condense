@@ -53,6 +53,28 @@ function RobotGlyph() {
   )
 }
 
+/** Sparkle — the AI-recap-ON glyph carried in the toggle thumb. */
+function SparkleGlyph() {
+  return (
+    <svg className="mode-glyph" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 1.4l1.5 4.1 4.1 1.5-4.1 1.5L8 12.6 6.5 8.5 2.4 7l4.1-1.5z" />
+      <circle cx="12.7" cy="12.4" r="1.3" />
+    </svg>
+  )
+}
+
+/** Document lines — the AI-recap-OFF glyph (raw source, no summary). */
+function SourceGlyph() {
+  return (
+    <svg className="mode-glyph" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="3.5" y="2.5" width="9" height="11" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <line x1="5.7" y1="6" x2="10.3" y2="6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <line x1="5.7" y1="8.3" x2="10.3" y2="8.3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <line x1="5.7" y1="10.6" x2="8.6" y2="10.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 /**
  * Search panel with two output modes (the choice lives entirely here in the UI):
  *  - Human   → conversational AI recap (markdown) + readable source cards.
@@ -69,10 +91,22 @@ export default function Search({ token }: { token: string }) {
     localStorage.getItem('searchMode') === 'machine' ? 'machine' : 'human',
   )
 
+  const [recapEnabled, setRecapEnabled] = useState(
+    () => localStorage.getItem('recapEnabled') !== 'false',
+  )
+
   function toggleMode() {
     setMode((m) => {
       const next: Mode = m === 'human' ? 'machine' : 'human'
       localStorage.setItem('searchMode', next)
+      return next
+    })
+  }
+
+  function toggleRecap() {
+    setRecapEnabled((on) => {
+      const next = !on
+      localStorage.setItem('recapEnabled', String(next))
       return next
     })
   }
@@ -83,9 +117,8 @@ export default function Search({ token }: { token: string }) {
     setCopied(false)
     setLoading(true)
     try {
-      // Human asks for the AI recap; Machine skips it (recap=false → no LLM, raw results only).
-      const recap = mode === 'human'
-      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&recap=${recap}`, {
+      // The AI-recap toggle drives the engine's recap flag (off → no LLM summary, just sources).
+      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&recap=${recapEnabled}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!resp.ok) {
@@ -109,6 +142,10 @@ export default function Search({ token }: { token: string }) {
   }
 
   const hasSources = result != null && result.sources.length > 0
+  const modeHint =
+    mode === 'human'
+      ? 'Readable answer and source cards.'
+      : 'Raw results as JSON — for tools & integrations.'
 
   return (
     <section className="panel search">
@@ -128,29 +165,54 @@ export default function Search({ token }: { token: string }) {
         </button>
       </div>
 
-      <label
-        className="switch mode-switch"
-        data-mode={mode}
-        title="Human = conversational AI answer · Machine = raw JSON results for tools"
-      >
-        <input
-          type="checkbox"
-          role="switch"
-          checked={mode === 'machine'}
-          onChange={toggleMode}
-          aria-label={`Output mode: ${mode}`}
-        />
-        <span className="switch-track" aria-hidden="true">
-          <span className="switch-thumb">{mode === 'human' ? <HumanGlyph /> : <RobotGlyph />}</span>
-        </span>
-        <span className="switch-label">{mode === 'human' ? 'Human' : 'Machine'}</span>
-      </label>
+      <div className="controls">
+        <label
+          className="switch recap-switch"
+          title="On = AI answer + source · Off = just the source"
+        >
+          <input
+            type="checkbox"
+            role="switch"
+            checked={recapEnabled}
+            onChange={toggleRecap}
+            aria-label="AI recap"
+          />
+          <span className="switch-track" aria-hidden="true">
+            <span className="switch-thumb">{recapEnabled ? <SparkleGlyph /> : <SourceGlyph />}</span>
+          </span>
+          <span className="switch-label">AI recap</span>
+        </label>
 
-      <p className="mode-hint">
-        {mode === 'human'
-          ? 'Conversational AI answer synthesised from the best passages, with its source.'
-          : 'Raw reranker results as JSON — no LLM call. For tools & integrations.'}
-      </p>
+        <label
+          className="switch mode-switch"
+          data-mode={mode}
+          title="Human = readable answer · Machine = raw JSON results for tools"
+        >
+          <input
+            type="checkbox"
+            role="switch"
+            checked={mode === 'machine'}
+            onChange={toggleMode}
+            aria-label={`Output mode: ${mode}`}
+          />
+          <span className="switch-track" aria-hidden="true">
+            <span className="switch-thumb">{mode === 'human' ? <HumanGlyph /> : <RobotGlyph />}</span>
+          </span>
+          <span
+            className="mode-info"
+            tabIndex={0}
+            role="note"
+            aria-label={modeHint}
+            onClick={(e) => e.preventDefault()}
+          >
+            ⓘ
+            <span className="mode-tip" role="tooltip">
+              {modeHint}
+            </span>
+          </span>
+          <span className="switch-label">{mode === 'human' ? 'Human' : 'Machine'}</span>
+        </label>
+      </div>
 
       {error && <p className="error">{error}</p>}
 
@@ -170,7 +232,9 @@ export default function Search({ token }: { token: string }) {
           ) : mode === 'machine' ? (
             <div className="machine">
               <div className="json-head">
-                <span className="sources-label">Raw JSON · GET /search?recap=false</span>
+                <span className="sources-label">
+                  Raw JSON · GET /search?recap={recapEnabled ? 'true' : 'false'}
+                </span>
                 <button type="button" className="copy-btn" onClick={copyJson}>
                   {copied ? 'Copied ✓' : 'Copy'}
                 </button>
