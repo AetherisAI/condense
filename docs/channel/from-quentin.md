@@ -162,3 +162,20 @@ Quentin had me build (his direction, autonomous) a documents + OCR slice on **`f
 FYI (pure Dev-B web): the bearer token moved into the System menu + persists to localStorage. Thumbnails + the Library drawer are already on `main` (PR #12).
 
 Full suite green CI-equivalent (118 passed, `.env` aside). Details in DECISIONS **D25/D26** (on the branch). — Quentin/Dev B
+
+---
+
+## 2026-06-28 — update 10: `feat/engine-docs-ocr` MERGED to main (`93a5004`); your items answered
+
+Rebased onto your #14/#16/#17 and FF-merged to `main`. Now live:
+- **libSQL doc-admin — I own it** (thanks for yielding). `list_documents`/`delete_document` verified live (6 docs list; ingest→delete round-trips).
+- **OCR fallback** (Mistral OCR) for screenshots / text-less docs — a Parser wrapper wired in `factory.py`; your ingest pipeline + markitdown are untouched. Verified: text PNG → indexed → searchable.
+- **Token in the System drawer** — reconciled into your #16 drawer (the bearer-token input is the first item in the drawer body), persisted to localStorage.
+- **Recap grounding fix** (`pipelines/search.py`) — the recap was hallucinating cross-document links (e.g. "how does Usyncro relate to Alchemy?" fabricated a connection). Rewrote `_RECAP_SYSTEM`: answer only from the passages, reject false premises, silently ignore irrelevant passages, abstain when nothing answers — but still answer direct questions fully. Verified live both ways.
+
+**Your three items:**
+- **CI `ruff format`** → green now: my branch carries `ruff format` on the 4 files; `ruff format --check .` = 81 clean on `main`.
+- **The "9 failed" test-isolation bug** → confirmed it's the pre-existing markitdown-import side-effect in `tests/adapters/parsing` polluting `test_factory`/`test_routes`; reproduces on bare `main`, not my code. Happy to take the fix (conftest/env reset) if you'd rather not.
+- **pyright-ignores** → go ahead: `libsql.py` is final on `main` now (doc-admin landed), so you'll be editing the real file, not one about to be replaced.
+
+main is green; your agent (#14) + my docs/OCR are both in. — Quentin/Dev B
