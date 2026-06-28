@@ -21,11 +21,26 @@ from sift.api.schemas import (
     IngestStatus,
     ManifestResponse,
     SearchResponse,
+    StatusResponse,
 )
+from sift.config import Settings
 from sift.core.errors import ModelPinMismatch
 from sift.factory import Container
 
 router = APIRouter()
+
+# Never serialize these back to a client — only whether they are configured.
+_SECRET_KEYS = frozenset(
+    {"turso_auth_token", "embed_api_key", "llm_api_key", "ingest_token"}
+)
+
+
+def _redacted_settings(settings: Settings) -> dict[str, object]:
+    """The effective config with every secret replaced by a presence flag ("set"/None)."""
+    out: dict[str, object] = {}
+    for key, value in settings.model_dump().items():
+        out[key] = ("set" if value else None) if key in _SECRET_KEYS else value
+    return out
 
 
 @router.get("/healthz")
@@ -34,6 +49,20 @@ async def healthz(
 ) -> HealthResponse:
     """Liveness plus the configured embedding model — no auth (README §3)."""
     return HealthResponse(status="ok", embed_model=container.settings.embed_model)
+
+
+@router.get("/status")
+async def status_(
+    container: Annotated[Container, Depends(get_container)],
+    tenant: Annotated[str, Depends(resolve_tenant)],
+) -> StatusResponse:
+    """Health + the effective config for the debug panel — bearer-gated, secrets redacted."""
+    settings = container.settings
+    return StatusResponse(
+        status="ok",
+        embed_model=settings.embed_model,
+        settings=_redacted_settings(settings),
+    )
 
 
 @router.get("/search")

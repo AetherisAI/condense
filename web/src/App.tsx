@@ -3,6 +3,7 @@ import Search from './Search'
 import Ingest from './Ingest'
 import SlashField from './SlashField'
 import Logo from './Logo'
+import SystemMenu from './SystemMenu'
 import './App.css'
 
 /**
@@ -15,6 +16,7 @@ export default function App() {
   return (
     <>
       <SlashField />
+      <SystemMenu token={token} />
       <main className="app">
       <header className="app-header">
         <div className="brand">

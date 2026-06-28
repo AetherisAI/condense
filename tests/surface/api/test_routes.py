@@ -126,6 +126,26 @@ def test_search_recap_false_returns_source_only(client: TestClient) -> None:
     assert source["snippet"] == _SEED_TEXT
 
 
+def test_status_requires_auth(client: TestClient) -> None:
+    assert client.get("/status").status_code == 401
+
+
+def test_status_exposes_config_but_redacts_secrets(client: TestClient) -> None:
+    response = client.get("/status", headers=_AUTH)
+
+    assert response.status_code == 200
+    body = response.json()
+    settings = body["settings"]
+    # Non-secret config is visible...
+    assert settings["final_k"] == 1
+    assert "recap_enabled" in settings
+    # ...but secret values are never serialized — only a "set"/None presence flag.
+    assert settings["ingest_token"] in ("set", None)
+    assert settings["ingest_token"] != _TOKEN  # never the real token value
+    for secret in ("llm_api_key", "embed_api_key", "turso_auth_token"):
+        assert settings[secret] in ("set", None)
+
+
 def test_ingest_indexes_uploaded_file(client: TestClient) -> None:
     response = client.post(
         "/ingest",
