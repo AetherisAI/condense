@@ -113,6 +113,19 @@ def test_search_returns_best_source(client: TestClient) -> None:
     assert source["snippet"] == _SEED_TEXT
 
 
+def test_search_recap_false_returns_source_only(client: TestClient) -> None:
+    response = client.get("/search", params={"q": _SEED_TEXT, "recap": "false"}, headers=_AUTH)
+
+    assert response.status_code == 200
+    body = response.json()
+    # recap=false → no LLM summary, just the doc + page citation.
+    assert body["summary"] == ""
+    (source,) = body["sources"]
+    assert source["path"] == _SEED_PATH
+    assert source["page"] == 1
+    assert source["snippet"] == _SEED_TEXT
+
+
 def test_ingest_indexes_uploaded_file(client: TestClient) -> None:
     response = client.post(
         "/ingest",
