@@ -166,3 +166,59 @@ async def test_upsert_wrong_dim_vector_raises_value_error(store: LibSQLStore) ->
     chunk = Chunk(text="x", source_path="x.md", page=1, source_hash="hx", index=0)
     with pytest.raises(ValueError):
         await store.upsert([await _embedded(wrong, chunk)], TENANT)
+
+
+# --- document-admin seam (SupportsDocumentAdmin) parity -----------------------
+
+
+async def test_list_documents_lists_ingested_files_with_chunk_counts(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        Chunk(text="a one", source_path="a.md", page=1, source_hash="h1", index=0),
+        Chunk(text="a two", source_path="a.md", page=1, source_hash="h1", index=1),
+        Chunk(text="b one", source_path="b.md", page=1, source_hash="h2", index=0),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    docs = {d.source_hash: d for d in await store.list_documents(TENANT)}
+    assert set(docs) == {"h1", "h2"}
+    assert docs["h1"].source_path == "a.md"
+    assert docs["h1"].chunks == 2  # two chunk rows aggregated under one file
+    assert docs["h2"].source_path == "b.md"
+    assert docs["h2"].chunks == 1
+
+
+async def test_delete_document_removes_chunks_and_file_and_returns_count(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        Chunk(text="a one", source_path="a.md", page=1, source_hash="h1", index=0),
+        Chunk(text="a two", source_path="a.md", page=1, source_hash="h1", index=1),
+        Chunk(text="b one", source_path="b.md", page=1, source_hash="h2", index=0),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    removed = await store.delete_document("h1", TENANT)
+    assert removed == 2  # both of h1's chunk rows counted and deleted
+
+    remaining = await store.list_documents(TENANT)
+    assert [d.source_hash for d in remaining] == ["h2"]  # h1 gone from the listing
+    assert await store.known_hashes(TENANT) == {"h2"}  # files row dropped → re-ingest re-indexes
+
+    (query,) = await embedder.embed(["a one"])
+    hits = await store.search(query, 100, TENANT)
+    assert all(hit.source_hash != "h1" for hit in hits)  # no h1 chunk rows survive
+
+
+async def test_delete_document_unknown_hash_is_noop_and_returns_zero(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(text="keep me", source_path="k.md", page=1, source_hash="hk", index=0)
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    assert await store.delete_document("does-not-exist", TENANT) == 0
+    assert await store.known_hashes(TENANT) == {"hk"}  # existing doc untouched
