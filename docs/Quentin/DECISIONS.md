@@ -152,3 +152,16 @@
 - **Why:** D3 (never blocked on Arthur), don't touch his files, don't break the live app or `pyright`. The seam mirrors the existing `SupportsIngest` pattern, so it's idiomatic.
 - **Alternatives:** add the two methods to the `VectorStore` port itself — cleaner long-term, but couples a green check to Arthur's libSQL impl and breaks `pyright` meanwhile; promote to the port later once both stores implement it.
 - **Basis:** `pipelines/ingest.py` (`SupportsIngest` precedent); CLAUDE.md §2 ownership; D3. Also fixed: a local `.env` was leaking into the surface suite (16 failures) — added `tests/surface/conftest.py` neutralizing `env_file` so local runs match CI.
+
+## 2026-06-28 — D25: Implemented the D24 libSQL methods directly (Quentin's direction) — Library is LIVE  [WP: documents]
+- **Decision:** At Quentin's explicit direction (he's away; Arthur hadn't picked up the D24 ask), Dev B implemented `list_documents` + `delete_document` in Arthur's `adapters/store/libsql.py` (the `SupportsDocumentAdmin` seam). `list_documents` aggregates `files ⟕ chunks` (one `DocumentInfo`/file with chunk count; read-only, no lock); `delete_document` drops the chunks + the `files` row under the write lock and returns the count (so the hash leaves `known_hashes` and re-ingest re-indexes). 15 store tests green; **live-verified** vs the real DB: `GET /documents` → `supported:true` + the 6 real docs w/ counts, and ingest→`DELETE`→count restored. The drawer lists + deletes for real now.
+- **CROSS-BOUNDARY:** edits Arthur's owned file — done only because Quentin directed it. Flagged to Arthur (from-quentin update 9) to review / co-own.
+- **Why:** Quentin wanted the Library working now, not blocked on the async D24 handoff.
+- **Basis:** Quentin instruction (2026-06-28 autonomous run); D24; the `files`/`chunks` schema in `libsql.py`.
+
+## 2026-06-28 — D26: OCR fallback (Mistral OCR) for screenshots / text-less docs — Parser-level, config-gated  [WP: ocr]
+- **Decision:** When an ingested file has no extractable text (image/screenshot or scanned PDF), OCR it via Mistral OCR and index the result. Implemented as a **Parser wrapper** (`adapters/ocr/fallback_parser.py::OcrFallbackParser` + `adapters/ocr/mistral.py::MistralOcr` — async httpx `POST {base}/ocr`, `image_url` vs `document_url` by extension, joins `pages[].markdown`) wired in `factory.py` behind `OCR_ENABLED` — so the **ingest pipeline + markitdown parser stay untouched** (only `factory.py` + `config.py` change). New config: `OCR_ENABLED/OCR_BASE_URL/OCR_MODEL/OCR_API_KEY`. 9 tests green; **live-verified**: a text PNG ingested → `indexed` → search found it at score 0.897 with the OCR'd text. Works on the free Mistral tier.
+- **CROSS-BOUNDARY:** touches co-owned `factory.py` + `config.py` — flagged to Arthur (update 9).
+- **Why:** Quentin's explicit ask; a Parser-wrapper keeps optional/heavy OCR out of the core pipeline + behind config (P1/P2).
+- **Alternatives:** modify `pipelines/ingest.py` to call OCR — rejected (Arthur's file + couples OCR into the pipeline). Client-side OCR — rejected (needs the server inference path; the browser already does *preview* thumbnails only).
+- **Basis:** Quentin instruction; Mistral OCR API; the `openai_compat` httpx adapter style; P1/P2.
