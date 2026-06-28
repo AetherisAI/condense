@@ -158,6 +158,27 @@ def test_status_reports_component_health(client: TestClient) -> None:
     assert comps["llm"]["status"] == "not_configured"
 
 
+def test_patch_settings_applies_editable_fields(client: TestClient) -> None:
+    response = client.patch(
+        "/settings", json={"recap_temperature": 0.9, "final_k": 2}, headers=_AUTH
+    )
+
+    assert response.status_code == 200
+    settings = response.json()["settings"]
+    assert settings["recap_temperature"] == 0.9
+    assert settings["final_k"] == 2
+
+
+def test_patch_settings_rejects_non_editable_field(client: TestClient) -> None:
+    # Models/secrets/urls are not on the SettingsPatch allowlist (extra="forbid") → 422.
+    response = client.patch("/settings", json={"embed_model": "evil"}, headers=_AUTH)
+    assert response.status_code == 422
+
+
+def test_patch_settings_requires_auth(client: TestClient) -> None:
+    assert client.patch("/settings", json={"final_k": 3}).status_code == 401
+
+
 def test_ingest_indexes_uploaded_file(client: TestClient) -> None:
     response = client.post(
         "/ingest",
