@@ -139,6 +139,63 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* ---- Toggle switch --------------------------------------------------------- */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  align-self: flex-start;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.18s ease;
+  flex-shrink: 0;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--accent);
+}
+
+.switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(14px);
+}
+
+.switch input:focus-visible + .switch-track {
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.switch-label {
+  font-weight: 600;
+}
+
 /* ---- Search result --------------------------------------------------------- */
 .result {
   display: flex;

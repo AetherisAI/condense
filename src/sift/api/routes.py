@@ -41,9 +41,14 @@ async def search(
     q: str,
     container: Annotated[Container, Depends(get_container)],
     tenant: Annotated[str, Depends(resolve_tenant)],
+    recap: bool | None = None,
 ) -> SearchResponse:
-    """Embed → retrieve → rerank → recap for query ``q`` — the single best result."""
-    return await container.search.search(q, tenant)
+    """Embed → retrieve → rerank → recap for query ``q`` — the single best result.
+
+    ``recap`` overrides the configured default: ``recap=false`` skips the LLM summary and
+    returns just the source citation (doc + page); omitted falls back to ``RECAP_ENABLED``.
+    """
+    return await container.search.search(q, tenant, recap=recap)
 
 
 @router.get("/ingest/manifest")
