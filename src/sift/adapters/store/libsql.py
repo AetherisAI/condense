@@ -233,9 +233,7 @@ class LibSQLStore:
     def _list_documents_job(self, tenant: str) -> list[DocumentInfo]:
         conn = self._connection()
         rows = conn.execute(_SELECT_DOCUMENTS, (tenant,)).fetchall()
-        return [
-            DocumentInfo(source_path=row[0], source_hash=row[1], chunks=row[2]) for row in rows
-        ]
+        return [DocumentInfo(source_path=row[0], source_hash=row[1], chunks=row[2]) for row in rows]
 
     def _delete_document_job(self, source_hash: str, tenant: str) -> int:
         conn = self._connection()

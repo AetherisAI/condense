@@ -18,9 +18,7 @@ from sift.core.types import Document, Page
 class _PrimaryStub:
     """A primary Parser returning a fixed Document (or raising) — never touches the network."""
 
-    def __init__(
-        self, doc: Document | None = None, *, error: Exception | None = None
-    ) -> None:
+    def __init__(self, doc: Document | None = None, *, error: Exception | None = None) -> None:
         self._doc = doc
         self._error = error
 

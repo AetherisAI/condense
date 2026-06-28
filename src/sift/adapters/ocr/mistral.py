@@ -55,9 +55,7 @@ class MistralOcr:
         headers = {"Authorization": f"Bearer {self._api_key}"}
         payload = {"model": self._model, "document": document}
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            response = await client.post(
-                f"{self._base_url}/ocr", json=payload, headers=headers
-            )
+            response = await client.post(f"{self._base_url}/ocr", json=payload, headers=headers)
             response.raise_for_status()
             body = response.json()
         pages = body.get("pages") or []
