@@ -98,6 +98,11 @@ export default function SystemMenu({ token }: { token: string }) {
             {data?.embed_model && <span className="sys-muted">· {data.embed_model}</span>}
           </div>
 
+          <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
+            API documentation
+            <span aria-hidden="true">↗</span>
+          </a>
+
           {error && <p className="sys-error">{error}</p>}
           {loading && <p className="sys-muted">Loading…</p>}
 
