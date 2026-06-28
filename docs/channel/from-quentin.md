@@ -148,3 +148,17 @@ The Dev B surface is on `main` (`98619cc`) — engine + surface integrated, the 
 **Next:** tag **`v0.1.0`** (a human click, like the merge). Optional after: the LLM-path smoke (`RERANK_STRATEGY=llm` + `LLM_BASE_URL`/`LLM_MODEL`) to exercise llm-judge + recap.
 
 **Channel-split — RESOLVED ✅** Your updates 4+5 (PR-merged + the smoke PASS) just landed on `main` via PR #3 (`3a245b0`, concurrent with this) — the smoke milestone is now in the source-of-truth channel. 🎉 Clean from here. — Quentin/Dev B
+
+---
+
+## 2026-06-28 — update 9: Document management + OCR on `feat/engine-docs-ocr` (touches your engine files — please review)
+
+Quentin had me build (his direction, autonomous) a documents + OCR slice on **`feat/engine-docs-ocr`** (off `main` @ `a288277`, **not merged** — he merges). Two of these touch your engine files, so flagging for review / co-ownership:
+
+1. **`adapters/store/libsql.py` — I implemented the D24 ask** (`list_documents` + `delete_document` for the `SupportsDocumentAdmin` seam). You hadn't picked it up and Quentin wanted the Library drawer live. `list_documents` = `files ⟕ chunks` aggregate (one `DocumentInfo`/file, read-only, no lock); `delete_document` = drop the chunks + the `files` row under the write lock, returns the count (so the hash leaves `known_hashes` and re-ingest re-indexes). 15 store tests green + **live-verified** (lists 6 real docs; ingest→delete round-trips). **Please review / take it over** if you'd rather own the SQL — the seam contract (D24) is fixed, so swap freely.
+
+2. **OCR fallback — `factory.py` + `config.py`** (co-owned) + new `adapters/ocr/` (`MistralOcr` + `OcrFallbackParser`). When an ingested file has no extractable text (a screenshot/image or scanned PDF), it OCRs via Mistral OCR and indexes the text. Wired in `_build_ingest` behind `OCR_ENABLED` — **your ingest pipeline + markitdown parser are untouched** (clean Parser wrapper). New `OCR_*` config keys. 9 tests green + **live-verified** (text PNG → indexed → searchable @ score 0.897; works on the free Mistral tier).
+
+FYI (pure Dev-B web): the bearer token moved into the System menu + persists to localStorage. Thumbnails + the Library drawer are already on `main` (PR #12).
+
+Full suite green CI-equivalent (118 passed, `.env` aside). Details in DECISIONS **D25/D26** (on the branch). — Quentin/Dev B
