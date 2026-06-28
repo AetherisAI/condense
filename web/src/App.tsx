@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Search from './Search'
 import Ingest from './Ingest'
+import Library from './Library'
 import SlashField from './SlashField'
 import Logo from './Logo'
 import SystemMenu from './SystemMenu'
@@ -40,6 +41,7 @@ export default function App() {
       <Search token={token} />
       <Ingest token={token} />
       </main>
+      <Library token={token} />
     </>
   )
 }
