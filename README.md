@@ -6,6 +6,77 @@
 
 ---
 
+## Quickstart (run it locally)
+
+Condense needs three things at runtime, all over HTTP: an **embeddings** endpoint, a **vector store** (libSQL — a local file is fine), and optionally an **LLM** for the recap. The fastest local setup uses **Ollama** for embeddings and a hosted **LLM** for the recap.
+
+### Prerequisites
+- **Python 3.12** and **Node 20+** (for the web UI).
+- **[Ollama](https://ollama.com)** with the embedding model pulled: `ollama pull bge-m3` (serves an OpenAI-compatible API on `:11434`).
+- *(optional)* an OpenAI-compatible **LLM** for the recap — e.g. a [Mistral](https://console.mistral.ai) API key. Without one, run with the recap off (set `RERANK_STRATEGY=none`).
+- *(optional)* **Docker** (e.g. [Colima](https://github.com/abiosoft/colima)) only if you want the TEI cross-encoder reranker instead of the LLM judge.
+
+### 1. Install
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e ".[store,parsing,chunking,inference,dev]"   # engine + adapters + dev tools
+cd web && npm install && cd ..                              # web UI deps
+```
+
+### 2. Configure — create a `.env` in the repo root (gitignored)
+```bash
+STORE_BACKEND=libsql
+TURSO_DATABASE_URL=file:./sift.db          # local file; or a Turso URL + TURSO_AUTH_TOKEN
+EMBED_BASE_URL=http://localhost:11434/v1   # host Ollama (OpenAI-compatible)
+EMBED_MODEL=bge-m3
+EMBED_API_KEY=ollama                        # any non-empty value for Ollama
+INGEST_TOKEN=choose-a-secret                # required — the bearer token the UI/API use
+
+# Recap (optional): set these for an AI summary, or use RERANK_STRATEGY=none to skip the LLM
+RERANK_STRATEGY=llm                         # llm = LLM-judge rerank + recap; none = no LLM
+LLM_BASE_URL=https://api.mistral.ai/v1
+LLM_MODEL=mistral-small-latest
+LLM_API_KEY=your-llm-key
+```
+All keys and defaults are documented in [§8](#8-api-surface--config).
+
+### 3. Run
+```bash
+# terminal 1 — the API (FastAPI on :8000)
+.venv/bin/python -m uvicorn sift.api.main:app --host 127.0.0.1 --port 8000
+
+# terminal 2 — the web UI (Vite on :5173, proxies the API)
+cd web && npm run dev
+```
+Open **http://localhost:5173**, paste your `INGEST_TOKEN`, drag in some documents (PDF/Office/Markdown/…), then ask a question — you get the **single best answer** with its source. The top-right **System** panel shows live health, the effective config (editable on the fly), and a link to the interactive **API docs** (`/docs`).
+
+### Use it without the UI
+Everything is a plain HTTP API — explore it at **http://localhost:8000/docs** (Swagger). The core calls:
+```bash
+TOKEN=choose-a-secret
+# ingest one or more files
+curl -H "Authorization: Bearer $TOKEN" -F "files=@./report.pdf" http://localhost:8000/ingest
+# search (recap=false → just the source + passage, no LLM)
+curl -H "Authorization: Bearer $TOKEN" --get --data-urlencode "q=your question" \
+     --data-urlencode "recap=true" http://localhost:8000/search
+```
+
+### Optional — cross-encoder reranker (TEI via Docker)
+```bash
+colima start                                       # or any Docker engine
+docker compose --profile tei up -d tei             # bge-reranker-v2-m3 on :8081
+# then set in .env: RERANK_STRATEGY=crossencoder  ·  RERANK_BASE_URL=http://localhost:8081
+```
+
+### Develop & test
+```bash
+pytest                 # backend tests
+ruff check . && pyright
+cd web && npm run build && npm run lint
+```
+
+---
+
 ## 0. Design principles (read first)
 
 **P1 — Modular & reusable (ports & adapters).** Every seam is an interface ("port"); every implementation an "adapter" behind it. Components talk only through ports — independently testable (swap a fake), reusable (drop the same brick into another app).
