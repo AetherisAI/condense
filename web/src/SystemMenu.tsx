@@ -102,7 +102,6 @@ export default function SystemMenu({ token }: { token: string }) {
             API documentation
             <span aria-hidden="true">↗</span>
           </a>
-          <p className="sys-docs-hint">Use Condense directly over HTTP — no web UI needed.</p>
 
           {error && <p className="sys-error">{error}</p>}
           {loading && <p className="sys-muted">Loading…</p>}
