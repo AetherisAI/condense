@@ -7,9 +7,9 @@ contract; the routes layer maps the domain :class:`~sift.core.types.Hit` onto ``
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class IngestStatus(StrEnum):
@@ -96,9 +96,40 @@ class HealthResponse(BaseModel):
     embed_model: str | None = None
 
 
+class ComponentHealth(BaseModel):
+    """Reachability of one configured dependency (embeddings, llm, reranker, storage)."""
+
+    status: str  # "ok" | "down" | "not_configured"
+    model: str | None = None
+    detail: str | None = None
+
+
+class SettingsPatch(BaseModel):
+    """The allowlist of runtime-editable tuning settings (``PATCH /settings``).
+
+    Only safe knobs that take effect by rebuilding the container — no models, base URLs,
+    secrets, or store backend. ``extra="forbid"`` rejects anything off this list with 422.
+    Every field is optional; only the ones sent are applied.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    recap_enabled: bool | None = None
+    recap_context_k: int | None = None
+    recap_max_tokens: int | None = None
+    recap_temperature: float | None = None
+    source_snippet_chars: int | None = None
+    retrieve_k: int | None = None
+    final_k: int | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    rerank_strategy: Literal["none", "llm", "crossencoder"] | None = None
+
+
 class StatusResponse(BaseModel):
     """Response for ``GET /status`` — health plus the effective config (secrets redacted)."""
 
     status: str = "ok"
     embed_model: str | None = None
+    components: dict[str, ComponentHealth] = {}
     settings: dict[str, Any]

@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** Mirrors api.schemas.StatusResponse — health + the effective config (secrets redacted). */
+/** One dependency's reachability (mirrors api.schemas.ComponentHealth). */
+type ComponentHealth = {
+  status: string // "ok" | "down" | "not_configured"
+  model?: string | null
+  detail?: string | null
+}
+
+/** Mirrors api.schemas.StatusResponse — health + components + the config (secrets redacted). */
 type StatusResponse = {
   status: string
   embed_model: string | null
+  components: Record<string, ComponentHealth>
   settings: Record<string, unknown>
 }
 
@@ -13,6 +21,34 @@ function fmt(v: unknown): string {
   if (v === null || v === undefined) return '—'
   if (typeof v === 'boolean') return v ? 'true' : 'false'
   return String(v)
+}
+
+/** Map a component status onto a status-dot modifier (no green — bluish-purple = ok). */
+function dotFor(status: string): string {
+  if (status === 'ok') return 'sys-dot-up'
+  if (status === 'down') return 'sys-dot-down'
+  return '' // not_configured → neutral grey
+}
+
+/** Settings editable on the fly — must match api.schemas.SettingsPatch. */
+const EDITABLE = new Set([
+  'recap_enabled',
+  'recap_context_k',
+  'recap_max_tokens',
+  'recap_temperature',
+  'source_snippet_chars',
+  'retrieve_k',
+  'final_k',
+  'chunk_size',
+  'chunk_overlap',
+  'rerank_strategy',
+])
+
+/** Coerce a raw input string into the JSON value PATCH /settings expects for that key. */
+function coerce(key: string, raw: string): unknown {
+  if (key === 'recap_enabled') return raw.trim().toLowerCase() === 'true'
+  if (key === 'rerank_strategy') return raw.trim()
+  return Number(raw)
 }
 
 /**
@@ -74,6 +110,26 @@ export default function SystemMenu({ token }: { token: string }) {
     }
   }
 
+  async function patchSetting(key: string, raw: string) {
+    const value = coerce(key, raw)
+    if (typeof value === 'number' && Number.isNaN(value)) {
+      setError(`Invalid number for ${key}`)
+      return
+    }
+    setError(null)
+    try {
+      const resp = await fetch('/settings', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value }),
+      })
+      if (!resp.ok) throw new Error(`Update failed: ${resp.status}`)
+      setData((await resp.json()) as StatusResponse)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   function toggle() {
     const next = !open
     setOpen(next)
@@ -92,12 +148,6 @@ export default function SystemMenu({ token }: { token: string }) {
 
       {open && (
         <div className="sys-pop" role="dialog" aria-label="System status">
-          <div className="sys-pop-head">
-            <span className={`sys-dot sys-dot-${health}`} />
-            <strong>{health === 'down' ? 'Unreachable' : 'Healthy'}</strong>
-            {data?.embed_model && <span className="sys-muted">· {data.embed_model}</span>}
-          </div>
-
           <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
             API documentation
             <span aria-hidden="true">↗</span>
@@ -107,14 +157,54 @@ export default function SystemMenu({ token }: { token: string }) {
           {loading && <p className="sys-muted">Loading…</p>}
 
           {data && (
-            <div className="sys-settings">
-              <div className="sys-label">Settings</div>
-              {Object.entries(data.settings).map(([k, v]) => (
-                <div className="sys-row" key={k}>
-                  <span className="sys-key">{k.toUpperCase()}</span>
-                  <span className={`sys-val${v === null ? ' sys-null' : ''}`}>{fmt(v)}</span>
+            <div className="sys-section">
+              <div className="sys-label">Components</div>
+              {Object.entries(data.components).map(([name, c]) => (
+                <div className="sys-comp" key={name}>
+                  <span className={`sys-dot ${dotFor(c.status)}`} />
+                  <span className="sys-comp-name">{name}</span>
+                  <span className="sys-comp-detail">
+                    {c.status === 'not_configured' ? 'off' : (c.model ?? c.detail ?? 'ok')}
+                  </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {data && (
+            <div className="sys-section">
+              <div className="sys-label">Settings</div>
+              {Object.entries(data.settings).map(([k, v]) => {
+                const editable = EDITABLE.has(k)
+                return (
+                  <div className="sys-row" key={k}>
+                    <span className="sys-key">
+                      {k.toUpperCase()}
+                      {editable && (
+                        <span className="sys-pencil" title="Editable — change and press Enter">
+                          ✎
+                        </span>
+                      )}
+                    </span>
+                    {editable ? (
+                      <input
+                        className="sys-edit"
+                        defaultValue={fmt(v)}
+                        spellCheck={false}
+                        aria-label={`Edit ${k}`}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value !== fmt(v)) patchSetting(k, e.target.value)
+                        }}
+                      />
+                    ) : (
+                      <span className={`sys-val${v === null ? ' sys-null' : ''}`}>{fmt(v)}</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
