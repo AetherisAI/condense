@@ -7,6 +7,7 @@ contract; the routes layer maps the domain :class:`~sift.core.types.Hit` onto ``
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -65,3 +66,11 @@ class HealthResponse(BaseModel):
 
     status: str = "ok"
     embed_model: str | None = None
+
+
+class StatusResponse(BaseModel):
+    """Response for ``GET /status`` — health plus the effective config (secrets redacted)."""
+
+    status: str = "ok"
+    embed_model: str | None = None
+    settings: dict[str, Any]
