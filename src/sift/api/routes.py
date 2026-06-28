@@ -14,6 +14,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from sift.api.deps import get_container, resolve_tenant
+from sift.api.health import gather_components
 from sift.api.schemas import (
     HealthResponse,
     IngestFileResult,
@@ -58,9 +59,11 @@ async def status_(
 ) -> StatusResponse:
     """Health + the effective config for the debug panel — bearer-gated, secrets redacted."""
     settings = container.settings
+    components = await gather_components(settings, container.store, tenant)
     return StatusResponse(
         status="ok",
         embed_model=settings.embed_model,
+        components=components,
         settings=_redacted_settings(settings),
     )
 
