@@ -818,3 +818,27 @@ button:disabled {
 .sys-docs:hover {
   text-decoration: underline;
 }
+
+/* Editable settings (pencil-marked, inline-edited in the system popover) */
+.sys-pencil {
+  margin-left: 6px;
+  color: #7c5cff;
+  font-size: 11px;
+}
+.sys-edit {
+  width: 116px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--page-bg);
+  color: var(--text-h);
+  outline: none;
+}
+.sys-edit:focus-visible {
+  border-color: #7c5cff;
+  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.2);
+  background: var(--bg);
+}
