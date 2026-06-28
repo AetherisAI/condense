@@ -109,6 +109,10 @@ export default function Search({ token }: { token: string }) {
   }
 
   const hasSources = result != null && result.sources.length > 0
+  const modeHint =
+    mode === 'human'
+      ? 'Conversational AI answer synthesised from the best passages, with its source.'
+      : 'Raw reranker results as JSON — no LLM call. For tools & integrations.'
 
   return (
     <section className="panel search">
@@ -143,14 +147,17 @@ export default function Search({ token }: { token: string }) {
         <span className="switch-track" aria-hidden="true">
           <span className="switch-thumb">{mode === 'human' ? <HumanGlyph /> : <RobotGlyph />}</span>
         </span>
+        <span
+          className="mode-info"
+          role="img"
+          aria-label={modeHint}
+          title={modeHint}
+          onClick={(e) => e.preventDefault()}
+        >
+          ⓘ
+        </span>
         <span className="switch-label">{mode === 'human' ? 'Human' : 'Machine'}</span>
       </label>
-
-      <p className="mode-hint">
-        {mode === 'human'
-          ? 'Conversational AI answer synthesised from the best passages, with its source.'
-          : 'Raw reranker results as JSON — no LLM call. For tools & integrations.'}
-      </p>
 
       {error && <p className="error">{error}</p>}
 
