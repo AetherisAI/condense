@@ -54,7 +54,9 @@ class SearchPipeline:
         self._completer = completer
         self._settings = settings
 
-    async def search(self, query: str, tenant: str = "default") -> SearchResponse:
+    async def search(
+        self, query: str, tenant: str = "default", recap: bool | None = None
+    ) -> SearchResponse:
         settings = self._settings
         await self._store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
         vectors = await self._embedder.embed([query])
@@ -63,8 +65,14 @@ class SearchPipeline:
             return SearchResponse(summary="No results found.", sources=[])
         ranked = await self._reranker.rerank(query, candidates)
         top = ranked[: settings.final_k]
-        context = ranked[: settings.recap_context_k]
-        summary = await self._completer.complete(_RECAP_SYSTEM, _recap_user(query, context))
+        # Recap is optional: when off (per-request override, else the config default) we skip the
+        # LLM entirely and return just the source citation — the doc + page — as the response.
+        do_recap = settings.recap_enabled if recap is None else recap
+        if do_recap:
+            context = ranked[: settings.recap_context_k]
+            summary = await self._completer.complete(_RECAP_SYSTEM, _recap_user(query, context))
+        else:
+            summary = ""
         sources = [
             Source(
                 path=hit.source_path,

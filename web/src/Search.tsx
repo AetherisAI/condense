@@ -32,13 +32,25 @@ export default function Search({ token }: { token: string }) {
   const [result, setResult] = useState<SearchResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [recapEnabled, setRecapEnabled] = useState(() => {
+    const saved = localStorage.getItem('recapEnabled')
+    return saved === null ? true : saved === 'true'
+  })
+
+  function toggleRecap() {
+    setRecapEnabled((on) => {
+      const next = !on
+      localStorage.setItem('recapEnabled', String(next))
+      return next
+    })
+  }
 
   async function runSearch() {
     setError(null)
     setResult(null)
     setLoading(true)
     try {
-      const resp = await fetch(`/search?q=${encodeURIComponent(query)}`, {
+      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&recap=${recapEnabled}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!resp.ok) {
@@ -73,6 +85,14 @@ export default function Search({ token }: { token: string }) {
         </button>
       </div>
 
+      <label className="switch" title="Generate an AI summary of the best passage">
+        <input type="checkbox" checked={recapEnabled} onChange={toggleRecap} />
+        <span className="switch-track" aria-hidden="true">
+          <span className="switch-thumb" />
+        </span>
+        <span className="switch-label">AI recap</span>
+      </label>
+
       {error && <p className="error">{error}</p>}
 
       {loading && (
@@ -88,9 +108,11 @@ export default function Search({ token }: { token: string }) {
         <div className="result">
           {hasSources ? (
             <>
-              <div className="recap">
-                <ReactMarkdown>{result.summary}</ReactMarkdown>
-              </div>
+              {result.summary && (
+                <div className="recap">
+                  <ReactMarkdown>{result.summary}</ReactMarkdown>
+                </div>
+              )}
               <div className="sources">
                 <span className="sources-label">Source</span>
                 {result.sources.map((s, i) => (

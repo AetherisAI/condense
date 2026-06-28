@@ -115,6 +115,49 @@ async def test_recap_sees_query_and_top_passages() -> None:
         assert f"passage number {i} about topic {i}" in completer.user
 
 
+class _BoomCompleter:
+    """A completer that must never be called (proves recap was skipped)."""
+
+    async def complete(self, system: str, user: str) -> str:
+        raise AssertionError("completer must not be called when recap is off")
+
+
+async def _seed_one(store: FakeVectorStore, embedder: FakeEmbedder) -> None:
+    await _seed(
+        store,
+        embedder,
+        [Chunk(text="alpha about cats", source_path="cats.md", page=1, source_hash="h1", index=0)],
+    )
+
+
+async def test_recap_disabled_per_request_skips_completer() -> None:
+    embedder, store = FakeEmbedder(), FakeVectorStore()
+    await _seed_one(store, embedder)
+    pipeline = SearchPipeline(embedder, store, NullReranker(), _BoomCompleter(), _settings())
+
+    response = await pipeline.search("alpha about cats", recap=False)
+
+    # No LLM summary — just the source citation (doc + page + matched passage).
+    assert response.summary == ""
+    (source,) = response.sources
+    assert source.path == "cats.md"
+    assert source.page == 1
+    assert source.snippet == "alpha about cats"
+
+
+async def test_recap_disabled_by_config_default() -> None:
+    embedder, store = FakeEmbedder(), FakeVectorStore()
+    await _seed_one(store, embedder)
+    settings = Settings(ingest_token="t", final_k=1, retrieve_k=30, recap_enabled=False)
+    pipeline = SearchPipeline(embedder, store, NullReranker(), _BoomCompleter(), settings)
+
+    # recap omitted (None) → falls back to the RECAP_ENABLED=False default.
+    response = await pipeline.search("alpha about cats")
+
+    assert response.summary == ""
+    assert response.sources[0].path == "cats.md"
+
+
 async def test_empty_store_returns_no_results() -> None:
     pipeline = SearchPipeline(
         FakeEmbedder(), FakeVectorStore(), NullReranker(), NullCompleter(), _settings()

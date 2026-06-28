@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     retrieve_k: int = 30
     final_k: int = 1
+    recap_enabled: bool = True
     recap_context_k: int = 3
     recap_max_tokens: int | None = 512
     recap_temperature: float = 0.3
