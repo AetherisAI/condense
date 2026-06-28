@@ -386,10 +386,16 @@ button:disabled {
   color: var(--text-h);
 }
 
-.mode-hint {
-  margin: -2px 0 0;
-  font-size: 12.5px;
+/* Little info glyph left of the mode label — reveals the mode description on hover. */
+.mode-info {
+  margin-right: 1px;
   color: var(--muted);
+  font-size: 13px;
+  cursor: help;
+  transition: color 0.15s ease;
+}
+.mode-info:hover {
+  color: #7c5cff;
 }
 
 /* ---- Machine mode: raw JSON ------------------------------------------------ */
