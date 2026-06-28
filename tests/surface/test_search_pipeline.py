@@ -69,8 +69,50 @@ async def test_search_returns_single_best_source() -> None:
     assert source.path == "dogs.md"
     assert source.page == 2
     assert source.score == pytest.approx(1.0)
-    # NullCompleter echoes the top chunk's text as the (un-summarized) recap.
-    assert response.summary == "beta passage about dogs"
+    # The matched passage + its ordinal are surfaced (the "where in the doc" hint).
+    assert source.snippet == "beta passage about dogs"
+    assert source.index == 0
+    # NullCompleter echoes the recap user turn — it carries the query and the cited passage.
+    assert response.summary.startswith("Question: beta passage about dogs")
+    assert "beta passage about dogs" in response.summary
+
+
+class _CapturingCompleter:
+    """Records the (system, user) turns it is asked to complete."""
+
+    def __init__(self) -> None:
+        self.system = ""
+        self.user = ""
+
+    async def complete(self, system: str, user: str) -> str:
+        self.system, self.user = system, user
+        return "recap"
+
+
+async def test_recap_sees_query_and_top_passages() -> None:
+    embedder = FakeEmbedder()
+    store = FakeVectorStore()
+    chunks = [
+        Chunk(
+            text=f"passage number {i} about topic {i}",
+            source_path=f"d{i}.md",
+            page=1,
+            source_hash=f"h{i}",
+            index=i,
+        )
+        for i in range(3)
+    ]
+    await _seed(store, embedder, chunks)
+    completer = _CapturingCompleter()
+    settings = Settings(ingest_token="t", final_k=1, retrieve_k=30, recap_context_k=3)
+    pipeline = SearchPipeline(embedder, store, NullReranker(), completer, settings)
+
+    await pipeline.search("passage number 1 about topic 1")
+
+    # The recap user turn leads with the question and includes all top-K passages as context.
+    assert completer.user.startswith("Question: passage number 1 about topic 1")
+    for i in range(3):
+        assert f"passage number {i} about topic {i}" in completer.user
 
 
 async def test_empty_store_returns_no_results() -> None:

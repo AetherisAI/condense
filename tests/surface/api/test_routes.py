@@ -103,12 +103,14 @@ def test_search_returns_best_source(client: TestClient) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    # NullCompleter echoes the exact-match chunk; FINAL_K == 1 → exactly one citation.
-    assert body["summary"] == _SEED_TEXT
+    # NullCompleter echoes the recap user turn (query + cited passage); FINAL_K == 1 → one citation.
+    assert _SEED_TEXT in body["summary"]
     (source,) = body["sources"]
     assert source["path"] == _SEED_PATH
     assert source["page"] == 1
     assert source["score"] == pytest.approx(1.0)
+    # The matched passage is surfaced so the UI can show *where* in the doc the answer is.
+    assert source["snippet"] == _SEED_TEXT
 
 
 def test_ingest_indexes_uploaded_file(client: TestClient) -> None:

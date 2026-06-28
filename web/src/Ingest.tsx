@@ -72,10 +72,10 @@ export default function Ingest({ token }: { token: string }) {
       </div>
       {error && <p className="error">{error}</p>}
       {results && (
-        <ul className="result">
+        <ul className="ingest-results">
           {results.map((r, i) => (
             <li key={i}>
-              {r.path} — {r.status}
+              {r.path} — <span className={`status status-${r.status}`}>{r.status}</span>
               {r.chunks != null ? ` (${r.chunks} chunks)` : ''}
               {r.detail ? ` — ${r.detail}` : ''}
             </li>
