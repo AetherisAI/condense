@@ -46,6 +46,24 @@ class SiftClient:
         r.raise_for_status()
         return r.json()
 
+    def documents(self) -> tuple[bool, list[dict[str, Any]]]:
+        """Return ``(supported, documents)`` for the token's tenant.
+
+        ``documents`` is a list of ``{path, source_hash, chunks}``. ``supported`` is ``False``
+        when the configured store can't enumerate documents (then the list is empty) — the
+        agent treats that as "replace/delete unavailable" and falls back to add-only.
+        """
+        r = self._c.get("/documents")
+        r.raise_for_status()
+        body = r.json()
+        return bool(body.get("supported", True)), list(body.get("documents", []))
+
+    def delete_document(self, source_hash: str) -> int:
+        """Delete one indexed document by its content hash; return the chunk count removed."""
+        r = self._c.delete(f"/documents/{source_hash}")
+        r.raise_for_status()
+        return int(r.json()["deleted_chunks"])
+
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
         self._c.close()
