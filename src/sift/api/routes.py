@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 
 from sift.api.deps import get_container, resolve_tenant
 from sift.api.health import gather_components
@@ -22,11 +22,12 @@ from sift.api.schemas import (
     IngestStatus,
     ManifestResponse,
     SearchResponse,
+    SettingsPatch,
     StatusResponse,
 )
 from sift.config import Settings
 from sift.core.errors import ModelPinMismatch
-from sift.factory import Container
+from sift.factory import Container, build_container
 
 router = APIRouter()
 
@@ -44,6 +45,18 @@ def _redacted_settings(settings: Settings) -> dict[str, object]:
     return out
 
 
+async def _status_response(container: Container, tenant: str) -> StatusResponse:
+    """Build the shared /status payload: health, per-component probes, redacted config."""
+    settings = container.settings
+    components = await gather_components(settings, container.store, tenant)
+    return StatusResponse(
+        status="ok",
+        embed_model=settings.embed_model,
+        components=components,
+        settings=_redacted_settings(settings),
+    )
+
+
 @router.get("/healthz")
 async def healthz(
     container: Annotated[Container, Depends(get_container)],
@@ -58,14 +71,29 @@ async def status_(
     tenant: Annotated[str, Depends(resolve_tenant)],
 ) -> StatusResponse:
     """Health + the effective config for the debug panel — bearer-gated, secrets redacted."""
-    settings = container.settings
-    components = await gather_components(settings, container.store, tenant)
-    return StatusResponse(
-        status="ok",
-        embed_model=settings.embed_model,
-        components=components,
-        settings=_redacted_settings(settings),
-    )
+    return await _status_response(container, tenant)
+
+
+@router.patch("/settings")
+async def update_settings(
+    patch: SettingsPatch,
+    request: Request,
+    container: Annotated[Container, Depends(get_container)],
+    tenant: Annotated[str, Depends(resolve_tenant)],
+) -> StatusResponse:
+    """Edit safe tuning settings on the fly (bearer-gated).
+
+    Only the allowlisted fields on :class:`SettingsPatch` are accepted (others → 422). The
+    new settings rebuild the wired container in place, so the change applies to the next
+    request — no restart. Returns the fresh status (with the updated, redacted config).
+    """
+    updates = patch.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no settings given")
+    updated = container.settings.model_copy(update=updates)
+    new_container = build_container(updated)
+    request.app.state.container = new_container
+    return await _status_response(new_container, tenant)
 
 
 @router.get("/search")
