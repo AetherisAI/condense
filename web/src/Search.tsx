@@ -191,7 +191,7 @@ export default function Search({ token }: { token: string }) {
           <input
             type="checkbox"
             role="switch"
-            checked={mode === 'machine'}
+            checked={mode === 'human'}
             onChange={toggleMode}
             aria-label={`Output mode: ${mode}`}
           />

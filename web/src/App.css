@@ -355,7 +355,7 @@ button:disabled {
 .mode-switch .switch-track {
   width: 52px;
   height: 28px;
-  background: #7c5cff; /* Human (default, unchecked) — blue-purple, matches the buttons/logo */
+  background: #1d1d1f; /* Machine (unchecked, left) — graphite */
   transition: background 0.2s ease;
 }
 
@@ -365,17 +365,17 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #7c5cff; /* glyph colour while Human — matches the buttons */
+  color: #1d1d1f; /* glyph colour while Machine */
   transition: transform 0.2s ease, color 0.2s ease;
 }
 
 .mode-switch input:checked + .switch-track {
-  background: #1d1d1f; /* Machine — graphite */
+  background: #7c5cff; /* Human (checked, right) — blue-purple, matches the buttons/logo */
 }
 
 .mode-switch input:checked + .switch-track .switch-thumb {
   transform: translateX(24px);
-  color: #1d1d1f; /* glyph colour while Machine */
+  color: #7c5cff; /* glyph colour while Human — matches the buttons */
 }
 
 .mode-switch input:focus-visible + .switch-track {
@@ -424,7 +424,7 @@ button:disabled {
 
 .mode-switch .switch-label {
   min-width: 58px; /* reserve space so the row doesn't jump on Human↔Machine */
-  color: var(--text-h);
+  color: var(--muted); /* match the AI recap label */
 }
 
 /* Little info glyph left of the mode label — reveals the mode description on hover/focus. */
@@ -746,26 +746,47 @@ button:disabled {
   position: fixed;
   top: 16px;
   right: 16px;
-  z-index: 10;
+  z-index: 10; /* just the chip — its drawer/backdrop render at root and layer above this */
   font-size: 13px;
 }
 
-/* Light chip — overrides the global graphite button. */
+/* Same pill as the Library FAB (.library-fab), but white — the System counterpart. */
 .sys-chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
   background: var(--bg);
-  color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-weight: 500;
-  box-shadow: var(--shadow-sm);
+  border-radius: 980px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.06s ease;
 }
 .sys-chip:hover:not(:disabled) {
-  background: var(--bg);
+  background: var(--page-bg);
   border-color: var(--muted);
+}
+.sys-chip:active {
+  transform: scale(0.97);
+}
+
+/* Gear icon doubles as the health light: purple = ok, red = down, grey = unknown. */
+.sys-gear {
+  color: var(--muted);
+  transition: color 0.18s ease;
+}
+.sys-gear-up {
+  color: #7c5cff;
+}
+.sys-gear-down {
+  color: var(--error);
 }
 
 .sys-dot {
@@ -785,36 +806,6 @@ button:disabled {
   box-shadow: 0 0 0 3px rgba(179, 38, 30, 0.16);
 }
 
-.sys-caret {
-  color: var(--muted);
-  transition: transform 0.18s ease;
-}
-.sys-caret.open {
-  transform: rotate(180deg);
-}
-
-.sys-pop {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 320px;
-  max-width: 86vw;
-  max-height: 72vh;
-  overflow: auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 14px 16px;
-}
-
-.sys-pop-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-h);
-  font-size: 14px;
-}
 .sys-muted {
   color: var(--muted);
   font-weight: 400;
