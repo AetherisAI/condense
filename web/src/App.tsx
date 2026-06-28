@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Search from './Search'
 import Ingest from './Ingest'
 import Library from './Library'
@@ -8,16 +8,21 @@ import SystemMenu from './SystemMenu'
 import './App.css'
 
 /**
- * Top-level test UI. Holds the one shared bearer token in state and hands it to
- * both panels; everything else (search, ingest) is same-origin via the Vite proxy.
+ * Top-level test UI. Holds the one shared bearer token — entered in the System menu and
+ * persisted to localStorage so it survives refreshes — and hands it to every panel.
  */
 export default function App() {
-  const [token, setToken] = useState('')
+  const [token, setToken] = useState(() => localStorage.getItem('bearerToken') ?? '')
+
+  // Persist the token so it doesn't have to be re-entered on every page refresh.
+  useEffect(() => {
+    localStorage.setItem('bearerToken', token)
+  }, [token])
 
   return (
     <>
       <SlashField />
-      <SystemMenu token={token} />
+      <SystemMenu token={token} setToken={setToken} />
       <main className="app">
       <header className="app-header">
         <div className="brand">
@@ -27,19 +32,8 @@ export default function App() {
         <p className="tagline">Search across all your knowledge</p>
       </header>
 
-      <label className="token">
-        Token
-        <input
-          type="password"
-          value={token}
-          placeholder="bearer token"
-          autoComplete="off"
-          onChange={(e) => setToken(e.target.value)}
-        />
-      </label>
-
-      <Search token={token} />
-      <Ingest token={token} />
+        <Search token={token} />
+        <Ingest token={token} />
       </main>
       <Library token={token} />
     </>
