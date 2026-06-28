@@ -36,6 +36,10 @@ class Settings(BaseSettings):
 
     retrieve_k: int = 30
     final_k: int = 1
+    recap_context_k: int = 3
+    recap_max_tokens: int | None = 512
+    recap_temperature: float = 0.3
+    source_snippet_chars: int = 300
 
     llm_base_url: str | None = None
     llm_model: str | None = None

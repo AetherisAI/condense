@@ -1,10 +1,13 @@
 import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 
 /** One citation as returned by ``GET /search`` (mirrors api.schemas.Source). */
 type Source = {
   path: string
   page: number
   score: number
+  snippet: string
+  index?: number | null
 }
 
 /** Response body of ``GET /search`` (mirrors api.schemas.SearchResponse). */
@@ -13,9 +16,16 @@ type SearchResponse = {
   sources: Source[]
 }
 
+/** Just the file name, so long ingest paths don't blow out the citation. */
+function fileName(path: string): string {
+  const parts = path.split(/[/\\]/)
+  return parts[parts.length - 1] || path
+}
+
 /**
- * Search panel: type a query, GET /search?q=… with the shared bearer token,
- * then render the recap plus its source citations as `path:page (score)`.
+ * Search panel: type a question, GET /search?q=… with the shared bearer token,
+ * then render the recap (markdown) plus the best source — its page, relevance,
+ * and the matched passage so you can see *where* in the document it came from.
  */
 export default function Search({ token }: { token: string }) {
   const [query, setQuery] = useState('')
@@ -43,8 +53,10 @@ export default function Search({ token }: { token: string }) {
     }
   }
 
+  const hasSources = result != null && result.sources.length > 0
+
   return (
-    <section className="panel">
+    <section className="panel search">
       <h2>Search</h2>
       <div className="row">
         <input
@@ -60,17 +72,47 @@ export default function Search({ token }: { token: string }) {
           {loading ? 'Searching…' : 'Search'}
         </button>
       </div>
+
       {error && <p className="error">{error}</p>}
-      {result && (
+
+      {loading && (
+        <div className="skeleton" aria-hidden="true">
+          <div className="skeleton-line" />
+          <div className="skeleton-line" />
+          <div className="skeleton-line" />
+          <div className="skeleton-line" />
+        </div>
+      )}
+
+      {!loading && result && (
         <div className="result">
-          <p className="summary">{result.summary}</p>
-          <ul>
-            {result.sources.map((s, i) => (
-              <li key={i}>
-                {s.path}:{s.page} ({s.score.toFixed(3)})
-              </li>
-            ))}
-          </ul>
+          {hasSources ? (
+            <>
+              <div className="recap">
+                <ReactMarkdown>{result.summary}</ReactMarkdown>
+              </div>
+              <div className="sources">
+                <span className="sources-label">Source</span>
+                {result.sources.map((s, i) => (
+                  <div className="source" key={i}>
+                    <div className="source-head">
+                      <span className="source-path" title={s.path}>
+                        {fileName(s.path)}
+                      </span>
+                      <span className="badge badge-page">p. {s.page}</span>
+                      <span className="badge badge-score">{(s.score * 100).toFixed(0)}% match</span>
+                      {s.index != null && (
+                        <span className="badge badge-passage">passage #{s.index}</span>
+                      )}
+                    </div>
+                    {s.snippet && <blockquote className="snippet">“{s.snippet}”</blockquote>}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="empty">No matching passage found. Try rephrasing, or ingest more files.</p>
+          )}
         </div>
       )}
     </section>

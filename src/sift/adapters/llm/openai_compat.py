@@ -19,21 +19,30 @@ class OpenAICompatCompleter:
         base_url: str,
         model: str,
         api_key: str | None = None,
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key
+        self._max_tokens = max_tokens
+        self._temperature = temperature
 
     async def complete(self, system: str, user: str) -> str:
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-        payload = {
+        payload: dict[str, object] = {
             "model": self._model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
-        async with httpx.AsyncClient() as client:
+        if self._max_tokens is not None:
+            payload["max_tokens"] = self._max_tokens
+        if self._temperature is not None:
+            payload["temperature"] = self._temperature
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
             response = await client.post(
                 f"{self._base_url}/chat/completions", json=payload, headers=headers
             )
