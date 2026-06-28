@@ -124,9 +124,7 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
 
             parser = OcrFallbackParser(
                 parser,
-                MistralOcr(
-                    settings.ocr_base_url, settings.ocr_model, settings.ocr_api_key
-                ),
+                MistralOcr(settings.ocr_base_url, settings.ocr_model, settings.ocr_api_key),
             )
 
         return IngestPipeline(
