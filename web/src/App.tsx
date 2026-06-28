@@ -12,17 +12,22 @@ export default function App() {
 
   return (
     <main className="app">
-      <h1>Condense</h1>
+      <header className="app-header">
+        <h1>Condense</h1>
+        <p className="tagline">Ask a question — get the single best answer with its source.</p>
+      </header>
+
       <label className="token">
-        Bearer token
+        Token
         <input
           type="password"
           value={token}
-          placeholder="INGEST_TOKEN"
+          placeholder="bearer token"
           autoComplete="off"
           onChange={(e) => setToken(e.target.value)}
         />
       </label>
+
       <Search token={token} />
       <Ingest token={token} />
     </main>
