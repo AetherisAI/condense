@@ -793,3 +793,182 @@ button:disabled {
 .sys-docs:hover {
   text-decoration: underline;
 }
+
+/* ---- Documents: drop zone + queued list ------------------------------------ */
+.ingest-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ingest-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 30px 20px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--page-bg);
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.dropzone:hover {
+  border-color: #7c5cff;
+  color: var(--text-h);
+}
+
+.dropzone:focus-visible {
+  outline: none;
+  border-color: #7c5cff;
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+}
+
+.dropzone.dragging {
+  border-color: #7c5cff;
+  background: rgba(124, 92, 255, 0.06);
+  color: var(--text-h);
+}
+
+.dropzone-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #7c5cff;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.dropzone-sub {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.doc-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.doc-item.doc-failed {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.doc-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 40px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+}
+
+.doc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.doc-item.doc-indexed .doc-sub {
+  color: #1a7f4b;
+}
+
+.doc-badge {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.doc-indexed .doc-badge {
+  color: #22a06b;
+}
+
+.doc-skipped_dedup .doc-badge {
+  color: var(--muted);
+}
+
+.doc-failed .doc-badge {
+  color: var(--error);
+}
+
+.doc-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border-strong);
+  border-top-color: #7c5cff;
+  border-radius: 50%;
+  animation: doc-spin 0.7s linear infinite;
+}
+
+@keyframes doc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
