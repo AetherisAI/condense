@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { makeThumbnail } from './thumbnail'
 
 /** Per-file outcome from ``POST /ingest`` (mirrors api.schemas.IngestFileResult). */
 type IngestFileResult = {
@@ -25,6 +26,7 @@ type UploadItem = {
   status: ItemStatus
   chunks?: number | null
   detail?: string | null
+  thumb?: string | null
 }
 
 /** Extension → a coloured type-chip, so the list shows *what* each file is at a glance. */
@@ -107,6 +109,14 @@ export default function Ingest({ token }: { token: string }) {
     }))
     setItems((prev) => [...batch, ...prev]) // newest on top
     const ids = new Set(batch.map((b) => b.id))
+
+    // Thumbnails render in-browser, independent of upload — fill each in as it resolves.
+    batch.forEach((b, i) => {
+      void makeThumbnail(picked[i]).then((thumb) => {
+        if (!thumb) return
+        setItems((prev) => prev.map((it) => (it.id === b.id ? { ...it, thumb } : it)))
+      })
+    })
 
     try {
       const form = new FormData()
@@ -207,9 +217,13 @@ export default function Ingest({ token }: { token: string }) {
         <ul className="doc-list">
           {items.map((it) => (
             <li className={`doc-item doc-${it.status}`} key={it.id}>
-              <span className="doc-icon" style={{ background: tintFor(it.name) }}>
-                {(extOf(it.name) || 'file').slice(0, 4).toUpperCase()}
-              </span>
+              {it.thumb ? (
+                <img className="doc-thumb" src={it.thumb} alt="" />
+              ) : (
+                <span className="doc-icon" style={{ background: tintFor(it.name) }}>
+                  {(extOf(it.name) || 'file').slice(0, 4).toUpperCase()}
+                </span>
+              )}
               <span className="doc-meta">
                 <span className="doc-name" title={it.name}>
                   {it.name}
