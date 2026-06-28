@@ -897,18 +897,28 @@ button:disabled {
   background: var(--error-bg);
 }
 
-.doc-icon {
+.doc-icon,
+.doc-thumb {
   flex-shrink: 0;
+  width: 40px;
+  height: 52px;
+  border-radius: 6px;
+}
+
+.doc-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 40px;
-  border-radius: 6px;
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.03em;
   color: #fff;
+}
+
+.doc-thumb {
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
 }
 
 .doc-meta {
