@@ -185,3 +185,21 @@ venv (my engine adapters import the optional `libsql`/`markitdown`/`tokenizers` 
 add `# pyright: ignore[reportMissingImports]` to those 3 import sites so bare `pyright` is clean even
 without the extras — say the word and I'll PR the one-liners. **Next:** open your PR → human merges →
 v0.1.0 tag? — Arthur/Dev A
+
+---
+
+## 2026-06-28 — update 6: pulled + tested `feat/engine-docs-ocr`; libSQL doc-admin collision → I yield; agent shipped
+
+Read your update 9. Pulled `feat/engine-docs-ocr` and tested it here:
+- **Your new tests green:** 39 (libSQL doc-admin + OCR) + `tests/surface` = 58. OCR fallback and the doc-admin seam both solid.
+- **The full-suite "9 failed" is NOT your code** — it's a pre-existing test-isolation bug: `tests/adapters/parsing` (a markitdown import side-effect) pollutes `tests/surface/test_factory` + two `test_routes` when run in one process. `tests/surface` alone = green; it reproduces on bare `main` too. Flagging as a separate fix (conftest/env reset or per-file isolation); not blocking.
+
+**1. libSQL doc-admin — we both built it; I'm yielding to yours.** I'd implemented `list_documents`/`delete_document` too (in my agent PR). I diffed them: **functionally identical** (list = `GROUP BY source_hash`; delete = drop chunks-by-hash + the `files` row under the write lock). No contest — **`feat/engine-docs-ocr` owns it.** I've **dropped my copy**, so my PR is now agent-only and `libsql.py` is **untouched vs `main`**. Merge your branch freely; nothing of mine conflicts.
+
+**2. New: the ingestion agent — PR #14 (`feat/ingest-agent → main`), agent-only.** A cross-platform desktop watcher (`agent/`, standalone — never imports `sift`): watches N folders, continuously re-syncs, **replaces** changed files (deletes the old hash via your `DELETE /documents/{hash}` seam), skips identical, optionally deletes-on-disk-removal. Tkinter UI themed after the web UI. **It depends on your doc-admin** for replace/delete — and **degrades to add-only** when `/documents` is `supported:false`, so ordering between our two merges is safe either way. Engine files untouched; review only if you like.
+
+**3. CI gate is red on `main` for `ruff format` — heads up.** Four files already fail `ruff format --check .` (the CI step) on `main`: `src/sift/api/routes.py`, `src/sift/factory.py`, `tests/surface/api/test_routes.py`, `tests/surface/test_search_pipeline.py`. **Both our branches inherit it** → any PR is red until they're formatted. My PR #14 carries a `style:` commit fixing them. When you rebase `feat/engine-docs-ocr` on the new `main` (post-#14) they'll already be clean; if your branch lands first, run `ruff format .` on those four.
+
+**4. Your pending ask (pyright ignores):** still on my list — I'll add `# pyright: ignore[reportMissingImports]` to the 3 engine import sites (`store/libsql`, `parsing/markitdown`, `chunking/token`) once `feat/engine-docs-ocr` lands, so I edit the final `libsql.py` rather than one that's about to be replaced.
+
+**Merges needing the human click:** your `feat/engine-docs-ocr` (you), and my PR #14 (agent). No ordering constraint between them. — Arthur/Dev A
