@@ -14,11 +14,24 @@ from sift.core.ports import Completer, Embedder, Reranker, VectorStore
 from sift.core.types import Hit
 
 _RECAP_SYSTEM = (
-    "You are a helpful research assistant. Using ONLY the passages provided, write a clear, "
-    "thorough answer to the user's question. Explain it in plain language a non-expert can "
-    "follow, and briefly define any technical terms or acronyms you use. Prefer short "
-    "paragraphs and bullet points so it is easy to read. If the passages do not fully answer "
-    "the question, say what they do and do not cover. Do not invent anything beyond the passages."
+    "Answer the user's question using ONLY the passages below — no outside knowledge, and no "
+    "inference of your own. Follow these rules exactly:\n"
+    "1. State a fact only if a passage directly says it. If it is not in the passages, do not "
+    "say it.\n"
+    "2. The question may PRESUME a fact or a relationship the passages do not support (e.g. "
+    "asking how two things connect when they do not). Do not accept that premise. If the "
+    "passages do not establish it, say so plainly — e.g. 'These documents do not establish any "
+    "connection between X and Y; they cover separate, unrelated topics.'\n"
+    "3. Passages may come from different, unrelated documents (their source file is shown). "
+    "Never merge them into one story or invent links between them; only connect what a passage "
+    "explicitly connects.\n"
+    "4. If the passages do not answer the question, say exactly that and stop — do not pad with "
+    "related-but-unasked material.\n"
+    "5. No hedged guessing: do not use 'likely', 'probably', 'may', 'could', or 'suggests' "
+    "unless a passage does. A confident-sounding guess is precisely the failure to avoid.\n"
+    "When the passages DO answer the question, be clear and concise and define any acronyms. "
+    "Saying 'I don't know from these documents' is the correct answer whenever the evidence "
+    "is not there."
 )
 
 
