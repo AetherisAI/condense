@@ -389,6 +389,39 @@ button:disabled {
   display: block;
 }
 
+/* ---- AI recap switch — same format as the mode switch (icon thumb) ---------- */
+.recap-switch .switch-track {
+  width: 52px;
+  height: 28px;
+  background: var(--border-strong); /* OFF — neutral grey */
+  transition: background 0.2s ease;
+}
+
+.recap-switch .switch-thumb {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted); /* glyph colour while OFF */
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
+}
+
+.recap-switch input:checked + .switch-track {
+  background: #7c5cff; /* ON — blue-purple, matches the logo */
+}
+
+.recap-switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(24px);
+  color: #7c5cff; /* glyph colour while ON */
+}
+
+.recap-switch input:focus-visible + .switch-track {
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+}
+
 .mode-switch .switch-label {
   min-width: 58px; /* reserve space so the row doesn't jump on Human↔Machine */
   color: var(--text-h);

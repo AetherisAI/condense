@@ -53,6 +53,28 @@ function RobotGlyph() {
   )
 }
 
+/** Sparkle — the AI-recap-ON glyph carried in the toggle thumb. */
+function SparkleGlyph() {
+  return (
+    <svg className="mode-glyph" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 1.4l1.5 4.1 4.1 1.5-4.1 1.5L8 12.6 6.5 8.5 2.4 7l4.1-1.5z" />
+      <circle cx="12.7" cy="12.4" r="1.3" />
+    </svg>
+  )
+}
+
+/** Document lines — the AI-recap-OFF glyph (raw source, no summary). */
+function SourceGlyph() {
+  return (
+    <svg className="mode-glyph" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="3.5" y="2.5" width="9" height="11" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <line x1="5.7" y1="6" x2="10.3" y2="6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <line x1="5.7" y1="8.3" x2="10.3" y2="8.3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <line x1="5.7" y1="10.6" x2="8.6" y2="10.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 /**
  * Search panel with two output modes (the choice lives entirely here in the UI):
  *  - Human   → conversational AI recap (markdown) + readable source cards.
@@ -144,7 +166,10 @@ export default function Search({ token }: { token: string }) {
       </div>
 
       <div className="controls">
-        <label className="switch" title="On = AI answer + source · Off = just the source">
+        <label
+          className="switch recap-switch"
+          title="On = AI answer + source · Off = just the source"
+        >
           <input
             type="checkbox"
             role="switch"
@@ -153,7 +178,7 @@ export default function Search({ token }: { token: string }) {
             aria-label="AI recap"
           />
           <span className="switch-track" aria-hidden="true">
-            <span className="switch-thumb" />
+            <span className="switch-thumb">{recapEnabled ? <SparkleGlyph /> : <SourceGlyph />}</span>
           </span>
           <span className="switch-label">AI recap</span>
         </label>
