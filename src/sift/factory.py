@@ -54,13 +54,9 @@ class _StubIngest:
     integration time.
     """
 
-    async def ingest(
-        self, files: Sequence[tuple[str, bytes]], tenant: str
-    ) -> list[IngestOutcome]:
+    async def ingest(self, files: Sequence[tuple[str, bytes]], tenant: str) -> list[IngestOutcome]:
         return [
-            IngestOutcome(
-                path=name, status="indexed", content_hash=content_hash(data), chunks=1
-            )
+            IngestOutcome(path=name, status="indexed", content_hash=content_hash(data), chunks=1)
             for name, data in files
         ]
 
@@ -103,9 +99,7 @@ def _build_store(settings: Settings) -> VectorStore:
     return FakeVectorStore()
 
 
-def _build_ingest(
-    settings: Settings, embedder: Embedder, store: VectorStore
-) -> SupportsIngest:
+def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) -> SupportsIngest:
     """The real :class:`IngestPipeline` when a Turso store is configured, else the stub.
 
     Parser/chunker (markitdown, tokenizers) are imported lazily inside the real branch so the

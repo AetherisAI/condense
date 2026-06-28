@@ -36,9 +36,7 @@ from sift.pipelines.documents import SupportsDocumentAdmin
 router = APIRouter()
 
 # Never serialize these back to a client — only whether they are configured.
-_SECRET_KEYS = frozenset(
-    {"turso_auth_token", "embed_api_key", "llm_api_key", "ingest_token"}
-)
+_SECRET_KEYS = frozenset({"turso_auth_token", "embed_api_key", "llm_api_key", "ingest_token"})
 
 
 def _redacted_settings(settings: Settings) -> dict[str, object]:
@@ -188,6 +186,4 @@ async def delete_document(
             detail="document admin not supported by the configured store",
         )
     deleted = await store.delete_document(source_hash, tenant)
-    return DeleteDocumentResponse(
-        tenant=tenant, source_hash=source_hash, deleted_chunks=deleted
-    )
+    return DeleteDocumentResponse(tenant=tenant, source_hash=source_hash, deleted_chunks=deleted)
