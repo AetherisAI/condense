@@ -197,9 +197,7 @@ def test_ingest_indexes_uploaded_file(client: TestClient) -> None:
 
 
 def test_ingest_requires_auth(client: TestClient) -> None:
-    response = client.post(
-        "/ingest", files=[("files", ("notes.txt", b"hi", "text/plain"))]
-    )
+    response = client.post("/ingest", files=[("files", ("notes.txt", b"hi", "text/plain"))])
 
     assert response.status_code == 401
 

@@ -34,8 +34,7 @@ async def _seed(store: FakeVectorStore, embedder: FakeEmbedder, chunks: list[Chu
     await store.ensure_ready(MODEL, embedder.dim, TENANT)
     vectors = await embedder.embed([chunk.text for chunk in chunks])
     embedded = [
-        replace(chunk, vector=vector)
-        for chunk, vector in zip(chunks, vectors, strict=True)
+        replace(chunk, vector=vector) for chunk, vector in zip(chunks, vectors, strict=True)
     ]
     await store.upsert(embedded, TENANT)
 
