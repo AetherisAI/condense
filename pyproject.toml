@@ -24,10 +24,16 @@ store = ["libsql"]            # the current SDK; libsql-client/-experimental are
 parsing = ["markitdown[pdf,docx,pptx,xlsx]"]  # format converters: bare markitdown can't read PDFs
 chunking = ["tokenizers", "huggingface-hub", "tiktoken"]  # bge-m3 tokenizer (default) + tiktoken fallback
 inference = ["httpx"]
-agent = ["httpx"]
+# The standalone ingestion agent: HTTP client + cross-platform file watching + per-user config.
+# The desktop app's UI is stdlib Tkinter (no pip dep; on Ubuntu install the `python3-tk` package).
+agent = ["httpx", "watchdog", "platformdirs"]
+
+[project.scripts]
+sift-agent = "agent.app:main"     # the small always-on desktop watcher (Tkinter)
+sift-ingest = "agent.cli:main"    # one-shot / --watch headless ingestion
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/sift"]
+packages = ["src/sift", "agent"]
 
 [tool.ruff]
 target-version = "py312"
