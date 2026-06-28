@@ -141,7 +141,11 @@ def _build_completer(settings: Settings) -> Completer:
         if not settings.llm_model:
             raise ValueError("LLM_BASE_URL is set but LLM_MODEL is missing")
         return OpenAICompatCompleter(
-            settings.llm_base_url, settings.llm_model, settings.llm_api_key
+            settings.llm_base_url,
+            settings.llm_model,
+            settings.llm_api_key,
+            max_tokens=settings.recap_max_tokens,
+            temperature=settings.recap_temperature,
         )
     return NullCompleter()
 

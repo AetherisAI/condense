@@ -16,12 +16,20 @@ from sift.api.schemas import (
 def test_search_response_roundtrip() -> None:
     resp = SearchResponse(
         summary="the sky is blue",
-        sources=[Source(path="a.md", page=1, score=0.97)],
+        sources=[Source(path="a.md", page=1, score=0.97, snippet="the sky is blue", index=4)],
     )
     dumped = resp.model_dump()
     assert dumped == {
         "summary": "the sky is blue",
-        "sources": [{"path": "a.md", "page": 1, "score": 0.97}],
+        "sources": [
+            {
+                "path": "a.md",
+                "page": 1,
+                "score": 0.97,
+                "snippet": "the sky is blue",
+                "index": 4,
+            }
+        ],
     }
     assert SearchResponse.model_validate(dumped) == resp
 

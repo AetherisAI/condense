@@ -44,11 +44,13 @@ class ManifestResponse(BaseModel):
 
 
 class Source(BaseModel):
-    """A single citation: where the answer came from and how relevant it scored."""
+    """A single citation: where the answer came from, the matched passage, and its score."""
 
     path: str
     page: int
     score: float
+    snippet: str = ""  # the matched passage text (truncated) — shows *where* in the doc
+    index: int | None = None  # 0-based chunk ordinal within the document, when known
 
 
 class SearchResponse(BaseModel):

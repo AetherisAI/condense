@@ -75,6 +75,32 @@ async def test_no_api_key_omits_auth_header(monkeypatch: pytest.MonkeyPatch) -> 
     assert "authorization" not in request.headers
 
 
+async def test_generation_params_included_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _patch_transport(monkeypatch, _ok)
+    completer = OpenAICompatCompleter(
+        base_url="http://llm/v1", model="gpt", max_tokens=256, temperature=0.2
+    )
+
+    await completer.complete("sys", "usr")
+
+    (request,) = seen
+    body = json.loads(request.content)
+    assert body["max_tokens"] == 256
+    assert body["temperature"] == 0.2
+
+
+async def test_generation_params_omitted_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _patch_transport(monkeypatch, _ok)
+    completer = OpenAICompatCompleter(base_url="http://llm/v1", model="gpt")
+
+    await completer.complete("sys", "usr")
+
+    (request,) = seen
+    body = json.loads(request.content)
+    assert "max_tokens" not in body
+    assert "temperature" not in body
+
+
 async def test_null_completer_echoes_user() -> None:
     completer = NullCompleter()
 
