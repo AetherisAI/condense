@@ -11,7 +11,7 @@ import math
 from collections.abc import Sequence
 
 from sift.core.errors import ModelPinMismatch, SiftError
-from sift.core.types import Chunk, Hit, Vector
+from sift.core.types import Chunk, DocumentInfo, Hit, Vector
 
 
 class FakeVectorStore:
@@ -73,6 +73,29 @@ class FakeVectorStore:
         if not rows:
             return set()
         return {chunk.source_hash for chunk in rows.values()}
+
+    async def list_documents(self, tenant: str) -> list[DocumentInfo]:
+        rows = self._rows.get(tenant)
+        if not rows:
+            return []
+        paths: dict[str, str] = {}
+        counts: dict[str, int] = {}
+        for chunk in rows.values():
+            paths.setdefault(chunk.source_hash, chunk.source_path)
+            counts[chunk.source_hash] = counts.get(chunk.source_hash, 0) + 1
+        return [
+            DocumentInfo(source_path=paths[h], source_hash=h, chunks=counts[h])
+            for h in sorted(counts)
+        ]
+
+    async def delete_document(self, source_hash: str, tenant: str) -> int:
+        rows = self._rows.get(tenant)
+        if not rows:
+            return 0
+        victims = [key for key in rows if key[0] == source_hash]
+        for key in victims:
+            del rows[key]
+        return len(victims)
 
 
 def _cosine(a: Vector, b: Vector) -> float:
