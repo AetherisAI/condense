@@ -13,6 +13,7 @@ export default defineConfig({
       '/search': API_TARGET,
       '/ingest': API_TARGET,
       '/ingest/manifest': API_TARGET,
+      '/documents': API_TARGET,
       '/healthz': API_TARGET,
       '/status': API_TARGET,
       '/docs': API_TARGET,
