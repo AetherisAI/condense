@@ -950,9 +950,7 @@ button:disabled {
   border-radius: 50%;
   background: #7c5cff;
   color: #fff;
-  font-size: 26px;
-  font-weight: 300;
-  line-height: 1;
+  flex-shrink: 0;
 }
 
 .dropzone-text {
