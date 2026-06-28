@@ -16,6 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, stat
 from sift.api.deps import get_container, resolve_tenant
 from sift.api.health import gather_components
 from sift.api.schemas import (
+    DeleteDocumentResponse,
+    DocumentsResponse,
+    DocumentSummary,
     HealthResponse,
     IngestFileResult,
     IngestResponse,
@@ -28,6 +31,7 @@ from sift.api.schemas import (
 from sift.config import Settings
 from sift.core.errors import ModelPinMismatch
 from sift.factory import Container, build_container
+from sift.pipelines.documents import SupportsDocumentAdmin
 
 router = APIRouter()
 
@@ -144,3 +148,46 @@ async def ingest(
         for outcome in outcomes
     ]
     return IngestResponse(tenant=tenant, results=results)
+
+
+@router.get("/documents")
+async def list_documents(
+    container: Annotated[Container, Depends(get_container)],
+    tenant: Annotated[str, Depends(resolve_tenant)],
+) -> DocumentsResponse:
+    """The tenant's ingested source files (one row per file) — for the admin/management panel.
+
+    Depends on the structural :class:`~sift.pipelines.documents.SupportsDocumentAdmin` seam, not a
+    concrete store: a store that can't enumerate documents degrades to ``supported=false`` rather
+    than erroring, so the UI just hides the panel.
+    """
+    store = container.store
+    if not isinstance(store, SupportsDocumentAdmin):
+        return DocumentsResponse(tenant=tenant, documents=[], supported=False)
+    docs = await store.list_documents(tenant)
+    return DocumentsResponse(
+        tenant=tenant,
+        documents=[
+            DocumentSummary(path=d.source_path, source_hash=d.source_hash, chunks=d.chunks)
+            for d in docs
+        ],
+    )
+
+
+@router.delete("/documents/{source_hash}")
+async def delete_document(
+    source_hash: str,
+    container: Annotated[Container, Depends(get_container)],
+    tenant: Annotated[str, Depends(resolve_tenant)],
+) -> DeleteDocumentResponse:
+    """Drop an ingested file's chunks by its ``source_hash`` — 501 if the store can't do admin."""
+    store = container.store
+    if not isinstance(store, SupportsDocumentAdmin):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="document admin not supported by the configured store",
+        )
+    deleted = await store.delete_document(source_hash, tenant)
+    return DeleteDocumentResponse(
+        tenant=tenant, source_hash=source_hash, deleted_chunks=deleted
+    )

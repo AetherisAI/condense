@@ -44,6 +44,34 @@ class ManifestResponse(BaseModel):
     hashes: list[str]
 
 
+class DocumentSummary(BaseModel):
+    """One ingested source file in the document-admin listing (aggregated from its chunks)."""
+
+    path: str
+    source_hash: str
+    chunks: int
+
+
+class DocumentsResponse(BaseModel):
+    """Response for ``GET /documents`` — the tenant's ingested files.
+
+    ``supported`` is ``False`` when the configured store does not implement the document-admin
+    seam, so the UI can hide the panel instead of treating it as an error.
+    """
+
+    tenant: str
+    documents: list[DocumentSummary]
+    supported: bool = True
+
+
+class DeleteDocumentResponse(BaseModel):
+    """Response for ``DELETE /documents/{source_hash}`` — how many chunks were removed."""
+
+    tenant: str
+    source_hash: str
+    deleted_chunks: int
+
+
 class Source(BaseModel):
     """A single citation: where the answer came from, the matched passage, and its score."""
 
