@@ -69,10 +69,22 @@ export default function Search({ token }: { token: string }) {
     localStorage.getItem('searchMode') === 'machine' ? 'machine' : 'human',
   )
 
+  const [recapEnabled, setRecapEnabled] = useState(
+    () => localStorage.getItem('recapEnabled') !== 'false',
+  )
+
   function toggleMode() {
     setMode((m) => {
       const next: Mode = m === 'human' ? 'machine' : 'human'
       localStorage.setItem('searchMode', next)
+      return next
+    })
+  }
+
+  function toggleRecap() {
+    setRecapEnabled((on) => {
+      const next = !on
+      localStorage.setItem('recapEnabled', String(next))
       return next
     })
   }
@@ -83,9 +95,8 @@ export default function Search({ token }: { token: string }) {
     setCopied(false)
     setLoading(true)
     try {
-      // Human asks for the AI recap; Machine skips it (recap=false → no LLM, raw results only).
-      const recap = mode === 'human'
-      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&recap=${recap}`, {
+      // The AI-recap toggle drives the engine's recap flag (off → no LLM summary, just sources).
+      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&recap=${recapEnabled}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!resp.ok) {
@@ -111,8 +122,8 @@ export default function Search({ token }: { token: string }) {
   const hasSources = result != null && result.sources.length > 0
   const modeHint =
     mode === 'human'
-      ? 'Conversational AI answer synthesised from the best passages, with its source.'
-      : 'Raw reranker results as JSON — no LLM call. For tools & integrations.'
+      ? 'Readable answer and source cards.'
+      : 'Raw results as JSON — for tools & integrations.'
 
   return (
     <section className="panel search">
@@ -132,32 +143,51 @@ export default function Search({ token }: { token: string }) {
         </button>
       </div>
 
-      <label
-        className="switch mode-switch"
-        data-mode={mode}
-        title="Human = conversational AI answer · Machine = raw JSON results for tools"
-      >
-        <input
-          type="checkbox"
-          role="switch"
-          checked={mode === 'machine'}
-          onChange={toggleMode}
-          aria-label={`Output mode: ${mode}`}
-        />
-        <span className="switch-track" aria-hidden="true">
-          <span className="switch-thumb">{mode === 'human' ? <HumanGlyph /> : <RobotGlyph />}</span>
-        </span>
-        <span
-          className="mode-info"
-          role="img"
-          aria-label={modeHint}
-          title={modeHint}
-          onClick={(e) => e.preventDefault()}
+      <div className="controls">
+        <label className="switch" title="On = AI answer + source · Off = just the source">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={recapEnabled}
+            onChange={toggleRecap}
+            aria-label="AI recap"
+          />
+          <span className="switch-track" aria-hidden="true">
+            <span className="switch-thumb" />
+          </span>
+          <span className="switch-label">AI recap</span>
+        </label>
+
+        <label
+          className="switch mode-switch"
+          data-mode={mode}
+          title="Human = readable answer · Machine = raw JSON results for tools"
         >
-          ⓘ
-        </span>
-        <span className="switch-label">{mode === 'human' ? 'Human' : 'Machine'}</span>
-      </label>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={mode === 'machine'}
+            onChange={toggleMode}
+            aria-label={`Output mode: ${mode}`}
+          />
+          <span className="switch-track" aria-hidden="true">
+            <span className="switch-thumb">{mode === 'human' ? <HumanGlyph /> : <RobotGlyph />}</span>
+          </span>
+          <span
+            className="mode-info"
+            tabIndex={0}
+            role="note"
+            aria-label={modeHint}
+            onClick={(e) => e.preventDefault()}
+          >
+            ⓘ
+            <span className="mode-tip" role="tooltip">
+              {modeHint}
+            </span>
+          </span>
+          <span className="switch-label">{mode === 'human' ? 'Human' : 'Machine'}</span>
+        </label>
+      </div>
 
       {error && <p className="error">{error}</p>}
 
@@ -177,7 +207,9 @@ export default function Search({ token }: { token: string }) {
           ) : mode === 'machine' ? (
             <div className="machine">
               <div className="json-head">
-                <span className="sources-label">Raw JSON · GET /search?recap=false</span>
+                <span className="sources-label">
+                  Raw JSON · GET /search?recap={recapEnabled ? 'true' : 'false'}
+                </span>
                 <button type="button" className="copy-btn" onClick={copyJson}>
                   {copied ? 'Copied ✓' : 'Copy'}
                 </button>
