@@ -900,6 +900,357 @@ button:disabled {
   text-decoration: underline;
 }
 
+/* ---- Documents: drop zone + queued list ------------------------------------ */
+.ingest-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ingest-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 30px 20px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--page-bg);
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.dropzone:hover {
+  border-color: #7c5cff;
+  color: var(--text-h);
+}
+
+.dropzone:focus-visible {
+  outline: none;
+  border-color: #7c5cff;
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+}
+
+.dropzone.dragging {
+  border-color: #7c5cff;
+  background: rgba(124, 92, 255, 0.06);
+  color: var(--text-h);
+}
+
+.dropzone-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #7c5cff;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.dropzone-sub {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.doc-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.doc-item.doc-failed {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.doc-icon,
+.doc-thumb {
+  flex-shrink: 0;
+  width: 40px;
+  height: 52px;
+  border-radius: 6px;
+}
+
+.doc-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+}
+
+.doc-thumb {
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
+}
+
+.doc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.doc-item.doc-indexed .doc-sub {
+  color: #1a7f4b;
+}
+
+.doc-badge {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.doc-indexed .doc-badge {
+  color: #22a06b;
+}
+
+.doc-skipped_dedup .doc-badge {
+  color: var(--muted);
+}
+
+.doc-failed .doc-badge {
+  color: var(--error);
+}
+
+.doc-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border-strong);
+  border-top-color: #7c5cff;
+  border-radius: 50%;
+  animation: doc-spin 0.7s linear infinite;
+}
+
+@keyframes doc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Library drawer (ingested documents) ----------------------------------- */
+.library-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: #7c5cff;
+  border: none;
+  border-radius: 980px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    transform 0.06s ease;
+}
+
+.library-fab:hover {
+  background: #6a45f0;
+}
+
+.library-fab:active {
+  transform: scale(0.97);
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(11, 10, 16, 0.28);
+  backdrop-filter: blur(1.5px);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
+  width: min(380px, 92vw);
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  transform: translateX(100%);
+  transition: transform 0.24s ease;
+}
+
+.drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.drawer-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #7c5cff;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.drawer-close {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--muted);
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  color: var(--text-h);
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.drawer-muted {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.drawer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.drawer-del {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.drawer-del:hover:not(:disabled) {
+  color: var(--error);
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.drawer-del:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Editable settings (pencil-marked, inline-edited in the system popover) */
 .sys-pencil {
   margin-left: 6px;
