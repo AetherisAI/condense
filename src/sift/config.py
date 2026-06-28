@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     llm_api_key: str | None = None
 
+    # OCR fallback: when enabled with a base URL, the ingest parser is wrapped so files
+    # markitdown can't extract text from (screenshots, scanned PDFs) are OCR'd via Mistral.
+    ocr_enabled: bool = False
+    ocr_base_url: str = ""
+    ocr_model: str = "mistral-ocr-latest"
+    ocr_api_key: str = ""
+
     chunk_size: int = 512
     chunk_overlap: int = 64
 

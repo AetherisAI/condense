@@ -26,7 +26,7 @@ from sift.adapters.rerank.null import NullReranker
 from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
 from sift.core.hashing import content_hash
-from sift.core.ports import Completer, Embedder, Reranker, VectorStore
+from sift.core.ports import Completer, Embedder, Parser, Reranker, VectorStore
 from sift.pipelines.ingest import IngestOutcome, IngestPipeline, SupportsIngest
 from sift.pipelines.search import SearchPipeline
 
@@ -115,8 +115,22 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
             MarkitdownParser,
         )
 
+        parser: Parser = MarkitdownParser()
+        # OCR fallback (config-driven): wrap the parser so image/scanned files markitdown can't
+        # read are OCR'd via Mistral and indexed — transparent to the ingest pipeline.
+        if settings.ocr_enabled and settings.ocr_base_url:
+            from sift.adapters.ocr.fallback_parser import OcrFallbackParser
+            from sift.adapters.ocr.mistral import MistralOcr
+
+            parser = OcrFallbackParser(
+                parser,
+                MistralOcr(
+                    settings.ocr_base_url, settings.ocr_model, settings.ocr_api_key
+                ),
+            )
+
         return IngestPipeline(
-            MarkitdownParser(),
+            parser,
             TokenChunker(
                 chunk_size=settings.chunk_size,
                 chunk_overlap=settings.chunk_overlap,
