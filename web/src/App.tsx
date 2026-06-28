@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import Search from './Search'
 import Ingest from './Ingest'
+import SlashField from './SlashField'
+import Logo from './Logo'
 import './App.css'
 
 /**
@@ -11,9 +13,14 @@ export default function App() {
   const [token, setToken] = useState('')
 
   return (
-    <main className="app">
+    <>
+      <SlashField />
+      <main className="app">
       <header className="app-header">
-        <h1>Condense</h1>
+        <div className="brand">
+          <Logo />
+          <h1>Condense</h1>
+        </div>
         <p className="tagline">Ask a question — get the single best answer with its source.</p>
       </header>
 
@@ -30,6 +37,7 @@ export default function App() {
 
       <Search token={token} />
       <Ingest token={token} />
-    </main>
+      </main>
+    </>
   )
 }
