@@ -203,7 +203,18 @@ export default function Ingest({ token }: { token: string }) {
       >
         <input ref={inputRef} type="file" multiple hidden onChange={onPick} />
         <span className="dropzone-plus" aria-hidden="true">
-          +
+          <svg
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+          >
+            <line x1="12" y1="6" x2="12" y2="18" />
+            <line x1="6" y1="12" x2="18" y2="12" />
+          </svg>
         </span>
         <span className="dropzone-text">
           Drop files to ingest

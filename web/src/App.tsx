@@ -24,7 +24,7 @@ export default function App() {
           <Logo />
           <h1>Condense</h1>
         </div>
-        <p className="tagline">Many documents, one answer.</p>
+        <p className="tagline">Search across all your knowledge</p>
       </header>
 
       <label className="token">
