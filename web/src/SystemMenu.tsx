@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 /** One dependency's reachability (mirrors api.schemas.ComponentHealth). */
 type ComponentHealth = {
@@ -62,7 +62,6 @@ export default function SystemMenu({ token }: { token: string }) {
   const [data, setData] = useState<StatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
 
   // At-a-glance health: ping the open /healthz once on mount.
   useEffect(() => {
@@ -75,21 +74,14 @@ export default function SystemMenu({ token }: { token: string }) {
     }
   }, [])
 
-  // Dismiss on outside click / Escape while open.
+  // Dismiss on Escape while open — outside clicks are caught by the drawer backdrop.
   useEffect(() => {
     if (!open) return
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false)
     }
-    document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('keydown', onKey)
   }, [open])
 
   async function load() {
@@ -137,17 +129,49 @@ export default function SystemMenu({ token }: { token: string }) {
   }
 
   return (
-    <div className="sys" ref={ref}>
-      <button type="button" className="sys-chip" onClick={toggle} aria-expanded={open}>
-        <span className={`sys-dot sys-dot-${health}`} />
-        System
-        <span className={`sys-caret${open ? ' open' : ''}`} aria-hidden="true">
-          ⌄
-        </span>
-      </button>
+    <>
+      <div className="sys">
+        <button type="button" className="sys-chip" onClick={toggle} aria-expanded={open}>
+          <svg
+            className={`sys-gear sys-gear-${health}`}
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          System
+        </button>
+      </div>
 
-      {open && (
-        <div className="sys-pop" role="dialog" aria-label="System status">
+      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+
+      <aside
+        className={`drawer${open ? ' open' : ''}`}
+        role="dialog"
+        aria-label="System status"
+        aria-hidden={!open}
+      >
+        <div className="drawer-head">
+          <h2>System</h2>
+          <button
+            type="button"
+            className="drawer-close"
+            onClick={() => setOpen(false)}
+            aria-label="Close system panel"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="drawer-body">
           <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
             API documentation
             <span aria-hidden="true">↗</span>
@@ -208,7 +232,7 @@ export default function SystemMenu({ token }: { token: string }) {
             </div>
           )}
         </div>
-      )}
-    </div>
+      </aside>
+    </>
   )
 }

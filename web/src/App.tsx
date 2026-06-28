@@ -24,7 +24,7 @@ export default function App() {
           <Logo />
           <h1>Condense</h1>
         </div>
-        <p className="tagline">Ask your documents anything — get the single best answer, with its source.</p>
+        <p className="tagline">Many documents, one answer.</p>
       </header>
 
       <label className="token">
