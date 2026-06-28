@@ -237,9 +237,13 @@ input:focus-visible {
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
-.row input[type='text'] {
+.row input[type='text'],
+.row input[type='file'] {
   flex: 1 1 auto;
   min-width: 220px;
+}
+
+.row input[type='text'] {
   font-size: 16px;
 }
 
@@ -254,7 +258,7 @@ button {
   font-weight: 500;
   letter-spacing: 0.01em;
   color: #fff;
-  background: #1d1d1f; /* graphite — clean, minimal, Apple-like */
+  background: #7c5cff; /* blue-purple — matches the logo */
   border: none;
   border-radius: 980px; /* pill */
   padding: 11px 24px;
@@ -266,7 +270,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: #000;
+  background: #6a45f0;
 }
 
 button:active:not(:disabled) {
@@ -274,7 +278,7 @@ button:active:not(:disabled) {
 }
 
 button:focus-visible {
-  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.22);
 }
 
 button:disabled {
@@ -673,4 +677,19 @@ button:disabled {
 }
 .sys-null {
   color: var(--muted);
+}
+
+/* API docs link inside the system popover */
+.sys-docs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6a45f0; /* blue-purple, matches the buttons/logo */
+  text-decoration: none;
+}
+.sys-docs:hover {
+  text-decoration: underline;
 }
