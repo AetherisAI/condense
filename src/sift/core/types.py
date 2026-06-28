@@ -65,3 +65,12 @@ class Hit:
     page: int  # → Source.page
     source_hash: str = ""
     index: int = -1
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DocumentInfo:
+    """One ingested source file, aggregated from its chunks (one row per source_hash)."""
+
+    source_path: str
+    source_hash: str
+    chunks: int
