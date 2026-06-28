@@ -56,7 +56,13 @@ function coerce(key: string, raw: string): unknown {
  * open a clean popover showing API health + the effective config (from the auth'd /status,
  * secrets already redacted server-side), rendered like a .env file. Closes on outside-click/Esc.
  */
-export default function SystemMenu({ token }: { token: string }) {
+export default function SystemMenu({
+  token,
+  setToken,
+}: {
+  token: string
+  setToken: (t: string) => void
+}) {
   const [open, setOpen] = useState(false)
   const [health, setHealth] = useState<Health>('unknown')
   const [data, setData] = useState<StatusResponse | null>(null)
@@ -83,6 +89,12 @@ export default function SystemMenu({ token }: { token: string }) {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [open])
+
+  // (Re)load status when the panel opens or the token changes — so entering the token right
+  // here immediately populates components + settings.
+  useEffect(() => {
+    if (open) void load()
+  }, [open, token])
 
   async function load() {
     setLoading(true)
@@ -123,9 +135,7 @@ export default function SystemMenu({ token }: { token: string }) {
   }
 
   function toggle() {
-    const next = !open
-    setOpen(next)
-    if (next) load()
+    setOpen((o) => !o)
   }
 
   return (
@@ -172,6 +182,22 @@ export default function SystemMenu({ token }: { token: string }) {
         </div>
 
         <div className="drawer-body">
+          <div className="sys-section sys-token">
+            <label className="sys-label" htmlFor="bearer-token">
+              Bearer token
+            </label>
+            <input
+              id="bearer-token"
+              className="sys-token-input"
+              type="password"
+              value={token}
+              placeholder="paste your token"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setToken(e.target.value)}
+            />
+          </div>
+
           <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
             API documentation
             <span aria-hidden="true">↗</span>
