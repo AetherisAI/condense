@@ -343,6 +343,106 @@ button:disabled {
   font-weight: 600;
 }
 
+/* ---- Human / Machine mode switch (icon thumb + colour shift) --------------- */
+.mode-switch .switch-track {
+  width: 52px;
+  height: 28px;
+  background: #7c5cff; /* Human (default, unchecked) — blue-purple, matches the buttons/logo */
+  transition: background 0.2s ease;
+}
+
+.mode-switch .switch-thumb {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c5cff; /* glyph colour while Human — matches the buttons */
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.mode-switch input:checked + .switch-track {
+  background: #1d1d1f; /* Machine — graphite */
+}
+
+.mode-switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(24px);
+  color: #1d1d1f; /* glyph colour while Machine */
+}
+
+.mode-switch input:focus-visible + .switch-track {
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+}
+
+.mode-glyph {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  display: block;
+}
+
+.mode-switch .switch-label {
+  min-width: 58px; /* reserve space so the row doesn't jump on Human↔Machine */
+  color: var(--text-h);
+}
+
+.mode-hint {
+  margin: -2px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ---- Machine mode: raw JSON ------------------------------------------------ */
+.machine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.json-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copy-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #1d1d1f; /* match the Machine graphite */
+  border: none;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.copy-btn:hover {
+  background: #000;
+}
+
+.json {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-h);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.json code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
 /* ---- Search result --------------------------------------------------------- */
 .result {
   display: flex;
