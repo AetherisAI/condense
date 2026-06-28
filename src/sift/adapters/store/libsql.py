@@ -26,7 +26,7 @@ from typing import Any
 import libsql
 
 from sift.core.errors import ModelPinMismatch, SiftError
-from sift.core.types import Chunk, Hit, Vector
+from sift.core.types import Chunk, DocumentInfo, Hit, Vector
 
 # ``libsql`` is a stub-less compiled extension; route attribute access through ``Any`` so
 # the rest of this module stays fully type-checked.
@@ -76,6 +76,21 @@ _SEARCH = (
 )
 
 _SELECT_HASHES = "SELECT content_hash FROM files WHERE tenant = ?"
+
+_SELECT_DOCUMENTS = (
+    "SELECT f.path, f.content_hash, COUNT(c.idx) "
+    "FROM files f "
+    "LEFT JOIN chunks c ON c.tenant = f.tenant AND c.source_hash = f.content_hash "
+    "WHERE f.tenant = ? "
+    "GROUP BY f.content_hash, f.path, f.indexed_at "
+    "ORDER BY f.indexed_at DESC"
+)
+
+_COUNT_CHUNKS_BY_HASH = "SELECT COUNT(*) FROM chunks WHERE tenant = ? AND source_hash = ?"
+
+_DELETE_CHUNKS_BY_HASH = "DELETE FROM chunks WHERE tenant = ? AND source_hash = ?"
+
+_DELETE_FILE_BY_HASH = "DELETE FROM files WHERE tenant = ? AND content_hash = ?"
 
 
 def _vector_json(vector: Vector) -> str:
@@ -127,6 +142,18 @@ class LibSQLStore:
 
     async def known_hashes(self, tenant: str) -> set[str]:
         return await self._submit(functools.partial(self._known_hashes_job, tenant))
+
+    # --- document-admin seam (SupportsDocumentAdmin) ------------------------------
+
+    async def list_documents(self, tenant: str) -> list[DocumentInfo]:
+        # Read-only: no lock, mirroring search / known_hashes.
+        return await self._submit(functools.partial(self._list_documents_job, tenant))
+
+    async def delete_document(self, source_hash: str, tenant: str) -> int:
+        async with self._lock:
+            return await self._submit(
+                functools.partial(self._delete_document_job, source_hash, tenant)
+            )
 
     async def aclose(self) -> None:
         await self._submit(self._close_job)
@@ -202,6 +229,21 @@ class LibSQLStore:
         conn = self._connection()
         rows = conn.execute(_SELECT_HASHES, (tenant,)).fetchall()
         return {row[0] for row in rows}
+
+    def _list_documents_job(self, tenant: str) -> list[DocumentInfo]:
+        conn = self._connection()
+        rows = conn.execute(_SELECT_DOCUMENTS, (tenant,)).fetchall()
+        return [
+            DocumentInfo(source_path=row[0], source_hash=row[1], chunks=row[2]) for row in rows
+        ]
+
+    def _delete_document_job(self, source_hash: str, tenant: str) -> int:
+        conn = self._connection()
+        count = conn.execute(_COUNT_CHUNKS_BY_HASH, (tenant, source_hash)).fetchall()[0][0]
+        conn.execute(_DELETE_CHUNKS_BY_HASH, (tenant, source_hash))
+        conn.execute(_DELETE_FILE_BY_HASH, (tenant, source_hash))
+        conn.commit()
+        return count
 
     def _close_job(self) -> None:
         if self._conn is not None:
