@@ -98,6 +98,12 @@ export default function SystemMenu({ token }: { token: string }) {
             {data?.embed_model && <span className="sys-muted">· {data.embed_model}</span>}
           </div>
 
+          <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
+            API documentation
+            <span aria-hidden="true">↗</span>
+          </a>
+          <p className="sys-docs-hint">Use Condense directly over HTTP — no web UI needed.</p>
+
           {error && <p className="sys-error">{error}</p>}
           {loading && <p className="sys-muted">Loading…</p>}
 

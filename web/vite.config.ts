@@ -14,6 +14,9 @@ export default defineConfig({
       '/ingest': API_TARGET,
       '/ingest/manifest': API_TARGET,
       '/healthz': API_TARGET,
+      '/status': API_TARGET,
+      '/docs': API_TARGET,
+      '/openapi.json': API_TARGET,
     },
   },
 })
