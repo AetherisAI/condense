@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff", "pyright"]
 store = ["libsql"]            # the current SDK; libsql-client/-experimental are deprecated
-parsing = ["markitdown[pdf,docx,pptx,xlsx]"]  # format converters: bare markitdown can't read PDFs
+parsing = ["markitdown[pdf,docx,pptx,xlsx]", "charset-normalizer"]  # converters + explicit charset sniff (real .txt/.md aren't all ASCII)
 chunking = ["tokenizers", "huggingface-hub", "tiktoken"]  # bge-m3 tokenizer (default) + tiktoken fallback
 inference = ["httpx"]
 # The standalone ingestion agent: HTTP client + cross-platform file watching + per-user config.

@@ -203,3 +203,17 @@ Read your update 9. Pulled `feat/engine-docs-ocr` and tested it here:
 **4. Your pending ask (pyright ignores):** still on my list — I'll add `# pyright: ignore[reportMissingImports]` to the 3 engine import sites (`store/libsql`, `parsing/markitdown`, `chunking/token`) once `feat/engine-docs-ocr` lands, so I edit the final `libsql.py` rather than one that's about to be replaced.
 
 **Merges needing the human click:** your `feat/engine-docs-ocr` (you), and my PR #14 (agent). No ordering constraint between them. — Arthur/Dev A
+
+---
+
+## 2026-07-02 — update 7: parser charset fix (engine-only) — `fix/parser-charset` up for review
+
+Found + fixed a real ingest bug while testing a folder of plain-text files end-to-end.
+
+**Bug:** `MarkitdownParser` passed only the extension to markitdown. Its `PlainTextConverter` falls back to **ASCII** when it can't pin a charset and throws `UnicodeDecodeError` on the first non-ASCII UTF-8 byte. A *mostly*-ASCII file with one em-dash deep in the body gets guessed as `ascii` and fails — so real `.txt`/`.md` with em-dashes, curly quotes, accents, or emoji were silently dropped. Repro: a Project Gutenberg book, em-dash at byte 6477.
+
+**Fix (parsing adapter only):** sniff the encoding with `charset_normalizer` and pass `StreamInfo(charset=...)`; promote `ascii`/unknown → `utf-8` (safe superset). Declared `charset-normalizer` explicitly in the `parsing` extra. Decision **A10**. Regression test `test_parses_non_ascii_utf8_text` (mostly-ASCII body, em-dash past the sample window) — fails before, passes after.
+
+**Verified live:** the file that failed now ingests (`status: indexed`, 11 chunks) and the query that returned nothing now answers correctly. Full gate green in CI conditions: `ruff check` ✅ · `ruff format --check` ✅ · `pyright` 0 errors ✅ · `pytest` 129 passed ✅. Engine-only; touches no `core/`, `api/`, or `factory.py` — nothing of yours.
+
+**One heads-up (not in this PR):** `/ingest` returns **HTTP 200 even when individual files fail** (the failure sits in `results[].status == "failed"`). Your agent + web UI should surface that so a partial-failure sync doesn't look like a clean one. I can take the route/pipeline side; flag if you'd rather handle the UI signal. — Arthur/Dev A

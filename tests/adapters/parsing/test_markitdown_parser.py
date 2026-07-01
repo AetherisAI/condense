@@ -55,3 +55,21 @@ async def test_parse_is_stable_across_runs() -> None:
     assert first == second
     assert first.content_hash == second.content_hash
     assert first.pages[0].text == second.pages[0].text
+
+
+async def test_parses_non_ascii_utf8_text() -> None:
+    """A real-world .txt with em-dashes/curly quotes/accents must not fall back to ASCII.
+
+    markitdown's PlainTextConverter guesses ASCII for a mostly-ASCII body and then raises
+    ``UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2`` on the first UTF-8 byte —
+    exactly how a Project Gutenberg ``.txt`` (em-dash at byte 6477) failed to ingest. The
+    single non-ASCII char sits deep in the body, past the charset-detection sample window,
+    so the detector reports ASCII; the parser must still decode it as UTF-8.
+    """
+    data = (b"word " * 1600) + "end — dash\n".encode()
+    assert data.index(b"\xe2") > 4096  # em-dash lands well past the detection sample
+
+    doc = await MarkitdownParser().parse(data, "essay.txt")
+
+    (page,) = doc.pages
+    assert page.text.rstrip().endswith("end — dash")
