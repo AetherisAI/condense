@@ -755,6 +755,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 120px; /* uniform width across the System / Agent / Library corner pills */
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 600;
@@ -889,6 +890,87 @@ button:disabled {
 
 .sys-docs:hover {
   text-decoration: underline;
+}
+
+/* ---- Agent download chip + drawer ------------------------------------------ */
+/* Sits directly under the System chip (.sys is top:16px) — same pill (.sys-chip). */
+.agentbar {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  z-index: 10;
+  font-size: 13px;
+}
+
+.agent-intro {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.agent-dl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.agent-dl-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-h);
+  flex-shrink: 0;
+}
+
+.agent-dl-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.agent-dl-os {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+.agent-dl-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.agent-note {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.agent-dl-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: #7c5cff;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.agent-dl-btn:hover {
+  background: #6a45f0;
+}
+.agent-dl-btn.is-soon {
+  color: var(--muted);
+  background: var(--page-bg);
+  border-color: var(--border);
+  pointer-events: none;
 }
 
 /* ---- Documents: drop zone + queued list ------------------------------------ */
@@ -1087,6 +1169,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 120px; /* match the System / Agent corner pills */
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 600;
