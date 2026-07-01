@@ -13,7 +13,6 @@ configured) so the default/test path never needs the ``libsql`` extra installed.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sift.adapters.embedding.fake import FakeEmbedder
@@ -27,7 +26,13 @@ from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
 from sift.core.hashing import content_hash
 from sift.core.ports import Completer, Embedder, Parser, Reranker, VectorStore
-from sift.pipelines.ingest import IngestOutcome, IngestPipeline, SupportsIngest
+from sift.pipelines.ingest import (
+    IngestFiles,
+    IngestOutcome,
+    IngestPipeline,
+    SupportsIngest,
+    stream_files,
+)
 from sift.pipelines.search import SearchPipeline
 
 
@@ -54,10 +59,10 @@ class _StubIngest:
     integration time.
     """
 
-    async def ingest(self, files: Sequence[tuple[str, bytes]], tenant: str) -> list[IngestOutcome]:
+    async def ingest(self, files: IngestFiles, tenant: str) -> list[IngestOutcome]:
         return [
             IngestOutcome(path=name, status="indexed", content_hash=content_hash(data), chunks=1)
-            for name, data in files
+            async for name, data in stream_files(files)
         ]
 
 
