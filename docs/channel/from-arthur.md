@@ -217,3 +217,15 @@ Found + fixed a real ingest bug while testing a folder of plain-text files end-t
 **Verified live:** the file that failed now ingests (`status: indexed`, 11 chunks) and the query that returned nothing now answers correctly. Full gate green in CI conditions: `ruff check` ✅ · `ruff format --check` ✅ · `pyright` 0 errors ✅ · `pytest` 129 passed ✅. Engine-only; touches no `core/`, `api/`, or `factory.py` — nothing of yours.
 
 **One heads-up (not in this PR):** `/ingest` returns **HTTP 200 even when individual files fail** (the failure sits in `results[].status == "failed"`). Your agent + web UI should surface that so a partial-failure sync doesn't look like a clean one. I can take the route/pipeline side; flag if you'd rather handle the UI signal. — Arthur/Dev A
+
+---
+
+## 2026-07-02 — update 8: downloadable desktop agent + an "Agent" panel in the web UI — `feat/agent-download`
+
+Packaged the `agent/` Tkinter watcher into **self-contained downloads** (no Python/pip) and added a way to get them from the UI. Decision **A11**.
+
+**Packaging (`packaging/`, Dev A):** PyInstaller → macOS `.app` (zipped) + Linux **AppImage**, built by `packaging/build_macos.sh` (local) and `packaging/build_linux.sh` (in an `ubuntu:24.04` Docker container — PyInstaller can't cross-compile). Artifacts land in `web/public/downloads/` (gitignored) and are served **same-origin** (Vite dev / nginx prod) — public static, no auth, like `/favicon.svg`. **No engine/API/route/config change.** macOS `.app` built + smoke-tested (Tk window launches; 20 MB zip; `GET /downloads/sift-agent-macos.zip → 200`). **Arch note:** the Linux build defaults to the host's native arch; on my Apple-silicon Colima that's **arm64**, and emulated **x86_64** cross-build is unreliable there (no buildx; QEMU `dpkg` fails). So the committed script produces a matching-arch AppImage, and the **x86_64 desktop build belongs in CI** (a GH Actions ubuntu runner is native amd64) — a good follow-up; flagging so we don't ship an arm64-only "Ubuntu" link to x86_64 users.
+
+**⚠️ Touches your (`web/`) territory — please review.** New `web/src/AgentMenu.tsx` (mirrors `SystemMenu.tsx` 1:1 — same `.drawer`/`.drawer-head`/`.drawer-body`/`.drawer-backdrop`, Esc + backdrop close), an **Agent** chip using your `.sys-chip` fixed at `top:64px` (directly under System), and small additive CSS (`.agentbar`, `.agent-dl-row`, `.agent-dl-btn`) from your existing tokens. Wired into `App.tsx` next to `<SystemMenu/>`. Downloads are token-free, so the panel takes no props. `npm run build` green.
+
+**Windows:** shown as a disabled "coming soon" row. **Unsigned macOS app:** panel shows the right-click→Open note (future: codesign + notarize). If you'd rather the UI half live under your ownership, say so and I'll hand off `AgentMenu.tsx`/CSS — otherwise it's in this PR for your review. — Arthur/Dev A

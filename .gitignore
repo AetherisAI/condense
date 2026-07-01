@@ -19,5 +19,8 @@ venv/
 # Local agent/editor config
 .claude/
 
+# Built agent installers (produced by packaging/build_*.sh — never committed)
+web/public/downloads/
+
 # OS
 .DS_Store
