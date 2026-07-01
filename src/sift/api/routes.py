@@ -9,6 +9,7 @@ schema and surfaces a :class:`~sift.core.errors.ModelPinMismatch` as HTTP 409.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
@@ -129,10 +130,23 @@ async def ingest(
     container: Annotated[Container, Depends(get_container)],
     tenant: Annotated[str, Depends(resolve_tenant)],
 ) -> IngestResponse:
-    """Parse → chunk → embed → upsert each uploaded file; 409 on a model-pin mismatch."""
-    payload = [(file.filename or "", await file.read()) for file in files]
+    """Parse → chunk → embed → upsert each uploaded file; 409 on a model-pin mismatch.
+
+    Files are streamed to the pipeline one at a time (read → hand off → release) rather than all
+    read into a single in-memory list, so a large multi-file upload doesn't spike RAM to the sum of
+    every file — peak stays at roughly one file plus its chunks.
+    """
+
+    async def _stream() -> AsyncIterator[tuple[str, bytes]]:
+        for file in files:
+            data = await file.read()
+            try:
+                yield (file.filename or "", data)
+            finally:
+                await file.close()  # release the spooled upload before reading the next
+
     try:
-        outcomes = await container.ingest.ingest(payload, tenant)
+        outcomes = await container.ingest.ingest(_stream(), tenant)
     except ModelPinMismatch as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     results = [

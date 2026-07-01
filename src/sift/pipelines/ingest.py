@@ -9,7 +9,7 @@ routes); any other per-file error is isolated so its siblings still index.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from dataclasses import dataclass, replace
 from typing import Literal, Protocol, runtime_checkable
 
@@ -17,6 +17,22 @@ from sift.core.errors import ModelPinMismatch
 from sift.core.hashing import content_hash
 from sift.core.ports import Chunker, Embedder, Parser, VectorStore
 from sift.core.types import Chunk
+
+# A source of ``(filename, bytes)`` files. Accepts a lazy **async** stream — the ``/ingest`` route
+# passes an async generator that reads one UploadFile at a time, so only a single file's bytes are
+# resident (bounded peak RAM, no spike on a large multi-file upload) — or any plain iterable (a
+# list, in tests). Normalized to one async stream by :func:`stream_files`.
+IngestFiles = AsyncIterable[tuple[str, bytes]] | Iterable[tuple[str, bytes]]
+
+
+async def stream_files(files: IngestFiles) -> AsyncIterator[tuple[str, bytes]]:
+    """Yield ``(filename, bytes)`` from either an async or a sync source as one async stream."""
+    if isinstance(files, AsyncIterable):
+        async for item in files:
+            yield item
+    else:
+        for item in files:
+            yield item
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -34,9 +50,7 @@ class IngestOutcome:
 class SupportsIngest(Protocol):
     """The seam Dev B's ``/ingest`` route depends on — structural, so a fake can stand in."""
 
-    async def ingest(
-        self, files: Sequence[tuple[str, bytes]], tenant: str
-    ) -> list[IngestOutcome]: ...
+    async def ingest(self, files: IngestFiles, tenant: str) -> list[IngestOutcome]: ...
 
 
 class IngestPipeline:
@@ -59,11 +73,11 @@ class IngestPipeline:
         self._model = model
         self._dim = dim
 
-    async def ingest(self, files: Sequence[tuple[str, bytes]], tenant: str) -> list[IngestOutcome]:
+    async def ingest(self, files: IngestFiles, tenant: str) -> list[IngestOutcome]:
         await self._store.ensure_ready(self._model, self._dim, tenant)
         known = set(await self._store.known_hashes(tenant))
         outcomes: list[IngestOutcome] = []
-        for filename, data in files:
+        async for filename, data in stream_files(files):
             try:
                 digest = content_hash(data)
                 if digest in known:
