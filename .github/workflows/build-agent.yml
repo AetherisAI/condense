@@ -1,0 +1,111 @@
+name: build-agent
+
+# Build the desktop ingestion agent into self-contained downloads on each native OS
+# (PyInstaller can't cross-compile). Manual trigger to smoke-test; a v* tag also attaches
+# the artifacts to a GitHub Release (the Windows download the web UI links to).
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: sift-agent-windows.zip
+          - os: macos-latest
+            artifact: sift-agent-macos.zip
+          - os: ubuntu-latest
+            artifact: sift-agent-linux-x86_64.AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx watchdog platformdirs pyinstaller
+
+      - name: Import smoke (source)
+        run: python -c "import agent.app, agent.cli, agent.config, agent.sync, agent.watcher; print('imports ok')"
+
+      - name: Build (PyInstaller)
+        run: pyinstaller packaging/sift-agent.spec --noconfirm --distpath dist --workpath build
+
+      # ---- package per-OS -------------------------------------------------
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/sift-agent -DestinationPath sift-agent-windows.zip -Force
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent "dist/Sift Agent.app" sift-agent-macos.zip
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          wget -q -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          sudo mv appimagetool /usr/local/bin/
+          bash packaging/make_appimage.sh dist/sift-agent sift-agent-linux-x86_64.AppImage
+
+      # ---- best-effort GUI launch smoke (a display may be absent on CI) ----
+      - name: Launch smoke (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/sift-agent/sift-agent.exe" -PassThru
+          Start-Sleep -Seconds 6
+          if ($p.HasExited) { throw "sift-agent.exe exited early (code $($p.ExitCode))" }
+          Write-Host "launched and alive after 6s"; Stop-Process -Id $p.Id -Force
+
+      - name: Launch smoke (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          timeout 8 "dist/Sift Agent.app/Contents/MacOS/sift-agent" || \
+            { code=$?; [ "$code" -eq 124 ] && echo "launched and alive 8s" || { echo "exited early ($code)"; exit 1; }; }
+
+      - name: Launch smoke (Linux, xvfb)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+          xvfb-run -a bash -c 'timeout 8 ./sift-agent-linux-x86_64.AppImage --appimage-extract-and-run; code=$?; [ "$code" -eq 124 ] && echo "launched and alive 8s" || { echo "exited early ($code)"; exit 1; }'
+
+      - name: Artifact exists + size
+        shell: bash
+        run: |
+          test -s "${{ matrix.artifact }}" || { echo "missing/empty ${{ matrix.artifact }}"; exit 1; }
+          ls -lh "${{ matrix.artifact }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    # On a v* tag, attach all three artifacts to the GitHub Release the web UI links to.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist-artifacts/**/sift-agent-*
+          fail_on_unmatched_files: true

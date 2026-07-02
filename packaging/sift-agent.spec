@@ -17,9 +17,12 @@ is_mac = sys.platform == "darwin"
 repo_root = os.path.abspath(os.path.join(SPECPATH, ".."))
 entry = os.path.join(SPECPATH, "sift_agent_entry.py")
 
+# watchdog picks its platform observer at import time — pin the one this OS uses.
 hidden = ["platformdirs", "httpx"]
-if is_mac:
+if sys.platform == "darwin":
     hidden += ["watchdog.observers.fsevents"]
+elif sys.platform == "win32":
+    hidden += ["watchdog.observers.read_directory_changes"]
 else:
     hidden += ["watchdog.observers.inotify", "watchdog.observers.inotify_buffer"]
 
