@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
-    branches: ["feat/agent-download"] # TEMP: exercise the build on this branch; remove before merge
 
 jobs:
   build:
