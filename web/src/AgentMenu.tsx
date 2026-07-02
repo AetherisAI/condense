@@ -43,7 +43,9 @@ const BUILDS: Build[] = [
   },
   {
     os: 'Windows',
-    hint: 'Coming soon',
+    hint: 'unzip and run',
+    href: 'https://github.com/AetherisAI/condense/releases/latest/download/sift-agent-windows.zip',
+    note: 'Published to the latest GitHub release (built by the build-agent workflow).',
     icon: WINDOWS,
   },
 ]
