@@ -15,12 +15,74 @@ from __future__ import annotations
 
 import hashlib
 import os
+import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import PurePath
 
-from agent.client import SiftClient
+from agent.client import PartialIngestError, SiftClient
 
-DEFAULT_INCLUDE = [".txt", ".md", ".pdf", ".docx", ".xlsx", ".pptx", ".html"]
+# Default cap on a single file's size before it's skipped entirely (never hashed, never held in
+# memory) — see DEFAULT_INCLUDE's note on OCR-fed images: a folder of large scans/exports could
+# otherwise dominate a sync's memory footprint one file at a time. Overridable per call (agent.cli
+# grows a matching flag; agent.config.AgentConfig gets a matching field for the desktop app).
+DEFAULT_MAX_FILE_SIZE_MB = 100
+
+# Streamed sha256 chunk size — large enough to be fast, small enough that hashing a multi-GB file
+# never holds more than this much of it in memory at once (A3).
+_HASH_CHUNK_BYTES = 1 << 20  # 1 MiB
+
+# Text + office formats markitdown parses directly, plus image formats that carry text. Images
+# (and scanned/text-less PDFs) only yield text when the server has OCR enabled (OCR_ENABLED +
+# OCR_BASE_URL) — they're collected here so a screenshot dropped into a watched folder flows
+# through to the OCR fallback automatically; with OCR off they simply produce no chunks.
+DEFAULT_INCLUDE = [
+    ".txt",
+    ".md",
+    ".pdf",
+    ".docx",
+    ".xlsx",
+    ".pptx",
+    ".html",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".tiff",
+]
+
+# Directory *names* the walk never descends into — vendored/tooling trees that happen to sit
+# under a watched folder and would otherwise get scanned for matching extensions (a real corpus
+# audit found numpy/lxml license ``.txt``/``.md`` files under a nested ``.venv/site-packages``
+# inflating the upload set with junk that isn't the user's own content). Matched against a bare
+# directory *basename*, not a path — so it prunes a ``.venv`` wherever it appears in the tree, not
+# just at the watched root. Overridable per call (``collect``/``collect_roots``/``sync``), via
+# ``agent.config.AgentConfig.exclude_dirs`` (desktop app), and via ``agent.cli --exclude-dir``
+# (headless one-shot/``--watch``) — see DECISIONS.md D35.
+DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".mypy_cache",
+        ".ruff_cache",
+        "site-packages",
+    }
+)
+
+# Vendored package *metadata* directories carry a package-specific name (e.g.
+# ``numpy-1.26.4.dist-info``), so they can't live in a fixed-name set — matched by suffix instead.
+_EXCLUDE_DIR_SUFFIXES = (".dist-info", ".egg-info")
+
+
+def _is_excluded_dir(name: str, exclude_dirs: frozenset[str] | set[str]) -> bool:
+    """True if a directory named ``name`` should be pruned from the walk entirely."""
+    return name in exclude_dirs or name.endswith(_EXCLUDE_DIR_SUFFIXES)
 
 
 def upload_name(root: str, full: str) -> str:
@@ -33,46 +95,139 @@ def abs_upload_name(full: str) -> str:
     return PurePath(os.path.abspath(full)).as_posix()
 
 
-def _iter_matching(root: str, includes: set[str]):
-    """Yield absolute paths of files under ``root`` (a file or directory) matching ``includes``."""
+def _iter_matching(
+    root: str,
+    includes: set[str],
+    exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
+):
+    """Yield absolute paths of files under ``root`` (a file or directory) matching ``includes``.
+
+    Any subdirectory whose basename is excluded (see :data:`DEFAULT_EXCLUDE_DIRS`) is pruned
+    from the walk entirely — its contents are never listed, hashed, or matched, however deep.
+    """
     if os.path.isfile(root):
         if os.path.splitext(root)[1].lower() in includes:
             yield os.path.abspath(root)
         return
-    for dirpath, _dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not _is_excluded_dir(d, exclude_dirs)]
         for name in filenames:
             full = os.path.join(dirpath, name)
             if os.path.splitext(full)[1].lower() in includes:
                 yield full
 
 
-def collect(root: str, includes: set[str]) -> list[tuple[str, str, bytes]]:
-    """Walk one ``root``; return ``(relpath_name, sha256_hex, data)`` — legacy one-shot keys."""
+def _by_mtime(paths) -> list[str]:
+    """Order paths oldest-modified first.
+
+    Uploading a batch in mtime order makes the server stamp each document's ``indexed_at`` in
+    modification order, so the most recently edited file in a near-duplicate set (e.g. v2 of a
+    doc) carries the latest recency token and wins version-collapse at search time — even when
+    every version is ingested in the same cold pass. Files missing an mtime sort oldest.
+    """
+    return sorted(paths, key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0.0)
+
+
+def _modified_iso(full: str) -> str:
+    """The file's last-modified time as an ISO-8601 UTC string — the recency signal for collapse.
+
+    ``last_modified`` (mtime), not creation time: editing v1 into v2 bumps v2's mtime, which is
+    exactly "this is the newer version". It is also portable (Linux has no reliable birth time).
+    """
+    return datetime.fromtimestamp(os.path.getmtime(full), tz=UTC).isoformat()
+
+
+def _sha256_file(path: str) -> str:
+    """Stream ``path`` through SHA-256 in fixed-size chunks — never holds the whole file at once.
+
+    This is what makes cataloguing a folder full of large files (images for OCR, big PDFs, …)
+    memory-bounded: a file's full contents used to be read into a Python ``bytes`` object just to
+    compute its digest and sit in the returned list until upload (A3).
+    """
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(_HASH_CHUNK_BYTES), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _read_file(path: str) -> Callable[[], bytes]:
+    """A zero-arg loader that reads ``path`` fully only when called.
+
+    Used so a whole tree's worth of files can be catalogued (name/hash/mtime) without ever
+    holding more than one upload batch's bytes in memory at a time — the loader is handed to
+    :meth:`agent.client.SiftClient.ingest`, which calls it only while building that file's batch.
+    """
+
+    def _load() -> bytes:
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    return _load
+
+
+def _skip_oversized(full: str, max_bytes: int, max_file_size_mb: int) -> bool:
+    """True (and warns) if ``full`` exceeds the size guard — caller should skip it entirely."""
+    size = os.path.getsize(full)
+    if size <= max_bytes:
+        return False
+    warnings.warn(
+        f"agent: skipping {full} ({size} bytes exceeds max_file_size_mb={max_file_size_mb})",
+        stacklevel=3,
+    )
+    return True
+
+
+def collect(
+    root: str,
+    includes: set[str],
+    *,
+    max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
+    exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
+) -> list[tuple[str, str, Callable[[], bytes], str]]:
+    """Walk one ``root`` → ``(relpath_name, sha256_hex, loader, modified_at)`` (one-shot keys).
+
+    ``loader`` is a zero-arg callable that reads the file's bytes on demand; the digest itself is
+    computed by streaming the file, so no matched file's full contents are held in memory just to
+    catalogue it (A3). A file larger than ``max_file_size_mb`` is skipped entirely (with a
+    ``UserWarning``) — never hashed, never loaded. Any directory named in ``exclude_dirs`` (default
+    :data:`DEFAULT_EXCLUDE_DIRS`) is pruned from the walk before it's ever listed (D35).
+    """
+    max_bytes = max_file_size_mb * 1024 * 1024
     name_root = (os.path.dirname(root) or ".") if os.path.isfile(root) else root
-    found: list[tuple[str, str, bytes]] = []
-    for full in _iter_matching(root, includes):
-        with open(full, "rb") as fh:
-            data = fh.read()
-        found.append((upload_name(name_root, full), hashlib.sha256(data).hexdigest(), data))
+    found: list[tuple[str, str, Callable[[], bytes], str]] = []
+    for full in _by_mtime(_iter_matching(root, includes, exclude_dirs)):
+        if _skip_oversized(full, max_bytes, max_file_size_mb):
+            continue
+        sha = _sha256_file(full)
+        found.append((upload_name(name_root, full), sha, _read_file(full), _modified_iso(full)))
     return found
 
 
-def collect_roots(roots: list[str], includes: set[str]) -> list[tuple[str, str, bytes]]:
-    """Walk every root; return ``(abs_name, sha256_hex, data)``, de-duped across overlapping roots.
+def collect_roots(
+    roots: list[str],
+    includes: set[str],
+    *,
+    max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
+    exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
+) -> list[tuple[str, str, Callable[[], bytes], str]]:
+    """Walk every root; return ``(abs_name, sha256_hex, loader, modified_at)``, de-duped per root.
 
     Absolute keys mean two watched folders that each contain ``notes.md`` stay distinct documents.
+    Ordered oldest-modified first (see :func:`_by_mtime`) so recency survives into the index.
+    ``loader``, the size guard, and ``exclude_dirs`` behave exactly as in :func:`collect` (A3/D35).
     """
-    found: list[tuple[str, str, bytes]] = []
-    seen: set[str] = set()
+    max_bytes = max_file_size_mb * 1024 * 1024
+    first_seen: dict[str, str] = {}  # upload name → first full path, deduped across roots
     for root in roots:
-        for full in _iter_matching(root, includes):
-            name = abs_upload_name(full)
-            if name in seen:
-                continue
-            seen.add(name)
-            with open(full, "rb") as fh:
-                data = fh.read()
-            found.append((name, hashlib.sha256(data).hexdigest(), data))
+        for full in _iter_matching(root, includes, exclude_dirs):
+            first_seen.setdefault(abs_upload_name(full), full)
+    found: list[tuple[str, str, Callable[[], bytes], str]] = []
+    for full in _by_mtime(first_seen.values()):
+        if _skip_oversized(full, max_bytes, max_file_size_mb):
+            continue
+        sha = _sha256_file(full)
+        found.append((abs_upload_name(full), sha, _read_file(full), _modified_iso(full)))
     return found
 
 
@@ -129,6 +284,12 @@ def reconcile(
     ``managed`` scopes removal to paths this agent has tracked. ``None`` means "every remote
     path" — only safe for a single agent that owns the whole tenant; :func:`sync` always passes
     an explicit set so it never deletes documents another source ingested.
+
+    **Ordering invariant** (relied on by :func:`sync` for partial-batch accounting, A4):
+    ``actions.delete_hashes[:len(actions.replace)]`` is exactly the old hash for each path in
+    ``actions.replace``, **in the same order** — every ``replace.append(path)`` above is
+    immediately followed by the matching ``delete_hashes.append(prior)``. Any further entries
+    (appended by the ``delete_removed`` pass) come after and aren't tied to an upload.
     """
     actions = Actions()
     for path, digest in local.items():
@@ -157,6 +318,8 @@ def sync(
     tenant: str = "default",
     delete_removed: bool = False,
     managed: set[str] | None = None,
+    max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
+    exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
 ) -> Summary:
     """Run one full reconcile pass across one or more ``roots``: ingest new/changed, delete stale.
 
@@ -165,15 +328,29 @@ def sync(
     the *previous* sync saw on disk (``Summary.managed``); with ``delete_removed`` on, only those
     are eligible for removal — so the agent never deletes documents another source ingested. The
     returned ``Summary.managed`` is this pass's on-disk set, to thread into the next call.
+    ``max_file_size_mb`` and ``exclude_dirs`` are the per-file size guard and vendored-dir pruning
+    passed through to :func:`collect_roots` (A3/D35).
 
     Falls back to add-only if the store doesn't support listing documents (``supported=False``):
     replacement/removal need ``/documents``, so without it we can still ingest (the engine's
     content-hash dedup keeps identical files from re-embedding).
+
+    **Partial-batch accounting (A4):** if :meth:`SiftClient.ingest` raises
+    :class:`~agent.client.PartialIngestError` (a later batch failed after earlier ones landed),
+    the earlier batches' indexed/replaced counts are still credited and ``Summary.error`` reports
+    the failure — a mid-run failure no longer discards already-confirmed progress. A *replaced*
+    document's stale hash is only deleted once its replacement is confirmed ``"indexed"`` in the
+    results actually received (whether from a full success or a partial one); an unconfirmed
+    replacement leaves the old hash in place, so the next ``sync()`` call sees local still differs
+    from remote and retries — no lost update, no premature delete.
     """
     roots = [roots] if isinstance(roots, str) else list(roots)
-    files = collect_roots(roots, includes)
-    local = {name: digest for name, digest, _data in files}
-    data_by_name = {name: data for name, _digest, data in files}
+    files = collect_roots(
+        roots, includes, max_file_size_mb=max_file_size_mb, exclude_dirs=exclude_dirs
+    )
+    local = {name: digest for name, digest, _loader, _m in files}
+    loader_by_name = {name: loader for name, _digest, loader, _m in files}
+    mtime_by_name = {name: modified for name, _digest, _loader, modified in files}
     now_managed = frozenset(local)
 
     try:
@@ -191,29 +368,52 @@ def sync(
 
     indexed = replaced = deleted = failed = 0
     error: str | None = None
+    indexed_paths: set[str] = set()
 
     if actions.ingest:
-        payload = [(name, data_by_name[name]) for name in actions.ingest]
+        payload = [(name, loader_by_name[name]) for name in actions.ingest]
+        mtimes = {name: mtime_by_name[name] for name in actions.ingest}
+        replaced_set = set(actions.replace)
         try:
-            resp = client.ingest(tenant, payload)
-            replaced_set = set(actions.replace)
-            for r in resp.get("results", []):
-                if r.get("status") == "indexed":
-                    indexed += 1
-                    if r.get("path") in replaced_set:
-                        replaced += 1
-                elif r.get("status") == "failed":
-                    failed += 1
+            resp = client.ingest(tenant, payload, modified_at=mtimes)
+        except PartialIngestError as exc:
+            # One or more batches landed before the failure — credit them (A4) instead of
+            # discarding all progress; the failure is still surfaced via ``error`` below.
+            resp = exc.partial
+            error = str(exc)
         except Exception as exc:
             return Summary(skipped=len(actions.skip), error=str(exc), managed=now_managed)
 
-    for source_hash in actions.delete_hashes:
+        for r in resp.get("results", []):
+            path, status = r.get("path"), r.get("status")
+            if status == "indexed":
+                indexed += 1
+                indexed_paths.add(path)
+                if path in replaced_set:
+                    replaced += 1
+            elif status == "failed":
+                failed += 1
+
+    # Only remove a replaced document's stale hash once its replacement is *confirmed* indexed —
+    # never on a batch exception, and never on a per-file "failed" status inside an otherwise-200
+    # response. A hash from ``delete_removed`` (a file that vanished from disk) isn't tied to any
+    # upload, so it's always eligible. Relies on reconcile()'s ordering invariant (see its
+    # docstring): the first len(actions.replace) delete_hashes line up with actions.replace.
+    n_replace = len(actions.replace)
+    replace_hashes = actions.delete_hashes[:n_replace]
+    extra_hashes = actions.delete_hashes[n_replace:]
+    to_delete = list(extra_hashes)
+    to_delete += [
+        h for path, h in zip(actions.replace, replace_hashes, strict=True) if path in indexed_paths
+    ]
+
+    for source_hash in to_delete:
         try:
             client.delete_document(source_hash)
             deleted += 1
-        except Exception as exc:  # keep going; report the last error
+        except Exception as exc:  # keep going; fold in rather than overwrite an ingest error
             failed += 1
-            error = str(exc)
+            error = f"{error}; {exc}" if error else str(exc)
 
     return Summary(
         indexed=indexed,

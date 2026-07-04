@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field, fields
 
 from platformdirs import user_config_dir
 
-from agent.sync import DEFAULT_INCLUDE
+from agent.sync import DEFAULT_EXCLUDE_DIRS, DEFAULT_INCLUDE, DEFAULT_MAX_FILE_SIZE_MB
 
 _APP = "sift-agent"
 
@@ -37,6 +37,18 @@ class AgentConfig:
     include_exts: list[str] = field(default_factory=lambda: list(DEFAULT_INCLUDE))
     delete_removed: bool = False  # remove a doc from the index when its file leaves disk
     tenant: str = "default"
+    # Per-file size guard (A3): a file larger than this is skipped (never hashed/loaded) rather
+    # than risk a huge scan/export ballooning the sync's memory footprint. Standalone agent, so
+    # this is its own config knob — sift's Settings do not apply here.
+    max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB
+    # Directory names pruned from every walk (D35) — defaults to the built-in vendored/tooling
+    # set (``.venv``, ``node_modules``, …); editable in the settings dialog to add project-
+    # specific junk folders without losing the built-ins (the field starts pre-populated with them).
+    exclude_dirs: list[str] = field(default_factory=lambda: sorted(DEFAULT_EXCLUDE_DIRS))
+    # HTTP timeout (seconds) for every engine request. Raised from the old 300s default (D36) —
+    # one real OCR-heavy batch took 5m6s server-side and the client abandoned it while the server
+    # kept working. Editable in the settings dialog for a slower/heavier backend.
+    timeout: float = 600.0
 
     @property
     def configured(self) -> bool:

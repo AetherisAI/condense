@@ -13,7 +13,7 @@ configured) so the default/test path never needs the ``libsql`` extra installed.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from sift.adapters.embedding.fake import FakeEmbedder
@@ -54,7 +54,12 @@ class _StubIngest:
     integration time.
     """
 
-    async def ingest(self, files: Sequence[tuple[str, bytes]], tenant: str) -> list[IngestOutcome]:
+    async def ingest(
+        self,
+        files: Sequence[tuple[str, bytes]],
+        tenant: str,
+        modified_at: Mapping[str, str] | None = None,
+    ) -> list[IngestOutcome]:
         return [
             IngestOutcome(path=name, status="indexed", content_hash=content_hash(data), chunks=1)
             for name, data in files
@@ -81,6 +86,10 @@ def _build_embedder(settings: Settings) -> Embedder:
             settings.embed_model,
             settings.embed_api_key,
             settings.embed_dim,
+            batch_size=settings.embed_batch_size,
+            timeout_s=settings.embed_timeout_s,
+            connect_timeout_s=settings.embed_connect_timeout_s,
+            retry_attempts=settings.embed_retry_attempts,
         )
     return FakeEmbedder(settings.embed_dim)
 
@@ -115,7 +124,7 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
             MarkitdownParser,
         )
 
-        parser: Parser = MarkitdownParser()
+        parser: Parser = MarkitdownParser(max_xlsx_cells=settings.parse_max_xlsx_cells)
         # OCR fallback (config-driven): wrap the parser so image/scanned files markitdown can't
         # read are OCR'd via Mistral and indexed — transparent to the ingest pipeline.
         if settings.ocr_enabled and settings.ocr_base_url:
@@ -124,7 +133,13 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
 
             parser = OcrFallbackParser(
                 parser,
-                MistralOcr(settings.ocr_base_url, settings.ocr_model, settings.ocr_api_key),
+                MistralOcr(
+                    settings.ocr_base_url,
+                    settings.ocr_model,
+                    settings.ocr_api_key,
+                    timeout_s=settings.ocr_timeout_s,
+                    connect_timeout_s=settings.ocr_connect_timeout_s,
+                ),
             )
 
         return IngestPipeline(

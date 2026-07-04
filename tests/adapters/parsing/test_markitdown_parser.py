@@ -8,18 +8,48 @@ cleanly instead of erroring on the ``markitdown`` import.
 from __future__ import annotations
 
 import hashlib
+import io
 
 import pytest
 
 pytest.importorskip("markitdown")
+openpyxl = pytest.importorskip("openpyxl")
 
 from sift.adapters.parsing.markitdown import MarkitdownParser  # noqa: E402
+from sift.core.errors import ParseError  # noqa: E402
 from sift.core.hashing import content_hash  # noqa: E402
 from sift.core.ports import Parser  # noqa: E402
 from sift.core.types import Document  # noqa: E402
 
 SAMPLE_TEXT = "Hello, Sift! This is a tiny markitdown parsing test.\n"
 SAMPLE_BYTES = SAMPLE_TEXT.encode("utf-8")
+
+
+def _xlsx_with_stray_far_cell() -> bytes:
+    """A tiny ``.xlsx`` whose real content is one cell, but whose *declared* used-range
+    balloons to over a million rows — the exact shape found in DECISIONS.md D34's incident
+    (a stray far cell, e.g. from a dropdown/paste artifact, that was later blanked but left
+    openpyxl's own dimension bookkeeping — and hence the real-world file's — inflated).
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws["A1"] = "hello"
+    ws["C1048573"] = "stray"
+    ws["C1048573"] = None
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _small_xlsx() -> bytes:
+    """A normal small ``.xlsx`` — no stray far cells, well under any sane cell-count guard."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["name", "value"])
+    ws.append(["alpha", 1])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def test_satisfies_parser_port() -> None:
@@ -73,3 +103,30 @@ async def test_parses_non_ascii_utf8_text() -> None:
 
     (page,) = doc.pages
     assert page.text.rstrip().endswith("end — dash")
+
+
+async def test_xlsx_with_implausible_used_range_raises_parse_error() -> None:
+    """DECISIONS.md D34: a real 38KB Leitat ``.xlsx`` declared a ``B1:AQ1048573`` used-range
+    (two stray cells at row ~1,048,572) and markitdown's ``pandas.read_excel(engine="openpyxl")``
+    materialized that whole range, climbing past 2GiB RSS before it was cgroup-OOM-killed. The
+    guard must reject this fast, with a clear reason, instead of ever attempting that parse.
+    """
+    parser = MarkitdownParser()
+
+    with pytest.raises(ParseError, match=r"cells"):
+        await parser.parse(_xlsx_with_stray_far_cell(), "cronograma.xlsx")
+
+
+async def test_xlsx_within_threshold_still_parses() -> None:
+    """A normal small xlsx (no stray far cells) must be unaffected by the guard."""
+    doc = await MarkitdownParser().parse(_small_xlsx(), "small.xlsx")
+
+    assert "alpha" in doc.pages[0].text
+
+
+async def test_xlsx_cell_threshold_is_configurable() -> None:
+    """A caller-supplied threshold is honored — e.g. a stricter cap for a memory-tight host."""
+    parser = MarkitdownParser(max_xlsx_cells=1)
+
+    with pytest.raises(ParseError, match=r"parse_max_xlsx_cells=1\b"):
+        await parser.parse(_small_xlsx(), "small.xlsx")

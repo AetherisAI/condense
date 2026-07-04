@@ -7,6 +7,20 @@ class SiftError(Exception):
     """Base class for all Sift domain errors."""
 
 
+class ParseError(SiftError):
+    """A file's declared structure makes it unsafe to parse — reject it explicitly rather than
+    attempt a parse that could exhaust memory (see DECISIONS.md D34: a stray far cell inflated
+    one real ``.xlsx``'s declared used-range to over a million rows, and markitdown's
+    ``pandas.read_excel(engine="openpyxl")`` dutifully materialized the whole declared range,
+    climbing past 2GiB RSS for a 38KB file).
+
+    Raised by parser adapters *before* the expensive conversion; the ingest pipeline's per-file
+    ``except Exception`` (``pipelines/ingest.py``) turns it into an explicit ``failed``
+    :class:`~sift.pipelines.ingest.IngestOutcome` with this exception's message as ``detail`` —
+    never a silent truncation, never an unbounded parse attempt.
+    """
+
+
 class ModelPinMismatch(SiftError):
     """The configured embedding model/dim disagrees with a tenant's pinned base.
 

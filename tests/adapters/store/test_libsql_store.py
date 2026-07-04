@@ -86,6 +86,50 @@ async def test_upsert_then_search_returns_best_with_citation(
     assert math.isclose(best.score, 1.0, rel_tol=1e-4)
 
 
+async def test_search_round_trips_modified_at(store: LibSQLStore, embedder: FakeEmbedder) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(
+        text="versioned passage",
+        source_path="v.md",
+        page=1,
+        source_hash="hv",
+        index=0,
+        modified_at="2026-02-03T04:05:06+00:00",
+    )
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    (query,) = await embedder.embed(["versioned passage"])
+    (hit,) = await store.search(query, 5, TENANT)
+    assert hit.modified_at == "2026-02-03T04:05:06+00:00"  # the recency signal survives the join
+    assert hit.indexed_at is not None  # ingest-time fallback is still stamped
+
+
+async def test_ensure_ready_migrates_legacy_files_table(tmp_path) -> None:
+    # A database created before ``modified_at`` existed: ensure_ready must ALTER it in, not crash.
+    db = str(tmp_path / "legacy.db")
+    conn = libsql.connect(db)
+    conn.execute(
+        "CREATE TABLE files (tenant TEXT, content_hash TEXT, path TEXT, indexed_at TEXT, "
+        "PRIMARY KEY (tenant, content_hash))"  # the pre-modified_at schema
+    )
+    conn.commit()
+    conn.close()
+
+    store = LibSQLStore(db)
+    embedder = FakeEmbedder(dim=DIM)
+    try:
+        await store.ensure_ready(MODEL, DIM, TENANT)  # migrates: adds the modified_at column
+        chunk = Chunk(
+            text="x", source_path="x.md", page=1, source_hash="hx", index=0, modified_at="2026-05"
+        )
+        await store.upsert([await _embedded(embedder, chunk)], TENANT)
+        (query,) = await embedder.embed(["x"])
+        (hit,) = await store.search(query, 5, TENANT)
+        assert hit.modified_at == "2026-05"
+    finally:
+        await store.aclose()
+
+
 async def test_search_honors_k(store: LibSQLStore, embedder: FakeEmbedder) -> None:
     await store.ensure_ready(MODEL, DIM, TENANT)
     chunks = [
@@ -151,6 +195,16 @@ async def test_upsert_before_ensure_ready_raises_sift_error(
     chunk = Chunk(text="x", source_path="x.md", page=1, source_hash="hx", index=0)
     with pytest.raises(SiftError):
         await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+
+async def test_read_paths_before_ensure_ready_report_empty_store(store: LibSQLStore) -> None:
+    """A fresh DB has no schema yet — the agent dedups by reading *before* the first ingest.
+
+    ``known_hashes``/``list_documents`` must report an empty store rather than raising
+    ``no such table: files`` (which surfaced as a 500 on ``/ingest/manifest`` + ``/documents``).
+    """
+    assert await store.known_hashes(TENANT) == set()
+    assert await store.list_documents(TENANT) == []
 
 
 async def test_upsert_none_vector_raises_value_error(store: LibSQLStore) -> None:

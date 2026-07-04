@@ -9,9 +9,12 @@ schema and surfaces a :class:`~sift.core.errors.ModelPinMismatch` as HTTP 409.
 
 from __future__ import annotations
 
+import json
+import logging
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 
 from sift.api.deps import get_container, resolve_tenant
 from sift.api.health import gather_components
@@ -32,11 +35,15 @@ from sift.config import Settings
 from sift.core.errors import ModelPinMismatch
 from sift.factory import Container, build_container
 from sift.pipelines.documents import SupportsDocumentAdmin
+from sift.pipelines.ingest import IngestOutcome
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Never serialize these back to a client — only whether they are configured.
-_SECRET_KEYS = frozenset({"turso_auth_token", "embed_api_key", "llm_api_key", "ingest_token"})
+_SECRET_KEYS = frozenset(
+    {"turso_auth_token", "embed_api_key", "llm_api_key", "ingest_token", "ocr_api_key"}
+)
 
 
 def _redacted_settings(settings: Settings) -> dict[str, object]:
@@ -123,16 +130,58 @@ async def ingest_manifest(
     return ManifestResponse(tenant=tenant, hashes=hashes)
 
 
+def _parse_modified_at(raw: str | None) -> dict[str, str] | None:
+    """Parse the optional ``modified_at`` form field (a JSON ``{name: iso}`` map); tolerate junk.
+
+    A malformed or non-object *envelope* is ignored (treated as "no mtimes") rather than failing
+    the whole upload — the recency hint is best-effort, never a reason to reject good documents.
+    Each individual *value* is validated as a real ISO-8601 timestamp (``datetime.fromisoformat``,
+    README/A1): a garbage value like ``"corrupted-not-a-date"`` is dropped with a WARNING naming
+    the file, rather than stored and later compared as a raw string (A1 — the old string
+    comparison let a corrupted value out-rank a real date; see ``pipelines.search._is_newer``).
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    mtimes: dict[str, str] = {}
+    for key, value in parsed.items():
+        if value is None:
+            continue
+        text = str(value)
+        try:
+            datetime.fromisoformat(text)
+        except ValueError:
+            logger.warning("ingest modified_at invalid for file=%r value=%r; dropping", key, text)
+            continue
+        mtimes[str(key)] = text
+    return mtimes
+
+
 @router.post("/ingest")
 async def ingest(
     files: list[UploadFile],
     container: Annotated[Container, Depends(get_container)],
     tenant: Annotated[str, Depends(resolve_tenant)],
+    modified_at: Annotated[str | None, Form()] = None,
 ) -> IngestResponse:
-    """Parse → chunk → embed → upsert each uploaded file; 409 on a model-pin mismatch."""
+    """Parse → chunk → embed → upsert each uploaded file; 409 on a model-pin mismatch.
+
+    ``modified_at`` is an optional JSON object ``{upload_name: iso8601}`` of each file's
+    last-modified time, sent by the agent so version-collapse can prefer the newest copy.
+
+    Every outcome is logged server-side (README §F1/E3): a batch that comes back HTTP 200 must
+    never silently hide a lost file — each failure gets its own WARNING line (path + detail),
+    plus one INFO summary of the whole batch's indexed/skipped/failed counts.
+    """
     payload = [(file.filename or "", await file.read()) for file in files]
+    mtimes = _parse_modified_at(modified_at)
     try:
-        outcomes = await container.ingest.ingest(payload, tenant)
+        outcomes = await container.ingest.ingest(payload, tenant, modified_at=mtimes)
     except ModelPinMismatch as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     results = [
@@ -145,7 +194,27 @@ async def ingest(
         )
         for outcome in outcomes
     ]
+    _log_ingest_outcomes(outcomes, tenant)
     return IngestResponse(tenant=tenant, results=results)
+
+
+def _log_ingest_outcomes(outcomes: list[IngestOutcome], tenant: str) -> None:
+    """Per-file WARNING for every failure, plus one INFO summary — never a silent 200."""
+    counts = {"indexed": 0, "skipped_dedup": 0, "failed": 0}
+    for outcome in outcomes:
+        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+        if outcome.status == "failed":
+            logger.warning(
+                "ingest failed path=%r tenant=%r detail=%s", outcome.path, tenant, outcome.detail
+            )
+    logger.info(
+        "ingest batch tenant=%r total=%d indexed=%d skipped_dedup=%d failed=%d",
+        tenant,
+        len(outcomes),
+        counts["indexed"],
+        counts["skipped_dedup"],
+        counts["failed"],
+    )
 
 
 @router.get("/documents")
