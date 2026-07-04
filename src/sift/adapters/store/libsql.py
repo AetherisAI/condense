@@ -38,9 +38,16 @@ _DDL_MODEL_PIN = (
 
 _DDL_FILES = (
     "CREATE TABLE IF NOT EXISTS files ("
-    "tenant TEXT, content_hash TEXT, path TEXT, indexed_at TEXT, "
+    "tenant TEXT, content_hash TEXT, path TEXT, indexed_at TEXT, modified_at TEXT, "
     "PRIMARY KEY (tenant, content_hash))"
 )
+
+# Additive migration for databases created before ``modified_at`` existed: SQLite has no
+# "ADD COLUMN IF NOT EXISTS", so probe ``pragma_table_info`` and add it only when missing.
+_FILES_HAS_MODIFIED_AT = (
+    "SELECT 1 FROM pragma_table_info('files') WHERE name = 'modified_at'"
+)
+_ALTER_FILES_ADD_MODIFIED_AT = "ALTER TABLE files ADD COLUMN modified_at TEXT"
 
 _DDL_CHUNKS = (
     "CREATE TABLE IF NOT EXISTS chunks ("
@@ -58,21 +65,27 @@ _INSERT_CHUNK = (
 )
 
 _INSERT_FILE = (
-    "INSERT INTO files (tenant, content_hash, path, indexed_at) VALUES (?, ?, ?, ?) "
+    "INSERT INTO files (tenant, content_hash, path, indexed_at, modified_at) "
+    "VALUES (?, ?, ?, ?, ?) "
     "ON CONFLICT(tenant, content_hash) DO UPDATE SET "
-    "path = excluded.path, indexed_at = excluded.indexed_at"
+    "path = excluded.path, indexed_at = excluded.indexed_at, "
+    "modified_at = excluded.modified_at"
 )
 
 _PIN_TABLE_EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'model_pin'"
+
+_FILES_TABLE_EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'files'"
 
 _SELECT_PIN = "SELECT model, dim FROM model_pin WHERE tenant = ?"
 
 _INSERT_PIN = "INSERT INTO model_pin (tenant, model, dim) VALUES (?, ?, ?)"
 
 _SEARCH = (
-    "SELECT text, source_path, page, source_hash, idx, "
-    "vector_distance_cos(embedding, vector32(?)) AS d "
-    "FROM chunks WHERE tenant = ? ORDER BY d ASC LIMIT ?"
+    "SELECT c.text, c.source_path, c.page, c.source_hash, c.idx, "
+    "vector_distance_cos(c.embedding, vector32(?)) AS d, f.indexed_at, f.modified_at "
+    "FROM chunks c "
+    "LEFT JOIN files f ON f.tenant = c.tenant AND f.content_hash = c.source_hash "
+    "WHERE c.tenant = ? ORDER BY d ASC LIMIT ?"
 )
 
 _SELECT_HASHES = "SELECT content_hash FROM files WHERE tenant = ?"
@@ -166,6 +179,8 @@ class LibSQLStore:
         conn.execute(_DDL_MODEL_PIN)
         conn.execute(_DDL_FILES)
         conn.execute(_DDL_CHUNKS.format(dim=dim))
+        if not conn.execute(_FILES_HAS_MODIFIED_AT).fetchall():
+            conn.execute(_ALTER_FILES_ADD_MODIFIED_AT)  # migrate a pre-``modified_at`` database
         conn.commit()
 
         rows = conn.execute(_SELECT_PIN, (tenant,)).fetchall()
@@ -207,7 +222,10 @@ class LibSQLStore:
                     _vector_json(chunk.vector),
                 ),
             )
-            conn.execute(_INSERT_FILE, (tenant, chunk.source_hash, chunk.source_path, now))
+            conn.execute(
+                _INSERT_FILE,
+                (tenant, chunk.source_hash, chunk.source_path, now, chunk.modified_at),
+            )
         conn.commit()
 
     def _search_job(self, vector: Vector, k: int, tenant: str) -> list[Hit]:
@@ -221,17 +239,28 @@ class LibSQLStore:
                 page=row[2],
                 source_hash=row[3],
                 index=row[4],
+                indexed_at=row[6],
+                modified_at=row[7],
             )
             for row in rows
         ]
 
     def _known_hashes_job(self, tenant: str) -> set[str]:
         conn = self._connection()
+        # A fresh database has no schema until the first ingest runs ``ensure_ready``. The
+        # agent dedups by reading the manifest *before* it ever uploads, so guard the read
+        # and report an empty store rather than crashing on ``no such table: files``.
+        if not conn.execute(_FILES_TABLE_EXISTS).fetchall():
+            return set()
         rows = conn.execute(_SELECT_HASHES, (tenant,)).fetchall()
         return {row[0] for row in rows}
 
     def _list_documents_job(self, tenant: str) -> list[DocumentInfo]:
         conn = self._connection()
+        # Same fresh-database guard as ``_known_hashes_job``: the document list is read
+        # before the first ingest creates the schema, so an empty store is "no documents".
+        if not conn.execute(_FILES_TABLE_EXISTS).fetchall():
+            return []
         rows = conn.execute(_SELECT_DOCUMENTS, (tenant,)).fetchall()
         return [DocumentInfo(source_path=row[0], source_hash=row[1], chunks=row[2]) for row in rows]
 

@@ -332,7 +332,7 @@ class AgentApp:
         if not self._cfg.configured:
             self._status.set("Not configured — open ⚙ Settings")
             return
-        self._client = SiftClient(self._cfg.engine_url, self._cfg.token)
+        self._client = SiftClient(self._cfg.engine_url, self._cfg.token, timeout=self._cfg.timeout)
         if not self._paused:
             self._start_watching()
         self._request_sync()
@@ -386,6 +386,8 @@ class AgentApp:
                     tenant=cfg.tenant,
                     delete_removed=cfg.delete_removed,
                     managed=self._managed,
+                    max_file_size_mb=cfg.max_file_size_mb,
+                    exclude_dirs=set(cfg.exclude_dirs),
                 )
                 self._managed = set(summary.managed)
             self._ui(lambda s=summary: self._status.set(s.line()))
@@ -440,6 +442,7 @@ class AgentApp:
         tenant = tk.StringVar(value=self._cfg.tenant)
         recursive = tk.BooleanVar(value=self._cfg.recursive)
         delete_removed = tk.BooleanVar(value=self._cfg.delete_removed)
+        max_size = tk.StringVar(value=str(self._cfg.max_file_size_mb))
 
         def field(label: str, var: tk.StringVar, *, secret: bool = False) -> None:
             r = ttk.Frame(frm)
@@ -490,6 +493,7 @@ class AgentApp:
 
         field("Extensions", exts)
         field("Tenant", tenant)
+        field("Max file (MB)", max_size)
         ttk.Checkbutton(frm, text="Watch subfolders (recursive)", variable=recursive).pack(
             anchor="w", pady=(10, 0)
         )
@@ -505,6 +509,10 @@ class AgentApp:
             self._cfg.recursive = recursive.get()
             self._cfg.delete_removed = delete_removed.get()
             self._cfg.include_exts = [e.strip() for e in exts.get().split(",") if e.strip()]
+            try:
+                self._cfg.max_file_size_mb = max(1, int(max_size.get().strip()))
+            except ValueError:
+                pass  # keep the previous value rather than crash the settings dialog
             save(self._cfg)
             win.destroy()
             self._refresh_path_label()

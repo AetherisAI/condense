@@ -1,5 +1,12 @@
 # WP0 — Contracts & Fakes — Machine Doc
 
+> ⚠️ **HISTORICAL — superseded.** This is the original WP0 plan and no longer reflects current
+> work. Condense is feature-complete on `main` (v0.1.0-ready). The **current** work is the
+> agent-robustness + version-collapse + status-redaction + engine-resilience + mtime-correctness
+> slice on branch `claude/condense-access-status-tz7hpz` — see
+> **[`SESSION-HANDOFF.md`](./SESSION-HANDOFF.md)** and **[`human.md`](./human.md)**. Kept for
+> reference only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax. TDD, commit per task.
 
 **Status:** planned (ready to implement) · **Branch:** `feat/contracts` · **Updated:** 2026-06-27 · Paired with [`human.md`](./human.md).

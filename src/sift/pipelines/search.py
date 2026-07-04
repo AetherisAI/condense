@@ -8,6 +8,8 @@ citations. An empty base short-circuits to a "No results found." recap with no s
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sift.api.schemas import SearchResponse, Source
 from sift.config import Settings
 from sift.core.ports import Completer, Embedder, Reranker, VectorStore
@@ -38,6 +40,96 @@ def _snippet(text: str, n: int) -> str:
     """Collapse whitespace and truncate ``text`` to ``n`` chars with an ellipsis."""
     collapsed = " ".join(text.split())
     return collapsed if len(collapsed) <= n else collapsed[:n].rstrip() + "…"
+
+
+def _shingles(text: str, n: int = 5) -> set[str]:
+    """Normalised overlapping ``n``-word shingles of ``text`` — the lexical near-dup signal.
+
+    Lowercase + whitespace-collapse, then every window of ``n`` consecutive tokens. Two
+    versions of one document share almost all shingles; two genuinely different documents on
+    the same topic share few (same words, different sequences). Short texts degrade to a single
+    whole-text shingle so they still compare exactly.
+    """
+    tokens = text.lower().split()
+    if len(tokens) < n:
+        return {" ".join(tokens)} if tokens else set()
+    return {" ".join(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
+
+
+def _lexical_similarity(a: str, b: str) -> float:
+    """Token-shingle Jaccard ∈ [0,1]: 1.0 identical text, ~0 disjoint. Order-sensitive, stdlib."""
+    sa, sb = _shingles(a), _shingles(b)
+    if not sa or not sb:
+        return 1.0 if sa == sb else 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 ``modified_at`` into a real, comparable ``datetime``.
+
+    ``None`` in, ``None`` out; a value that fails ``datetime.fromisoformat`` also yields ``None``
+    (unparseable, treated as absent evidence — never compared as a raw string, A1/A2). A naive
+    result (no timezone) is treated as UTC so it stays comparable to an aware one.
+    """
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _is_newer(candidate: Hit, kept: Hit) -> bool:
+    """True when ``candidate`` is the more recent of two near-duplicates.
+
+    Compares real ``datetime``s parsed from ``modified_at`` (ISO-8601 mtime) — the signal that
+    actually distinguishes v1 from v2 regardless of when each was ingested — never raw strings
+    (a corrupted value like ``"corrupted-not-a-date"`` must never out-rank a real date, A1). The
+    rule, in order:
+
+    1. If either side has a *valid* ``modified_at``, that evidence decides: a side with a valid
+       mtime beats a side without one (evidence beats no evidence, A2); if both are valid, the
+       later timestamp wins; if both are missing/invalid, fall through.
+    2. Only when **neither** side has a valid mtime do we fall back to ``indexed_at``
+       (store-local: ISO on libSQL, monotonic counter on the fake), so a pre-metadata corpus
+       still degrades gracefully.
+    3. When nothing is comparable we keep the incumbent, which holds the better retrieval rank.
+    """
+    mine_dt, theirs_dt = _parse_datetime(candidate.modified_at), _parse_datetime(kept.modified_at)
+    if mine_dt is not None or theirs_dt is not None:
+        if mine_dt is None:
+            return False
+        if theirs_dt is None:
+            return True
+        return mine_dt > theirs_dt
+    mine_idx, theirs_idx = candidate.indexed_at, kept.indexed_at
+    if mine_idx is not None and theirs_idx is not None:
+        return mine_idx > theirs_idx
+    return False
+
+
+def _collapse_versions(candidates: list[Hit], threshold: float) -> list[Hit]:
+    """Fold near-identical passages into one representative, keeping the most recent copy.
+
+    Greedy over the retrieval-ordered candidates: a passage that is lexically ≥ ``threshold``
+    similar to one already kept is a version of it — keep whichever was modified more recently
+    (see :func:`_is_newer`), in the slot the family already earned. Distinct passages pass
+    through untouched, so order and ranking are preserved for everything that is not a duplicate.
+    """
+    kept: list[Hit] = []
+    for cand in candidates:
+        dup_index = next(
+            (i for i, k in enumerate(kept) if _lexical_similarity(cand.text, k.text) >= threshold),
+            None,
+        )
+        if dup_index is None:
+            kept.append(cand)
+        elif _is_newer(cand, kept[dup_index]):
+            kept[dup_index] = cand
+    return kept
 
 
 def _recap_user(query: str, passages: list[Hit]) -> str:
@@ -75,6 +167,10 @@ class SearchPipeline:
         candidates = await self._store.search(vectors[0], settings.retrieve_k, tenant)
         if not candidates:
             return SearchResponse(summary="No results found.", sources=[])
+        # Collapse near-duplicate versions before reranking so a stale copy can never out-rank
+        # its newer twin (and so the reranker / recap spend their budget on distinct passages).
+        if settings.version_collapse_enabled:
+            candidates = _collapse_versions(candidates, settings.version_similarity_threshold)
         ranked = await self._reranker.rerank(query, candidates)
         top = ranked[: settings.final_k]
         # Recap is optional: when off (per-request override, else the config default) we skip the

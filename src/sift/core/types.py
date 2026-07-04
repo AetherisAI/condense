@@ -48,6 +48,7 @@ class Chunk:
     source_hash: str  # parent file hash → known_hashes / manifest
     index: int  # 0-based ordinal within the document; (source_hash, index) is a stable PK
     vector: Vector | None = None  # None pre-embed; asserted non-None at upsert
+    modified_at: str | None = None  # source file's last-modified time (ISO-8601); recency signal
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -65,6 +66,8 @@ class Hit:
     page: int  # → Source.page
     source_hash: str = ""
     index: int = -1
+    modified_at: str | None = None  # source file's last-modified time (ISO-8601); primary recency
+    indexed_at: str | None = None  # when the store indexed it; recency fallback when mtime absent
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

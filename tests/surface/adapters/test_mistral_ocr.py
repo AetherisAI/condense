@@ -100,3 +100,49 @@ async def test_http_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(httpx.HTTPStatusError):
         await ocr.extract(b"x", "a.png")
+
+
+def _patch_capturing_timeout(monkeypatch: pytest.MonkeyPatch) -> dict[str, httpx.Timeout]:
+    """Patch ``httpx.AsyncClient`` to record its ``timeout=`` kwarg (still answers via a
+    MockTransport, so the OCR call itself succeeds)."""
+    captured: dict[str, httpx.Timeout] = {}
+    real_client = httpx.AsyncClient
+
+    def _make_client(*args, **kwargs):
+        timeout = kwargs.get("timeout")
+        assert isinstance(timeout, httpx.Timeout)
+        captured["timeout"] = timeout
+        return real_client(*args, **kwargs, transport=httpx.MockTransport(_two_pages))
+
+    monkeypatch.setattr(httpx, "AsyncClient", _make_client)
+    return captured
+
+
+async def test_default_timeout_is_bounded_not_a_flat_120s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _patch_capturing_timeout(monkeypatch)
+    ocr = MistralOcr("https://api.mistral.ai/v1", "mistral-ocr-latest", "k")
+
+    await ocr.extract(b"x", "a.png")
+
+    timeout = captured["timeout"]
+    assert timeout.connect == 5.0
+    assert timeout.read == 60.0
+
+
+async def test_timeouts_are_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = _patch_capturing_timeout(monkeypatch)
+    ocr = MistralOcr(
+        "https://api.mistral.ai/v1",
+        "mistral-ocr-latest",
+        "k",
+        timeout_s=15.0,
+        connect_timeout_s=3.0,
+    )
+
+    await ocr.extract(b"x", "a.png")
+
+    timeout = captured["timeout"]
+    assert timeout.connect == 3.0
+    assert timeout.read == 15.0

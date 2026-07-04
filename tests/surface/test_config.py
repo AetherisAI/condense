@@ -26,6 +26,13 @@ _ENV_KEYS = (
     "CHUNK_SIZE",
     "CHUNK_OVERLAP",
     "INGEST_TOKEN",
+    "EMBED_BATCH_SIZE",
+    "EMBED_TIMEOUT_S",
+    "EMBED_CONNECT_TIMEOUT_S",
+    "OCR_TIMEOUT_S",
+    "OCR_CONNECT_TIMEOUT_S",
+    "EMBED_RETRY_ATTEMPTS",
+    "PARSE_MAX_XLSX_CELLS",
 )
 
 
@@ -57,6 +64,13 @@ def test_defaults_populate() -> None:
     assert settings.chunk_size == 512
     assert settings.chunk_overlap == 64
     assert settings.ingest_token == "t"
+    # Bounded, config-driven HTTP behaviour for the embed/OCR adapters (replaces old hardcoded
+    # module constants: embed batch size 64, a flat 120s timeout).
+    assert settings.embed_batch_size == 64
+    assert settings.embed_timeout_s == 60.0
+    assert settings.embed_connect_timeout_s == 5.0
+    assert settings.ocr_timeout_s == 60.0
+    assert settings.ocr_connect_timeout_s == 5.0
 
 
 def test_missing_ingest_token_raises() -> None:
@@ -68,6 +82,24 @@ def test_missing_ingest_token_raises() -> None:
 
 def test_bogus_rerank_strategy_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RERANK_STRATEGY", "bogus")
+    with pytest.raises(ValidationError):
+        Settings(ingest_token="t")
+
+
+def test_embed_retry_attempts_below_one_raises_validation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A 0-attempt budget reached an AssertionError mid-request instead of failing fast at
+    # construction (see DECISIONS.md D36) — Field(ge=1) must catch it up front instead.
+    monkeypatch.setenv("EMBED_RETRY_ATTEMPTS", "0")
+    with pytest.raises(ValidationError):
+        Settings(ingest_token="t")
+
+
+def test_parse_max_xlsx_cells_below_one_raises_validation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PARSE_MAX_XLSX_CELLS", "0")
     with pytest.raises(ValidationError):
         Settings(ingest_token="t")
 

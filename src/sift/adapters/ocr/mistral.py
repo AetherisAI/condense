@@ -28,16 +28,26 @@ _IMAGE_MIMES = {
     ".bmp": "image/bmp",
     ".tiff": "image/tiff",
 }
-_TIMEOUT = httpx.Timeout(120.0)
 
 
 class MistralOcr:
     """OCR extractor backed by Mistral's ``/ocr`` HTTP endpoint."""
 
-    def __init__(self, base_url: str, model: str, api_key: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str,
+        *,
+        timeout_s: float = 60.0,
+        connect_timeout_s: float = 5.0,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key
+        # Same bounded, config-driven timeout shape as the embedder: a short connect budget so
+        # an unreachable OCR backend fails fast, a longer one for the (genuinely slow) OCR call.
+        self._timeout = httpx.Timeout(timeout_s, connect=connect_timeout_s)
 
     async def extract(self, data: bytes, filename: str) -> str:
         """OCR ``data`` (the raw bytes of ``filename``) into joined markdown, or ``""``."""
@@ -54,7 +64,7 @@ class MistralOcr:
             }
         headers = {"Authorization": f"Bearer {self._api_key}"}
         payload = {"model": self._model, "document": document}
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(f"{self._base_url}/ocr", json=payload, headers=headers)
             response.raise_for_status()
             body = response.json()

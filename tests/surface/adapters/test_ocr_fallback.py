@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from sift.adapters.ocr.fallback_parser import OcrFallbackParser
+from sift.core.errors import ParseError
 from sift.core.types import Document, Page
 
 
@@ -66,6 +67,23 @@ async def test_fallback_to_ocr_when_pages_empty() -> None:
     assert [page.text for page in result.pages] == ["extracted text"]
     assert result.pages[0].number == 1
     assert result.path == "scan.png"
+
+
+async def test_reraises_siftError_unchanged_without_touching_ocr() -> None:
+    # A deliberate domain-level rejection (e.g. the xlsx used-range guard's ParseError, D34) is
+    # not "the primary parser found no text" — it's a considered refusal to attempt an unsafe
+    # parse at all. It must propagate unchanged (same instance, same message) and never trigger
+    # OCR: no fallback text, no network call, no confusing OCR-side error replacing the real one.
+    ocr = _OcrStub(fail_if_called=True)
+    original = ParseError("sheet dimension implies 44,040,066 cells")
+    primary = _PrimaryStub(error=original)
+    parser = OcrFallbackParser(primary, ocr)  # type: ignore[arg-type]
+
+    with pytest.raises(ParseError) as exc_info:
+        await parser.parse(b"PK\x03\x04...", "huge.xlsx")
+
+    assert exc_info.value is original
+    assert ocr.called is False
 
 
 async def test_fallback_to_ocr_when_primary_raises() -> None:

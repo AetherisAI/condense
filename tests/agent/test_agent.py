@@ -8,6 +8,8 @@ saw so a re-run can prove no upload happens when the manifest already knows ever
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -18,7 +20,7 @@ pytest.importorskip("httpx")
 
 import httpx  # noqa: E402
 from agent.cli import collect, main  # noqa: E402
-from agent.client import SiftClient  # noqa: E402
+from agent.client import PartialIngestError, SiftClient  # noqa: E402
 
 TOKEN = "secret-token"
 TENANT = "team-a"
@@ -72,21 +74,41 @@ def _seed_dir(root: Path) -> dict[str, bytes]:
 
 
 def test_collect_hashes_match_sha256(tmp_path: Path) -> None:
+    """The digest is the streamed sha256 of the file, and the loader is lazy (not eager bytes).
+
+    A3: ``collect`` must not read every matched file's full bytes up front — the third tuple
+    element is a zero-arg callable that only reads the file when actually invoked.
+    """
     expected = _seed_dir(tmp_path)
     got = collect(str(tmp_path), {".txt", ".md"})
 
-    by_rel = {rel: (h, data) for rel, h, data in got}
+    by_rel = {rel: (h, loader) for rel, h, loader, _m in got}
     assert set(by_rel) == set(expected)
     for rel, data in expected.items():
-        h, got_data = by_rel[rel]
-        assert got_data == data
+        h, loader = by_rel[rel]
+        assert callable(loader)
+        assert loader() == data
         assert h == hashlib.sha256(data).hexdigest()
 
 
 def test_collect_filters_by_extension(tmp_path: Path) -> None:
     _seed_dir(tmp_path)
-    rels = {rel for rel, _h, _data in collect(str(tmp_path), {".md"})}
+    rels = {rel for rel, _h, _loader, _m in collect(str(tmp_path), {".md"})}
     assert rels == {"b.md"}
+
+
+def test_collect_skips_oversized_file_and_warns(tmp_path: Path) -> None:
+    """A file over the size guard is excluded entirely (never hashed/loaded) and warns (A3)."""
+    small = tmp_path / "small.txt"
+    small.write_bytes(b"tiny")
+    big = tmp_path / "big.txt"
+    big.write_bytes(b"x" * (2 * 1024 * 1024))  # 2 MiB
+
+    with pytest.warns(UserWarning, match="big.txt"):
+        got = collect(str(tmp_path), {".txt"}, max_file_size_mb=1)
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {"small.txt"}
 
 
 def test_diff_excludes_known_hashes(tmp_path: Path) -> None:
@@ -94,13 +116,31 @@ def test_diff_excludes_known_hashes(tmp_path: Path) -> None:
     files = collect(str(tmp_path), {".txt", ".md"})
     known = {hashlib.sha256(b"alpha").hexdigest()}  # a.txt already ingested
 
-    todo = [(rel, h, data) for rel, h, data in files if h not in known]
-    rels = {rel for rel, _h, _data in todo}
+    todo = [(rel, h, loader, m) for rel, h, loader, m in files if h not in known]
+    rels = {rel for rel, _h, _loader, _m in todo}
     assert "a.txt" not in rels
     assert "b.md" in rels
 
 
 # --------------------------------------------------------------------------- client
+
+
+def test_sift_client_default_timeout_is_600() -> None:
+    """One OCR-heavy batch took 5m6s server-side under the old 300s default — raise it so a slow
+    but healthy batch isn't abandoned client-side while the server keeps working it."""
+    client = SiftClient(BASE_URL, TOKEN)
+    try:
+        assert client._c.timeout == httpx.Timeout(600.0)
+    finally:
+        client.close()
+
+
+def test_sift_client_custom_timeout_reaches_httpx_client() -> None:
+    client = SiftClient(BASE_URL, TOKEN, timeout=12.5)
+    try:
+        assert client._c.timeout == httpx.Timeout(12.5)
+    finally:
+        client.close()
 
 
 def test_manifest_parses_and_sends_bearer_and_tenant() -> None:
@@ -125,6 +165,139 @@ def test_ingest_posts_multipart_and_parses_results() -> None:
     assert resp["tenant"] == TENANT
     statuses = {r["path"]: r["status"] for r in resp["results"]}
     assert statuses == {"a.txt": "indexed", "b.md": "indexed"}
+
+
+def test_ingest_batches_split_modified_at_and_merge_results() -> None:
+    """A folder larger than batch_size goes out in several POSTs; results merge, mtimes split.
+
+    Guards the OOM fix (D29): the client must never send a whole folder as one request. Each
+    batch carries only its own files' mtimes, and the merged body keeps the server's top-level
+    shape (``tenant``) while concatenating every batch's ``results``.
+    """
+    posts: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("Authorization") == f"Bearer {TOKEN}"
+        tenant = request.url.params.get("tenant")
+        assert request.method == "POST" and request.url.path == "/ingest"
+        body = request.content.decode("latin-1")
+        names = re.findall(r'filename="([^"]*)"', body)
+        m = re.search(r'name="modified_at"\r\n\r\n([^\r]*)\r\n', body)
+        posts.append({"names": names, "mtimes": json.loads(m.group(1)) if m else {}})
+        return httpx.Response(
+            200,
+            json={"tenant": tenant, "results": [{"path": n, "status": "indexed"} for n in names]},
+        )
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler), batch_size=2)
+    files = [(f"f{i}.txt", f"data{i}".encode()) for i in range(5)]
+    mtimes = {f"f{i}.txt": f"2026-06-30T0{i}:00:00+00:00" for i in range(5)}
+    try:
+        resp = client.ingest(TENANT, files, modified_at=mtimes)
+    finally:
+        client.close()
+
+    assert [len(p["names"]) for p in posts] == [2, 2, 1]  # 5 files, batch 2 -> 2+2+1
+    assert resp["tenant"] == TENANT  # server shape preserved across the merge
+    assert {r["path"] for r in resp["results"]} == {f"f{i}.txt" for i in range(5)}
+    for p in posts:  # each POST carried exactly its own batch's mtimes — no cross-batch leakage
+        assert set(p["mtimes"]) == set(p["names"])
+        assert all(p["mtimes"][n] == mtimes[n] for n in p["names"])
+
+
+def test_ingest_accepts_lazy_loaders_and_resolves_them_per_batch() -> None:
+    """A ``(name, loader)`` pair — not raw bytes — must still upload the loader's bytes (A3)."""
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(request.content.decode("latin-1"))
+        results = [{"path": "x", "status": "indexed"}]
+        return httpx.Response(200, json={"tenant": "t", "results": results})
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler))
+    calls = [0]
+
+    def loader() -> bytes:
+        calls[0] += 1
+        return b"lazy-bytes"
+
+    try:
+        client.ingest("t", [("x.txt", loader)])
+    finally:
+        client.close()
+
+    assert calls[0] == 1  # read exactly once, at upload time
+    assert "lazy-bytes" in bodies[0]
+
+
+def test_ingest_first_batch_failure_raises_plain_error() -> None:
+    """No batch has landed yet — the raw HTTP error propagates, nothing to wrap as partial."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"detail": "boom"})
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler), batch_size=2)
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            client.ingest("t", [("f0.txt", b"d0")])
+    finally:
+        client.close()
+
+
+def test_ingest_mid_batch_failure_raises_partial_with_earlier_results() -> None:
+    """Batch 2 of 2 fails after batch 1 succeeded — must not lose batch 1's landed results (A4)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode("latin-1")
+        names = re.findall(r'filename="([^"]*)"', body)
+        if "f2.txt" in names:
+            return httpx.Response(500, json={"detail": "boom"})
+        return httpx.Response(
+            200,
+            json={"tenant": "t", "results": [{"path": n, "status": "indexed"} for n in names]},
+        )
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler), batch_size=2)
+    files = [(f"f{i}.txt", f"d{i}".encode()) for i in range(4)]
+    try:
+        with pytest.raises(PartialIngestError) as exc_info:
+            client.ingest("t", files)
+    finally:
+        client.close()
+
+    partial = exc_info.value.partial
+    assert {r["path"] for r in partial["results"]} == {"f0.txt", "f1.txt"}
+    assert isinstance(exc_info.value.cause, httpx.HTTPStatusError)
+    assert exc_info.value.__cause__ is exc_info.value.cause  # chained via `raise ... from exc`
+
+
+def test_ingest_mid_batch_invalid_json_raises_partial_with_earlier_results() -> None:
+    """Batch 2 of 2 returns HTTP 200 but a body that isn't valid JSON — must still raise
+    ``PartialIngestError`` carrying batch 1's landed results (R3): ``r.json()`` used to run
+    outside the batch's protected section, so a 200-with-garbage-body silently discarded every
+    earlier batch's accounting instead of raising.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode("latin-1")
+        names = re.findall(r'filename="([^"]*)"', body)
+        if "f2.txt" in names:
+            return httpx.Response(200, content=b"not json at all")
+        return httpx.Response(
+            200,
+            json={"tenant": "t", "results": [{"path": n, "status": "indexed"} for n in names]},
+        )
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler), batch_size=2)
+    files = [(f"f{i}.txt", f"d{i}".encode()) for i in range(4)]
+    try:
+        with pytest.raises(PartialIngestError) as exc_info:
+            client.ingest("t", files)
+    finally:
+        client.close()
+
+    partial = exc_info.value.partial
+    assert {r["path"] for r in partial["results"]} == {"f0.txt", "f1.txt"}
 
 
 # --------------------------------------------------------------------------- main end-to-end
@@ -160,6 +333,75 @@ def test_main_dry_run_makes_no_post(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert "WOULD UPLOAD" in capsys.readouterr().out
 
 
+def test_main_exclude_dir_flag_adds_to_the_builtin_exclusions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--exclude-dir`` merges with the built-in vendored-dir set rather than replacing it."""
+    (tmp_path / "keep.txt").write_bytes(b"keep")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "throwaway.txt").write_bytes(b"throwaway")
+    venv = tmp_path / ".venv"
+    venv.mkdir()
+    (venv / "junk.txt").write_bytes(b"venv junk")
+
+    calls: list[str] = []
+    client = _client(set(), calls)
+
+    rc = main(
+        [str(tmp_path), "--tenant", TENANT, "--exclude-dir", "scratch"],
+        client=client,
+    )
+    client.close()
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "keep.txt" in out
+    assert "throwaway.txt" not in out  # excluded via the flag
+    assert "junk.txt" not in out  # still excluded via the built-in default
+
+
+def test_main_timeout_flag_threads_into_default_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--timeout`` must reach the ``SiftClient`` ``main`` builds when no ``client`` is injected
+    — not just parse as an argparse no-op — and from there into the underlying httpx client."""
+    captured: dict[str, float] = {}
+
+    class _RecordingClient(SiftClient):
+        def __init__(
+            self, base_url: str, token: str, *, timeout: float = 600.0, **kwargs: object
+        ) -> None:
+            captured["timeout"] = timeout
+            super().__init__(
+                base_url,
+                token,
+                timeout=timeout,
+                transport=httpx.MockTransport(
+                    lambda r: httpx.Response(200, json={"tenant": TENANT, "hashes": []})
+                ),
+            )
+
+    monkeypatch.setattr("agent.cli.SiftClient", _RecordingClient)
+
+    rc = main(
+        [
+            "--server",
+            BASE_URL,
+            "--token",
+            TOKEN,
+            "--tenant",
+            TENANT,
+            "--timeout",
+            "45",
+            str(tmp_path),
+        ]
+    )
+
+    assert rc == 0
+    assert captured["timeout"] == 45.0
+
+
 def test_main_rerun_all_known_skips_upload(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -174,3 +416,117 @@ def test_main_rerun_all_known_skips_upload(
     assert rc == 0
     assert "POST" not in calls
     assert "nothing to upload" in capsys.readouterr().out
+
+
+def test_ingest_sends_modified_at_form_field() -> None:
+    # The agent must transmit each file's last-modified time so the server can prefer the newest
+    # version at search time. Capture the multipart body and assert the modified_at map is there.
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(request.content.decode("latin-1"))
+        return httpx.Response(200, json={"tenant": "t", "results": []})
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler))
+    client.ingest("t", [("notes.md", b"hi")], modified_at={"notes.md": "2026-02-03T00:00:00+00:00"})
+    client.close()
+
+    (body,) = bodies
+    assert 'name="modified_at"' in body  # the form field rides alongside the files
+    assert "2026-02-03T00:00:00+00:00" in body
+    assert "notes.md" in body
+
+
+def test_main_partial_ingest_prints_statuses_summary_and_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Batch 2 of 2 fails after batch 1 already landed — ``main`` must not swallow that progress
+    (R2): every per-file status the server confirmed prints, a ``PARTIAL: …`` summary line names
+    how many files never got attempted (including a ``skipped_dedup`` status, same convention as
+    ``sync``'s ``Summary.line()``), and the process exits non-zero (never a bare traceback, never
+    exit 0 as if nothing went wrong).
+    """
+    for i, name in enumerate(["a.txt", "b.txt", "c.txt", "d.txt"]):
+        (tmp_path / name).write_bytes(f"data-{name}".encode())
+        os.utime(tmp_path / name, (1000 + i, 1000 + i))  # controls batch order (mtime-sorted)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/ingest/manifest":
+            return httpx.Response(200, json={"tenant": TENANT, "hashes": []})
+        if request.method == "POST" and request.url.path == "/ingest":
+            body = request.content.decode("latin-1")
+            names = re.findall(r'filename="([^"]*)"', body)
+            if "c.txt" in names or "d.txt" in names:  # batch 2 (mtime-sorted after a/b) fails
+                return httpx.Response(500, json={"detail": "boom"})
+            # a.txt already existed server-side (raced with another agent) → skipped_dedup.
+            results = [
+                {"path": n, "status": "skipped_dedup" if n == "a.txt" else "indexed"} for n in names
+            ]
+            return httpx.Response(200, json={"tenant": TENANT, "results": results})
+        return httpx.Response(404, json={"detail": "not found"})
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler), batch_size=2)
+
+    rc = main(["--tenant", TENANT, str(tmp_path)], client=client)
+    client.close()
+
+    assert rc != 0
+    out = capsys.readouterr().out
+    assert "skipped_dedup\ta.txt" in out
+    assert "indexed\tb.txt" in out
+    assert "c.txt" not in out.split("PARTIAL:")[0]  # never-attempted files print no status line
+    assert "PARTIAL: 1 indexed, 1 skipped, 0 failed, 2 of 4 files never attempted" in out
+
+
+# --------------------------------------------------------------------------- collect exclusions
+
+
+def test_collect_prunes_vendored_directories_by_default(tmp_path: Path) -> None:
+    """A ``.venv``/``node_modules``/etc. subtree never contributes matches (R4) — a real corpus
+    audit found license ``.txt``/``.md`` files under a nested ``.venv/site-packages`` inflating
+    the upload set with junk that isn't the user's own content.
+    """
+    (tmp_path / "real.txt").write_bytes(b"keep me")
+    venv = tmp_path / ".venv" / "lib" / "site-packages" / "numpy-1.26.4.dist-info"
+    venv.mkdir(parents=True)
+    (venv / "LICENSE.txt").write_bytes(b"numpy license junk")
+    (tmp_path / ".venv" / "pyvenv.cfg").write_bytes(b"not matched anyway")
+    nm = tmp_path / "web" / "node_modules" / "some-pkg"
+    nm.mkdir(parents=True)
+    (nm / "README.md").write_bytes(b"node_modules junk")
+
+    got = collect(str(tmp_path), {".txt", ".md"})
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {"real.txt"}
+
+
+def test_collect_normal_folders_unaffected_by_exclusion(tmp_path: Path) -> None:
+    """A folder that merely *contains* a substring of an excluded name (e.g. ``events``) is not
+    excluded — only an exact directory-name match (or a `.dist-info`/`.egg-info` suffix) prunes.
+    """
+    sub = tmp_path / "events" / "venvoyage"  # neither segment is an excluded name verbatim
+    sub.mkdir(parents=True)
+    (sub / "notes.txt").write_bytes(b"real content")
+
+    got = collect(str(tmp_path), {".txt"})
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {str(Path("events") / "venvoyage" / "notes.txt")}
+
+
+def test_collect_exclude_dirs_is_overridable(tmp_path: Path) -> None:
+    """Passing a custom ``exclude_dirs`` (e.g. from ``agent.cli --exclude-dir``) prunes a project-
+    specific folder too, on top of (not instead of) the built-in defaults.
+    """
+    (tmp_path / "keep.txt").write_bytes(b"keep")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "throwaway.txt").write_bytes(b"throwaway")
+
+    from agent.sync import DEFAULT_EXCLUDE_DIRS
+
+    got = collect(str(tmp_path), {".txt"}, exclude_dirs=DEFAULT_EXCLUDE_DIRS | {"scratch"})
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {"keep.txt"}

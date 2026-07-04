@@ -9,7 +9,10 @@ adapter. No network is touched — the default container is self-contained.
 from __future__ import annotations
 
 from sift.adapters.embedding.fake import FakeEmbedder
+from sift.adapters.embedding.openai_compat import OpenAICompatEmbedder
 from sift.adapters.llm.null import NullCompleter
+from sift.adapters.ocr.fallback_parser import OcrFallbackParser
+from sift.adapters.ocr.mistral import MistralOcr
 from sift.adapters.rerank.crossencoder_http import CrossEncoderReranker
 from sift.adapters.rerank.llm_judge import LlmJudgeReranker
 from sift.adapters.rerank.null import NullReranker
@@ -68,6 +71,46 @@ def test_build_container_exposes_store_and_ingest() -> None:
     assert container.store is container.search._store
     # A stub ingest stands in until the real IngestPipeline is wired at integration time.
     assert isinstance(container.ingest, SupportsIngest)
+
+
+def test_embedder_wired_with_configured_batch_size_and_timeouts() -> None:
+    settings = Settings(
+        ingest_token="t",
+        embed_base_url="http://embed.local/v1",
+        embed_batch_size=8,
+        embed_timeout_s=30.0,
+        embed_connect_timeout_s=2.0,
+    )
+
+    container = build_container(settings)
+
+    embedder = container.search._embedder
+    assert isinstance(embedder, OpenAICompatEmbedder)
+    assert embedder._batch_size == 8
+    assert embedder._timeout.read == 30.0
+    assert embedder._timeout.connect == 2.0
+
+
+def test_ocr_adapter_wired_with_configured_timeouts(tmp_path) -> None:
+    settings = Settings(
+        ingest_token="t",
+        store_backend="libsql",
+        turso_database_url=str(tmp_path / "sift.db"),
+        ocr_enabled=True,
+        ocr_base_url="http://ocr.local",
+        ocr_api_key="k",
+        ocr_timeout_s=30.0,
+        ocr_connect_timeout_s=2.0,
+    )
+
+    container = build_container(settings)
+
+    parser = container.ingest._parser  # type: ignore[attr-defined]
+    assert isinstance(parser, OcrFallbackParser)
+    ocr = parser._ocr
+    assert isinstance(ocr, MistralOcr)
+    assert ocr._timeout.read == 30.0
+    assert ocr._timeout.connect == 2.0
 
 
 async def test_stub_ingest_reports_indexed() -> None:

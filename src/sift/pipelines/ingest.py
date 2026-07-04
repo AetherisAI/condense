@@ -9,7 +9,7 @@ routes); any other per-file error is isolated so its siblings still index.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal, Protocol, runtime_checkable
 
@@ -35,7 +35,10 @@ class SupportsIngest(Protocol):
     """The seam Dev B's ``/ingest`` route depends on — structural, so a fake can stand in."""
 
     async def ingest(
-        self, files: Sequence[tuple[str, bytes]], tenant: str
+        self,
+        files: Sequence[tuple[str, bytes]],
+        tenant: str,
+        modified_at: Mapping[str, str] | None = None,
     ) -> list[IngestOutcome]: ...
 
 
@@ -59,9 +62,15 @@ class IngestPipeline:
         self._model = model
         self._dim = dim
 
-    async def ingest(self, files: Sequence[tuple[str, bytes]], tenant: str) -> list[IngestOutcome]:
+    async def ingest(
+        self,
+        files: Sequence[tuple[str, bytes]],
+        tenant: str,
+        modified_at: Mapping[str, str] | None = None,
+    ) -> list[IngestOutcome]:
         await self._store.ensure_ready(self._model, self._dim, tenant)
         known = set(await self._store.known_hashes(tenant))
+        mtimes = modified_at or {}
         outcomes: list[IngestOutcome] = []
         for filename, data in files:
             try:
@@ -86,8 +95,10 @@ class IngestPipeline:
                     )
                     continue
                 vectors = await self._embedder.embed([c.text for c in chunks])
+                file_mtime = mtimes.get(filename)
                 embedded: list[Chunk] = [
-                    replace(c, vector=v) for c, v in zip(chunks, vectors, strict=True)
+                    replace(c, vector=v, modified_at=file_mtime)
+                    for c, v in zip(chunks, vectors, strict=True)
                 ]
                 await self._store.upsert(embedded, tenant)
                 known.add(digest)

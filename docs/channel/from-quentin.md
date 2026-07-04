@@ -179,3 +179,319 @@ Rebased onto your #14/#16/#17 and FF-merged to `main`. Now live:
 - **pyright-ignores** → go ahead: `libsql.py` is final on `main` now (doc-admin landed), so you'll be editing the real file, not one about to be replaced.
 
 main is green; your agent (#14) + my docs/OCR are both in. — Quentin/Dev B
+
+---
+
+## 2026-06-28 — update 11: fresh-DB 500 in `LibSQLStore` read paths — fixed (agent first-run bug)
+
+Found a real bug while testing the ingestion agent against a **fresh** libSQL DB: the agent
+crashes on its first call with **500 on `/ingest/manifest` (and `/documents`)** →
+`ValueError: no such table: files`.
+
+**Root cause:** the schema (`files`/`chunks`) is created lazily by `ensure_ready` on the
+*first ingest*. But the agent's first action is a **read** (manifest/document-list, to dedup)
+*before* any ingest — so on a brand-new DB the `files` table doesn't exist yet and
+`_known_hashes_job` / `_list_documents_job` blow up. The A6 joint smoke missed it because it
+drove `POST /ingest` first (creating the tables before any read). Any agent first-run on a new
+machine hits it.
+
+**Fix** (`adapters/store/libsql.py`, doc-admin file I own per update 10): guard both read jobs
+with a `files`-table-exists check → report an empty store instead of raising, matching
+`FakeVectorStore` semantics. `_upsert_job` already had the equivalent guard; the read paths
+didn't. Added a regression test (`test_read_paths_before_ensure_ready_report_empty_store`) that
+reproduces the 500 without the fix. 34 store+agent tests green, ruff clean.
+
+**FYI — two minor agent edges I'm leaving as follow-ups** (not engine bugs): (1) one-shot
+`agent.cli <dir>` keys docs by *relative* path while `--watch` keys by *absolute* — mixing the
+two modes on one library breaks replace/delete pairing until a clean re-sync; (2) empty /
+zero-text files report `indexed` but write no `files` row, so they re-upload every sync. Shout
+if you'd rather I fold either into the engine side. — Quentin/Dev B
+
+---
+
+## 2026-06-29 — update 12: version-collapse at retrieval (stale-copy guard) — touches a couple of your seams
+
+Quentin's direction (he's travelling): near-duplicate documents (typo fix, docx→pdf export,
+v1/v2 with a small edit) get **different content-hashes**, so exact-hash dedup keeps both and a
+**stale copy can out-rank its newer twin**. Built a non-destructive retrieval-time guard (D27):
+`pipelines/search.py::_collapse_versions` folds lexically near-identical passages (token-shingle
+Jaccard ≥ 0.8) into one, keeping the most recently modified copy. Config-gated
+(`VERSION_COLLAPSE_ENABLED`, default on); **off = exact no-op; the index is never mutated.**
+Validated live with real Mistral embeddings + OCR on a 6-doc corpus. 136 tests green, ruff +
+pyright 0.
+
+**Three touches on your side — all additive/non-destructive, please sanity-check:**
+1. `core/types.py` — new optional `Hit.indexed_at` (opaque recency token; co-owned type).
+2. `adapters/store/libsql.py::_SEARCH` — a `chunks ⟕ files` LEFT JOIN to carry `indexed_at` onto
+   each `Hit` (your original `_search_job`). Plain additive read; no write-path change.
+3. `agent/sync.py` — the upload batch is now sorted **oldest-mtime first** (`_by_mtime`) so the
+   store stamps `indexed_at` in modification order. This was needed because a **cold ingest**
+   lands both versions in one batch, where `indexed_at` alone reflects arbitrary processing
+   order (my first live run returned the stale v1 for that reason).
+
+**Open follow-up for us (cross-team, deferred):** the fully-robust recency signal is the file's
+true **mtime persisted in `files`** (a new column + agent→schema→store plumbing) — it handles
+out-of-order ingests the `indexed_at` proxy can't. Wanted your nod before adding a `files`
+migration. Happy to drive it if you're good with the column. — Quentin/Dev B
+
+---
+
+## 2026-06-29 — update 13: built the true-mtime recency plumbing (D28) — it touches your ingest + store
+
+Quentin's call: the `indexed_at` proxy from update 12 wasn't good enough for a pre-existing
+personal corpus (cold ingest → ingest order ≠ which doc is newer; a live run returned the stale
+version). So I plumbed the file's real **`last_modified`** end-to-end (D28). **This edits files
+you own** — flagging for review; all additive + backward-compatible:
+
+1. **`pipelines/ingest.py`** — `IngestPipeline.ingest` (and the `SupportsIngest` Protocol) take an
+   optional `modified_at: Mapping[str,str]` and stamp it onto each `Chunk.modified_at` via
+   `replace`. Default `None` → behaves exactly as before.
+2. **`adapters/store/libsql.py`** — new `files.modified_at` column with an **idempotent
+   `ALTER TABLE` migration** for existing DBs (probes `pragma_table_info`), persisted in
+   `_INSERT_FILE`, returned via the `_SEARCH` join onto `Hit.modified_at`.
+3. **`agent/`** — captures each file's mtime (ISO-8601 UTC) and sends a `modified_at` form field;
+   `collect`/`collect_roots` now return a 4-tuple `(name, hash, data, modified_at)`.
+4. **co-owned** — `core/types.py` (`Chunk.modified_at`, `Hit.modified_at`), `api/routes.py`
+   (`/ingest` accepts the optional `modified_at` form field), `factory.py` (stub signature).
+
+`search._is_newer` prefers `modified_at`, falls back to `indexed_at`. **Validated live** (real
+Mistral + libSQL): ingest the newer file *first* + the older *later* (so `indexed_at` disagrees
+with mtime) → still returns v2. 140 tests green (incl. legacy-DB migration + mtime-overrides-
+ingest-order + agent wire), ruff + pyright 0. If you'd rather own the store/pipeline parts, the
+contract's small and additive — say the word. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 14: RAM-runaway fix (touches your `agent/`), your update-7 ask answered, a charset heads-up, and a `/status` secret leak closed
+
+Quentin's direction (remote session, no IDE). Four things:
+
+**1. RAM runaway in the agent — fixed, touches your `agent/watcher.py` + `agent/client.py`
+(D29).** Root cause: the watcher's inotify handler reacted to *every* event type, and a sync's own
+file-hashing *opens and reads* every watched file — which fires the same `opened`/
+`closed_no_write`/`accessed` events as a real edit, re-arming the debounce and re-syncing forever
+(a self-feeding loop that pinned CPU/disk and, through repeated `/ingest` calls, piled up work on
+the engine until it OOM'd). Fixed by filtering to `created`/`modified`/`moved`/`deleted` only.
+Separately, the client sent a whole folder as one multipart POST; it now batches at
+`batch_size=10`/`timeout=300s` and merges per-batch responses, so a slow embed no longer causes
+the client to abandon-and-retry while the server keeps working the abandoned request. Both
+changes are additive to your agent's public behavior (still one `sync()` call, same response
+shape) — flagging since `agent/` is yours; happy to walk through the diff live if useful.
+
+**2. Your update-7 ask (partial-failure signal) — answered.** Agreed a partial-failure ingest
+(HTTP 200 with a per-file `"failed"` in `results[]`) shouldn't look clean to a user. **I'll take
+the agent CLI + web UI side** — surfacing `results[].status == "failed"` distinctly instead of
+letting a 200 read as "all good" (tracked, not yet built). **The route/pipeline-level signal
+(e.g. a different overall status, or a summary count) is yours if you want to add one** — I don't
+think the wire contract needs to change for my side, so no urgency either way.
+
+**3. Heads-up, not urgent: possible silent mojibake in your charset fix (`f52a600`).** Nice fix
+for the ASCII-fallback case. One edge we noticed auditing it: `charset_normalizer.from_bytes(data)
+.best()` can return a **confident but wrong** single-byte codepage for a genuinely cp1252/
+latin-1 file (short or ambiguous byte runs get misclassified between similar codepages) — and
+because the guess isn't literally `"ascii"`, it skips your `utf-8` promotion and goes straight into
+`StreamInfo(charset=...)` unguarded. Since the wrong codepage is still a *valid* decode (just the
+wrong one), markitdown doesn't raise — it decodes to mojibake and `/ingest` reports `indexed`.
+So instead of the old silent-`failed`, it's now a silent-**wrong-text** success. Might be worth
+gating on `match.chaos`/`match.coherence` (charset_normalizer's own confidence score) and falling
+back to `utf-8` (with `errors="replace"` or similar) when detection is low-confidence, the same
+way the `ascii` case is already handled. Not blocking anything on our end — just flagging in case
+it matters for your corpus.
+
+**4. `/status` was leaking `ocr_api_key` — fixed on our side, no ask for you.** `ocr_api_key` was
+missing from `src/sift/api/routes.py::_SECRET_KEYS`, so it came back in plaintext in
+`GET /status` while the other four secrets were redacted. Added it to the frozenset + a regression
+test that builds a container with a real value on every `_SECRET_KEYS` field and asserts none of
+them ever comes back raw — Dev-B-owned file, no cross-boundary concern.
+
+Branch `claude/condense-access-status-tz7hpz`, all pushed. Full suite (clean worktree, isolated
+venv, no live `.env`): 142 passed, 0 failed; ruff + `ruff format` clean on everything this session
+touched. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 15: agent memory bound + partial-batch accounting (touches your `agent/` again), tonight's E2E made it concrete
+
+Quentin's direction (still the overnight autonomous run). This closes three of the four
+pre-merge audit findings from the state handoff (A3/A4/A5) — the fourth (A6, server-side
+`modified_at` test) is someone else's slice tonight. Same basis as update 14: `agent/` is yours,
+flagging every touch.
+
+**Why now, concretely:** tonight's E2E run against the real Acme corpus (4019 files) put two of
+these findings in front of real symptoms — TEI OOM'd under load and the batch that was in flight
+when it happened came back **HTTP 200 with only 4/10 files actually landed and zero server-side
+trace of the other 6** (E3; D31 added the missing per-file audit log on your side of that same
+finding). That's exactly the shape of failure A3/A4 were written against: a large/image-heavy
+watch tree risking client-side memory, and a partial ingest outcome that must never look clean
+to the agent's own bookkeeping either.
+
+**1. Agent memory bound (A3).** `agent/sync.py::collect`/`collect_roots` no longer read every
+matched file's full bytes up front. The hash is now a **streamed SHA-256** (1 MiB chunks), and
+what used to be the `bytes` element of each result tuple is now a **zero-arg lazy loader** —
+`SiftClient.ingest` (`agent/client.py`) only calls it while building the batch that file belongs
+to, so with the existing `batch_size` chunking (D29) at most one batch's bytes are ever resident
+at once, no matter how large the watched tree (screenshots/scans for OCR included). Added a
+per-file **size guard** (default 100 MB, skip + warn, never even hashed) — overridable via a new
+`AgentConfig.max_file_size_mb` field (settings dialog) and a `--max-file-size-mb` CLI flag; your
+`sift.Settings` doesn't apply here since the agent is standalone.
+
+**2. Partial-batch accounting (A4).** `SiftClient.ingest` raises a new `PartialIngestError` when
+a batch fails *after* earlier ones already landed, carrying their merged results forward instead
+of losing them; `sync()` credits those counts and still surfaces the error. The delete-cleanup
+step changed from "run once ingest doesn't raise" to "only delete a replaced doc's stale hash
+once its replacement is *confirmed* indexed in the results actually received" — which also
+quietly fixed a second bug: a per-file `"failed"` status inside an otherwise-200 response used to
+still delete the old (still-valid) hash unconditionally. Now an unconfirmed replacement leaves
+the old hash in place and the next `sync()` retries it — no lost update, no premature delete.
+
+**3. Watcher regression tests (A5).** `tests/agent/test_watcher.py` (new) drives
+`agent.watcher._Handler` directly with stub `FileSystemEvent`s — no `Observer`, no real
+filesystem. This was the least-tested, most safety-critical code in the branch (D29's
+self-trigger-loop fix had zero coverage before tonight); now pinned.
+
+**4. Constraint check:** `agent/` still imports only `httpx` + stdlib, plus the pre-existing
+`watchdog`/`platformdirs`/`tkinter` in their existing spots — grepped every import in `agent/*.py`
+to confirm.
+
+Full details + the reconcile() ordering invariant the accounting relies on: DECISIONS.md D32.
+167/167 tests green (was 152; +15), ruff check + `ruff format` clean. Full suite run inside a
+`systemd-run --user` memory-capped scope per the session's hard safety rules (host is
+swap-stressed tonight) — worth knowing if you run it too: `OOMScoreAdjust`/`OOMPolicy` are
+rejected on a bare `--scope` unit on this systemd (255), but work fine as a transient `--user`
+**service** (`--wait --pipe`), same `MemoryMax` containment either way. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 16: found + fixed the E2E v2 parser blowup — it's your `adapters/parsing/markitdown.py`, one guard added, otherwise untouched
+
+Quentin's direction again (this closes the last open item from tonight's E2E v2 run: the ~40s,
+420MB→1.85GiB RSS climb that livelocked the engine while parsing three Acme office files).
+**This touches your file** (`adapters/parsing/markitdown.py`), flagging it same basis as
+D25/D29/D32 — Arthur, please review when you're back.
+
+**Root cause, isolated and reproduced (not guessed from the incident log):** ran each of the
+three suspect files through the real `MarkitdownParser` alone, one at a time, in a
+`systemd-run --user` scope capped at `MemoryMax=2G` with RSS sampling. Both `.docx` files parsed
+fine in ~1.5s. The `.xlsx` (`project-schedule_2026.xlsx`, only 38KB) climbed
+past 2GiB RSS over ~140s and was cleanly cgroup-OOM-killed — confirming `MemoryMax`-only gives a
+fast, clean kill instead of a livelock, even under a real repro. Cheap inspection (unzip + regex,
+then a read-only openpyxl scan) found the sheet's *declared* used-range is `B1:AQ1048573` — 43
+cols × 1,048,573 rows, ~44 million cells — while only **42 rows** hold real data; the rest is a
+stray pair of text cells at row ~1,048,572 (a paste/drag-fill artifact) that inflated Excel's own
+bookkeeping of the sheet's extent. markitdown's xlsx converter calls
+`pandas.read_excel(engine="openpyxl")`, which honors the *declared* dimension, not the real
+content — so a 38KB file tried to materialize a 44M-cell DataFrame.
+
+**The fix:** `MarkitdownParser` now does a cheap pre-parse guard for `.xlsx` — read-only zip +
+regex to pull each worksheet's `<dimension ref="...">`, compute the implied cell count, and raise
+a new `core.errors.ParseError` (with the file name, declared range, and actionable guidance) if
+it exceeds a new config-driven `Settings.parse_max_xlsx_cells` (default 2,000,000) — **before**
+ever calling the real conversion. Your `pipelines/ingest.py` per-file `except Exception` already
+turns that into an explicit `failed` outcome with a readable `detail` — I didn't need to touch
+your ingest pipeline at all. Post-fix re-run of the same isolation repro: the same file now fails
+in 0.00s at 146MB RSS instead of climbing past 2GiB over 140s. Full root-cause + evidence in
+`DECISIONS.md` D34; raw logs in `scratchpad/parser-blowup-repro.log` if you want to see the RSS
+climb yourself.
+
+**Also this round (my files, no cross-boundary concern):** (1) `adapters/embedding/openai_compat.py`
+now retries an HTTP 429 with a bounded, fixed backoff (0.5s/2s/8s, `embed_retry_attempts=3`
+default) — TEI (D30) hands out one concurrency permit per input string on `/v1/embeddings`, so a
+batch bigger than free permits 429s and that's retryable, not a real failure. (2)
+`scripts/run-engine.sh` had its `MemoryHigh` throttle band removed — tonight's E2E v2 incident hit
+it directly (anon-only memory + zero swap + a `MemoryHigh` band = the kernel's `memory.high`
+throttling stalls every thread in the cgroup, a livelock, not a crash; `MemoryMax`-only means an
+overrun is a clean fast kill instead). Every long-runner in this repo now follows that same rule.
+
+179/179 tests green (was 172; +7: 3 xlsx-guard + 4 embed-429), ruff check + `ruff format` clean on
+every file this session touched. Full suite run inside the same `MemoryMax=2G`-only
+`systemd-run --user` service policy this update just codified for `run-engine.sh`. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 17: closed three CLI/client accounting gaps in `agent/` (touches your files again — sync.py, client.py, cli.py, config.py, app.py)
+
+Quentin's direction again — this is the delta-audit's remaining agent-side findings. **Touches
+your files** (`agent/sync.py`, `agent/client.py`, `agent/cli.py`, `agent/config.py`, `agent/app.py`),
+same basis as D25/D29/D32/D34 — please review when you're back.
+
+**1. The one-shot CLI silently traceback'd on a mid-run partial ingest.** `agent/cli.py::main`
+uploads new files via `SiftClient.ingest`, which already raises `PartialIngestError` when a later
+batch fails after earlier ones landed (D32). Nothing caught it in `main()`, so it propagated as a
+raw Python traceback — from the shell's point of view, a run where 14/20 files landed looked
+exactly like total failure. Fixed: `main()` now catches it, prints every per-file `status\tpath`
+the server actually confirmed, then a `PARTIAL: X indexed, Y failed, Z of N files never attempted
+(<error>)` line, and returns exit code `1`.
+
+**2. A 200-with-garbage-body response on batch N>1 discarded earlier batches' accounting.**
+`agent/client.py::SiftClient.ingest` had `body = r.json()` sitting *outside* the `try/except` that
+wraps the POST + `raise_for_status()` — so if a later batch returned HTTP 200 with a body that
+wasn't valid JSON, the resulting `JSONDecodeError` propagated uncaught instead of becoming
+`PartialIngestError`, silently losing every earlier batch's already-landed results with no way
+for a caller to credit them. Fixed by moving the decode inside the same protected section — any
+failure while building or decoding a batch's response now takes the identical
+`PartialIngestError`-if-earlier-batches-landed path, whether it's an HTTP error or a garbage 200
+body.
+
+**3. Vendored/tooling directories were being walked and uploaded as if they were the user's own
+content.** Tonight's Acme corpus audit found numpy/lxml license `.txt`/`.md` files nested under
+`ACME-TOOLING/.venv/lib/site-packages/*.dist-info` in the matched-file set. `agent/sync.py`'s
+walk (`_iter_matching`, shared by `collect`/`collect_roots`) now prunes any subdirectory named in
+a new `DEFAULT_EXCLUDE_DIRS` frozenset (`.git`, `.venv`, `venv`, `node_modules`, `__pycache__`,
+`.mypy_cache`, `.ruff_cache`, `site-packages`) or ending in `.dist-info`/`.egg-info`, via
+`os.walk`'s in-place `dirnames[:]` filter — the whole subtree is never listed, hashed, or matched.
+Overridable via a new `AgentConfig.exclude_dirs` field (wired into `agent/app.py`'s `sync()` call)
+and a new `agent/cli.py --exclude-dir` flag (merges with, never replaces, the built-in set).
+
+**Also this round (not touching your files):** `.env.example` and README §8 gained the Settings
+keys from the last couple of rounds that were missing from both (`EMBED_BATCH_SIZE`,
+`EMBED_TIMEOUT_S`, `EMBED_CONNECT_TIMEOUT_S`, `EMBED_RETRY_ATTEMPTS`, `OCR_TIMEOUT_S`,
+`OCR_CONNECT_TIMEOUT_S`, `PARSE_MAX_XLSX_CELLS`, `VERSION_COLLAPSE_ENABLED`,
+`VERSION_SIMILARITY_THRESHOLD`).
+
+All three agent fixes were TDD, failing-first, against the exact scenarios above (see
+`tests/agent/test_agent.py` and `tests/agent/test_sync.py`); full root cause + rationale in
+`DECISIONS.md` D35.
+
+186/186 tests green (was 179; +7), ruff check + `ruff format` clean on every file this session
+touched. Full suite run inside the same `MemoryMax=2G`-only `systemd-run --user` service policy.
+— Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 18: closed the OCR-fallback gate miss — touches your `adapters/ocr/fallback_parser.py` and `agent/{client,cli,config,app}.py` again
+
+Quentin's direction, closing the last substantive item an overnight review of update 17's landing
+surfaced (E2E v3, real Acme xlsx files). **Touches your files**, same basis as
+D25/D29/D32/D34/D35 — please review when you're back.
+
+**1. The gate miss: `OcrFallbackParser` was swallowing your own `ParseError`.**
+`adapters/ocr/fallback_parser.py::OcrFallbackParser.parse` wraps the primary parser (markitdown)
+in a bare `except Exception:` meant only for "found no text" — but it also caught the deliberate
+`core.errors.ParseError` your xlsx used-range guard (D34) raises *before* any expensive
+conversion. So a file G1 was built to reject in 0.00s instead fell through to Mistral OCR, which
+tried to base64 the xlsx as a `document_url`, got a 400 from Mistral, and *that* confusing error
+became the per-file failure detail — after a pointless ~40s network round trip. Reproduced 3× on
+both real schedule `.xlsx` files. **Fix:** `except SiftError: raise` ahead of the general
+`except Exception:` — any deliberate domain rejection now propagates unchanged, zero OCR calls;
+everything else falls back exactly as before (regression-tested). Three lines changed in the
+`try`/`except`, docstring states the rule so it can't silently regress again.
+
+**2. Client timeout raised 300s → 600s + a `--timeout`/`AgentConfig.timeout` escape hatch.** One
+OCR-heavy batch during E2E v3 took 5m6s server-side — past the old default — so the client
+abandoned it while the server kept working. `agent/client.py::SiftClient` default is now 600s;
+`agent/cli.py` gained `--timeout`; `agent/config.py::AgentConfig` gained a matching `timeout`
+field (backward-compatible `load()`, zero migration code needed) wired into `agent/app.py`'s
+client construction.
+
+**3. CLI `PARTIAL:` line was silently dropping `skipped_dedup` from its tally.** `agent/cli.py`'s
+partial-ingest summary only counted `indexed`/`failed`, so a batch that landed some
+already-known files (`skipped_dedup`) undercounted what actually happened. Now reports
+`PARTIAL: X indexed, S skipped, Y failed, Z of N never attempted (...)`, matching `sync()`'s
+`Summary.line()` convention.
+
+**4. Not your file:** `sift.config.Settings.embed_retry_attempts` and `parse_max_xlsx_cells` gained
+`Field(ge=1)` — `EMBED_RETRY_ATTEMPTS=0` used to reach an unhandled error mid-request instead of
+failing fast and legibly at startup.
+
+195/195 tests green (was 186; +9), ruff check + `ruff format` clean on every file touched. Full
+detail + rationale: `DECISIONS.md` **D36**. — Quentin/Dev B

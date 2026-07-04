@@ -20,6 +20,12 @@ class FakeVectorStore:
     def __init__(self) -> None:
         self._pins: dict[str, tuple[str, int]] = {}
         self._rows: dict[str, dict[tuple[str, int], Chunk]] = {}
+        # Per-(tenant, source_hash) recency tokens, mirroring libSQL's ``files`` row. ``indexed_at``
+        # is a monotonic counter (a document upserted later sorts as newer; deterministic, no
+        # wall-clock); ``modified_at`` is the source file's real mtime carried on the Chunk.
+        self._indexed_at: dict[str, dict[str, str]] = {}
+        self._modified_at: dict[str, dict[str, str | None]] = {}
+        self._seq = 0
 
     async def ensure_ready(self, model: str, dim: int, tenant: str) -> None:
         pinned = self._pins.get(tenant)
@@ -36,6 +42,8 @@ class FakeVectorStore:
             raise SiftError(f"tenant {tenant!r} not initialized; call ensure_ready() first")
         _model, dim = pin
         rows = self._rows.setdefault(tenant, {})
+        stamps = self._indexed_at.setdefault(tenant, {})
+        mtimes = self._modified_at.setdefault(tenant, {})
         for chunk in chunks:
             if chunk.vector is None:
                 raise ValueError(f"chunk {chunk.source_hash}:{chunk.index} has no vector")
@@ -45,6 +53,11 @@ class FakeVectorStore:
                     f"for chunk {chunk.source_hash}:{chunk.index}"
                 )
             rows[(chunk.source_hash, chunk.index)] = chunk
+            mtimes[chunk.source_hash] = chunk.modified_at
+        # Stamp each document touched in this batch as more recent than anything before it.
+        for source_hash in {chunk.source_hash for chunk in chunks}:
+            self._seq += 1
+            stamps[source_hash] = f"{self._seq:020d}"
 
     async def search(self, vector: Vector, k: int, tenant: str) -> list[Hit]:
         rows = self._rows.get(tenant)
@@ -56,6 +69,8 @@ class FakeVectorStore:
             if chunk.vector is not None
         ]
         scored.sort(key=lambda pair: pair[0], reverse=True)
+        stamps = self._indexed_at.get(tenant, {})
+        mtimes = self._modified_at.get(tenant, {})
         return [
             Hit(
                 text=chunk.text,
@@ -64,6 +79,8 @@ class FakeVectorStore:
                 page=chunk.page,
                 source_hash=chunk.source_hash,
                 index=chunk.index,
+                modified_at=mtimes.get(chunk.source_hash),
+                indexed_at=stamps.get(chunk.source_hash),
             )
             for score, chunk in scored[:k]
         ]

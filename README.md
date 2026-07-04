@@ -261,15 +261,24 @@ TURSO_AUTH_TOKEN=
 EMBED_BASE_URL=                 # host Ollama, e.g. http://localhost:11434/v1
 EMBED_MODEL=bge-m3
 EMBED_API_KEY=                  # optional
+EMBED_BATCH_SIZE=64             # texts per embeddings call; keep <= backend's concurrency limit
+EMBED_TIMEOUT_S=60.0            # read/write budget once connected
+EMBED_CONNECT_TIMEOUT_S=5.0     # fails fast if the backend never answers
+EMBED_RETRY_ATTEMPTS=3          # bounded retry (0.5s/2s/8s) on HTTP 429 only (D34)
 RERANK_STRATEGY=crossencoder    # crossencoder (default) | llm | none
 RERANK_BASE_URL=                # TEI, e.g. http://localhost:8080
 RERANK_MODEL=bge-reranker-v2-m3
 RETRIEVE_K=30                   # candidates pulled from vector search
 FINAL_K=1                       # results kept after rerank (the single best)
+VERSION_COLLAPSE_ENABLED=true   # fold near-dup passages, keep the most recently modified (D27/D28)
+VERSION_SIMILARITY_THRESHOLD=0.8
 LLM_BASE_URL=                   # local LLM now; https://api.mistral.ai/v1 later
 LLM_MODEL=                      # e.g. a local Gemma model, or mistral-large-latest
 LLM_API_KEY=                    # optional
+OCR_TIMEOUT_S=60.0              # OCR fallback bounded timeouts, same rationale as EMBED_* above
+OCR_CONNECT_TIMEOUT_S=5.0
 CHUNK_SIZE=512  CHUNK_OVERLAP=64
+PARSE_MAX_XLSX_CELLS=2000000    # reject an implausible xlsx used-range before parsing it (D34)
 INGEST_TOKEN=                   # shared bearer; required even on the LAN
 API_BIND=0.0.0.0                # listen on the LAN interface (private network only)
 ```
