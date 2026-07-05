@@ -1838,6 +1838,175 @@ button:disabled {
   font-weight: 400;
 }
 
+/* ---- System drawer, simple-first reorg (D57/Task U6) ------------------------ */
+/* Section title above each of Connection/Model/Folder agent — bigger + heavier than `.sys-label`
+   (which stays the smaller per-field caption it always was). */
+.sys-heading {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  color: var(--text-h);
+}
+
+/* Connection's condensed component-health row — same per-component data `.sys-comp` used to show
+   one-per-line, just wrapped into a tight row instead (D57/Task U6): nothing is hidden behind a
+   hover/tooltip, it's simply denser. */
+.sys-health-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 0 4px;
+}
+.sys-health-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sys-health-name {
+  color: var(--text-h);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.sys-health-detail {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* Model section's local-only provider-detect preview (D57/Task U6) — `llm_api_key` is
+   restart-only (see `RESTART_REQUIRED` above), so this input never saves; it only feeds
+   `detectProvider` a live preview as the user types. */
+.sys-model-key {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+.sys-model-key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sys-model-key-row .sys-token-input {
+  flex: 1 1 auto;
+}
+.sys-model-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.sys-provider-badge {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #6a45f0;
+  background: rgba(124, 92, 255, 0.1);
+  border: 1px solid rgba(124, 92, 255, 0.28);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+/* Advanced accordion — the entire original raw settings table, unchanged, just demoted behind a
+   native <details>/<summary> (D57/Task U6). Own chevron replaces the default marker. */
+.sys-advanced {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 4px;
+}
+.sys-advanced-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.sys-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+.sys-advanced-chevron {
+  display: inline-flex;
+  color: var(--muted);
+  font-size: 12px;
+  transition: transform 0.16s ease;
+}
+.sys-advanced[open] .sys-advanced-chevron {
+  transform: rotate(90deg);
+}
+.sys-advanced-body {
+  padding-top: 6px;
+}
+
+/* ---- Empty-corpus nudge (D57/Task U6) ---------------------------------------- */
+/* One dismissable centered card in the empty-state hero, above the composer — shown only once
+   `/documents` has confirmed a 0-count corpus (never while loading/unknown, never with no
+   token), and never again once dismissed (`localStorage.agentNudgeDismissed`). */
+.agent-nudge {
+  margin-top: 18px;
+  max-width: 360px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  animation: hero-in 0.3s ease;
+}
+.agent-nudge-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.agent-nudge-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.agent-nudge-cta {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  background: #7c5cff;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.agent-nudge-cta:hover {
+  background: #6a45f0;
+}
+.agent-nudge-dismiss {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.agent-nudge-dismiss:hover {
+  color: var(--text-h);
+}
+
 /* ---- Chat workbench (D57/Task U1) ------------------------------------------- */
 /* Fills the `.workbench` grid's remaining row below the topbar; internally split into the
    scrollable stream and the fixed composer via flexbox (`min-height: 0` on both is required for

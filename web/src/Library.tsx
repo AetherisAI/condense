@@ -1,23 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from './api'
-
-/** One ingested document (mirrors api.schemas.DocumentSummary). */
-type DocumentSummary = {
-  path: string
-  source_hash: string
-  chunks: number
-  // D44: the source file's true last-modified time (or indexed_at fallback) — additive,
-  // not yet rendered in this panel.
-  modified_at?: string | null
-  indexed_at?: string | null
-}
-
-/** Response body of ``GET /documents`` (mirrors api.schemas.DocumentsResponse). */
-type DocumentsResponse = {
-  tenant: string
-  documents: DocumentSummary[]
-  supported: boolean
-}
+import { fetchDocuments, type DocumentSummary } from './documents'
 
 function fileName(path: string): string {
   const parts = path.split(/[/\\]/)
@@ -114,9 +97,7 @@ export default function Library({
       setError(null)
       setLoading(true)
       try {
-        const resp = await apiFetch('/documents', token)
-        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
-        const data = (await resp.json()) as DocumentsResponse
+        const data = await fetchDocuments(token)
         if (cancelled) return
         setDocs(data.documents)
         setSupported(data.supported)

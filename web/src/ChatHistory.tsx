@@ -75,17 +75,16 @@ export default function ChatHistory({
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   // Dismiss on Escape while open — outside clicks are caught by the drawer backdrop (same base
-  // pattern as System/Agent). History is the one drawer every other drawer can be stacked in
-  // front of (it's the earliest `.drawer` in document order — nested inside `Chat` — while
-  // Library/Agent/System all render after it from `App.tsx`, so at equal z-index they paint on
-  // top of it). If another drawer is open when Escape is pressed, this yields instead of closing
-  // alongside it, so one Escape press closes exactly one drawer rather than the whole stack.
-  // Library mirrors System/Agent's plain always-close pattern instead (see Library.tsx) since —
-  // now that it's the sole LEFT-hand, last-in-DOM drawer — nothing else is ever stacked in front
-  // of it. This doesn't (and can't, without touching SystemMenu/AgentMenu, out of this task's
-  // scope) fully resolve every N-drawer combination — e.g. System+Agent open together still both
-  // close on Escape, same as before this change — but it does guarantee History never double
-  // -closes with anything, and Library+History specifically resolves to exactly one close.
+  // pattern as System). History is the one drawer every other drawer can be stacked in front of
+  // (it's the earliest `.drawer` in document order — nested inside `Chat` — while Library/System
+  // both render after it from `App.tsx`, so at equal z-index they paint on top of it). If another
+  // drawer is open when Escape is pressed, this yields instead of closing alongside it, so one
+  // Escape press closes exactly one drawer rather than the whole stack. Library mirrors System's
+  // plain always-close pattern instead (see Library.tsx) since — now that it's the sole LEFT-hand,
+  // last-in-DOM drawer — nothing else is ever stacked in front of it. The standalone Agent drawer
+  // that used to make this a 4-drawer problem is retired (D57/Task U6 folded it into System), so
+  // this now guarantees History never double-closes with anything, Library+History resolves to
+  // exactly one close, and System closes alone whenever it's the only drawer open.
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
