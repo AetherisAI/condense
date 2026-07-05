@@ -399,7 +399,7 @@ button {
   font-weight: 500;
   letter-spacing: 0.01em;
   color: #fff;
-  background: #7c5cff; /* blue-purple — matches the logo */
+  background: var(--accent-ui); /* blue-purple — matches the logo */
   border: none;
   border-radius: 980px; /* pill */
   padding: 11px 24px;
@@ -418,7 +418,7 @@ button {
    equal to (or lower than) any component-local `.foo:hover` rule, so the component always wins
    for buttons that were never meant to have this fill. */
 .btn-primary:hover:not(:disabled) {
-  background: #6a45f0;
+  background: var(--accent-ui-strong);
 }
 
 button:active:not(:disabled) {
@@ -426,7 +426,7 @@ button:active:not(:disabled) {
 }
 
 button:focus-visible {
-  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.22);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 button:disabled {
@@ -518,16 +518,16 @@ button:disabled {
 }
 
 .mode-switch input:checked + .switch-track {
-  background: #7c5cff; /* Human (checked, right) — blue-purple, matches the buttons/logo */
+  background: var(--accent-ui); /* Human (checked, right) — blue-purple, matches the buttons/logo */
 }
 
 .mode-switch input:checked + .switch-track .switch-thumb {
   transform: translateX(24px);
-  color: #7c5cff; /* glyph colour while Human — matches the buttons */
+  color: var(--accent-ui); /* glyph colour while Human — matches the buttons */
 }
 
 .mode-switch input:focus-visible + .switch-track {
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 .mode-glyph {
@@ -558,16 +558,16 @@ button:disabled {
 }
 
 .recap-switch input:checked + .switch-track {
-  background: #7c5cff; /* ON — blue-purple, matches the logo */
+  background: var(--accent-ui); /* ON — blue-purple, matches the logo */
 }
 
 .recap-switch input:checked + .switch-track .switch-thumb {
   transform: translateX(24px);
-  color: #7c5cff; /* glyph colour while ON */
+  color: var(--accent-ui); /* glyph colour while ON */
 }
 
 .recap-switch input:focus-visible + .switch-track {
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 .mode-switch .switch-label {
@@ -587,7 +587,7 @@ button:disabled {
 }
 .mode-info:hover,
 .mode-info:focus-visible {
-  color: #7c5cff;
+  color: var(--accent-ui);
 }
 
 .mode-tip {
@@ -1033,6 +1033,14 @@ button:disabled {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  /* A calm static placeholder — no sweeping gradient — while content loads (D57/Task U7). */
+  .skeleton-line {
+    animation: none;
+    background: var(--border);
+  }
+}
+
 /* ---- Ingest results -------------------------------------------------------- */
 .ingest-results {
   list-style: none;
@@ -1076,8 +1084,8 @@ button:disabled {
 }
 /* Healthy = bluish-purple (matches the logo); down = red. No green. */
 .sys-dot-up {
-  background: #7c5cff;
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18);
+  background: var(--accent-ui);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 18%, transparent);
 }
 .sys-dot-down {
   background: var(--error);
@@ -1156,7 +1164,7 @@ button:disabled {
   margin-top: 4px;
   font-size: 13px;
   font-weight: 600;
-  color: #6a45f0; /* blue-purple, matches the buttons/logo */
+  color: var(--accent-ui-strong); /* blue-purple, matches the buttons/logo */
   text-decoration: none;
 }
 .sys-divider {
@@ -1224,7 +1232,7 @@ button:disabled {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: #7c5cff;
+  background: var(--accent-ui);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   text-decoration: none;
@@ -1232,7 +1240,7 @@ button:disabled {
   transition: background 0.18s ease;
 }
 .agent-dl-btn:hover {
-  background: #6a45f0;
+  background: var(--accent-ui-strong);
 }
 .agent-dl-btn.is-soon {
   color: var(--muted);
@@ -1379,19 +1387,19 @@ button:disabled {
 }
 
 .dropzone:hover {
-  border-color: #7c5cff;
+  border-color: var(--accent-ui);
   color: var(--text-h);
 }
 
 .dropzone:focus-visible {
   outline: none;
-  border-color: #7c5cff;
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  border-color: var(--accent-ui);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 .dropzone.dragging {
-  border-color: #7c5cff;
-  background: rgba(124, 92, 255, 0.06);
+  border-color: var(--accent-ui);
+  background: color-mix(in srgb, var(--accent-ui) 6%, transparent);
   color: var(--text-h);
 }
 
@@ -1402,7 +1410,7 @@ button:disabled {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: #7c5cff;
+  background: var(--accent-ui);
   color: #fff;
   flex-shrink: 0;
 }
@@ -1521,7 +1529,7 @@ button:disabled {
   width: 13px;
   height: 13px;
   border: 2px solid var(--border-strong);
-  border-top-color: #7c5cff;
+  border-top-color: var(--accent-ui);
   border-radius: 50%;
   animation: doc-spin 0.7s linear infinite;
 }
@@ -1529,6 +1537,15 @@ button:disabled {
 @keyframes doc-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A static ring, no continuous rotation — the adjacent status text already says "Uploading…"
+     (D57/Task U7). */
+  .doc-spinner {
+    animation: none;
+    border-top-color: var(--border-strong);
   }
 }
 
@@ -1592,7 +1609,7 @@ button:disabled {
   font-size: 12px;
   font-weight: 600;
   color: #fff;
-  background: #7c5cff;
+  background: var(--accent-ui);
   border-radius: 999px;
   padding: 1px 8px;
 }
@@ -1708,7 +1725,7 @@ button:disabled {
 }
 
 .history-item-active {
-  border-color: #7c5cff;
+  border-color: var(--accent-ui);
   background: var(--accent-bg);
 }
 
@@ -1719,7 +1736,7 @@ button:disabled {
 /* Editable settings (pencil-marked, inline-edited in the system popover) */
 .sys-pencil {
   margin-left: 6px;
-  color: #7c5cff;
+  color: var(--accent-ui);
   font-size: 11px;
 }
 .sys-edit {
@@ -1735,8 +1752,8 @@ button:disabled {
   outline: none;
 }
 .sys-edit:focus-visible {
-  border-color: #7c5cff;
-  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.2);
+  border-color: var(--accent-ui);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-ui) 20%, transparent);
   background: var(--bg);
 }
 
@@ -1764,8 +1781,8 @@ button:disabled {
 }
 
 .sys-token-input:focus-visible {
-  border-color: #7c5cff;
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  border-color: var(--accent-ui);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
   background: var(--bg);
 }
 
@@ -1781,7 +1798,7 @@ button:disabled {
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #7c5cff;
+  color: var(--accent-ui);
   opacity: 0.85;
   margin-bottom: 4px;
 }
@@ -1808,7 +1825,7 @@ button:disabled {
 .sys-saved {
   font-size: 11px;
   font-weight: 600;
-  color: #7c5cff;
+  color: var(--accent-ui);
   animation: sys-saved-fade 1.5s ease forwards;
 }
 @keyframes sys-saved-fade {
@@ -1903,9 +1920,9 @@ button:disabled {
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.03em;
-  color: #6a45f0;
-  background: rgba(124, 92, 255, 0.1);
-  border: 1px solid rgba(124, 92, 255, 0.28);
+  color: var(--accent-ui-strong);
+  background: color-mix(in srgb, var(--accent-ui) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-ui) 28%, transparent);
   border-radius: 999px;
   padding: 3px 10px;
   white-space: nowrap;
@@ -1979,14 +1996,14 @@ button:disabled {
   font-size: 12.5px;
   font-weight: 600;
   color: #fff;
-  background: #7c5cff;
+  background: var(--accent-ui);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.18s ease;
 }
 .agent-nudge-cta:hover {
-  background: #6a45f0;
+  background: var(--accent-ui-strong);
 }
 .agent-nudge-dismiss {
   margin-left: auto;
@@ -2337,7 +2354,7 @@ button:disabled {
 }
 
 .tl-active .tl-icon {
-  color: #7c5cff;
+  color: var(--accent-ui);
 }
 
 .tl-active .tl-text {
@@ -2351,6 +2368,14 @@ button:disabled {
   }
   50% {
     opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No continuous opacity flicker — `.tl-active .tl-icon`'s colour change above already marks the
+     active line (D57/Task U7). */
+  .tl-active .tl-text {
+    animation: none;
   }
 }
 
@@ -2380,6 +2405,6 @@ button:disabled {
 }
 
 .tl-summary-more {
-  color: #7c5cff;
+  color: var(--accent-ui);
   font-weight: 600;
 }
