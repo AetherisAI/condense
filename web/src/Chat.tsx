@@ -4,11 +4,16 @@ import ChatMarkdown from './markdown/ChatMarkdown'
 import Logo from './Logo'
 import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
 import { apiFetch } from './api'
+import Composer, { IngestTurnCard, type IngestFileEntry, type IngestTurn } from './Composer'
+import { loadStoredGrounding, type ComposerGroundingMode } from './grounding'
 
 /** Grounding mode (D46) — the trust boundary between the corpus and the model's own general
  * knowledge. Mirrors ``api.schemas.AnswerRequest.grounding``/``Settings.answer_grounding_
  * default``: "strict" answers only from the documents; "hybrid" may add labeled general
- * knowledge; "open" is an unrestricted general assistant. */
+ * knowledge; "open" is an unrestricted general assistant. This is the WIRE/persisted type — every
+ * value a turn can carry, past or present. The composer's own toggle only ever offers/produces
+ * `ComposerGroundingMode` ("strict"|"open", `Composer.tsx`, D57/Task U2 — hybrid dropped from the
+ * UI only); a turn already persisted with "hybrid" still renders that exact value here, untouched. */
 type GroundingMode = 'strict' | 'hybrid' | 'open'
 
 /** One ordered slice of an answer (D48) — the structured sibling of `fromGeneralKnowledge`:
@@ -84,7 +89,12 @@ type AssistantTurn = {
   groundingSegments: GroundingSegment[]
 }
 
-type Turn = UserTurn | AssistantTurn
+// `IngestTurn` (D57/Task U2) is client-side only — never sent to `/v1/answer`, never persisted —
+// but folded into the SAME `Turn` union (discriminated by `role`, like the two turns above) so an
+// in-chat upload batch renders inline, in its correct chronological position, among the answer
+// turns it's a sibling of. `turnsFromDetail` below (which rebuilds `turns` from server history)
+// never produces one, so History reload/reopen naturally drops any ingest turns — by design.
+type Turn = UserTurn | AssistantTurn | IngestTurn
 
 /** One turn as returned by ``GET /v1/conversations/{id}`` (mirrors
  * ``api.schemas.ConversationTurnOut``). ``grounding_used``/``from_general_knowledge``/
@@ -116,54 +126,6 @@ type ConversationDetail = {
  * Search tab is active, so a plain `useState` alone would lose it; refetching the conversation
  * on remount is simpler and cheaper than lifting the whole thread's state up into `App`. */
 const STORAGE_KEY = 'chatConversationId'
-
-/** Persists the chosen grounding mode across reloads (D46) — same convention as Search.tsx's
- * `searchMode`/`recapEnabled` localStorage toggles. */
-const GROUNDING_STORAGE_KEY = 'chatGrounding'
-
-const GROUNDING_LABELS: Record<GroundingMode, string> = {
-  strict: 'Strict',
-  hybrid: 'Hybrid',
-  open: 'Open',
-}
-
-const GROUNDING_HINTS: Record<GroundingMode, string> = {
-  strict: "Answers ONLY from your documents — abstains honestly if they don't cover it.",
-  hybrid: 'May add general knowledge too, clearly labeled and flagged when it does.',
-  open: 'Unrestricted general assistant — uses your documents when useful, not required.',
-}
-
-function isGroundingMode(value: string | null): value is GroundingMode {
-  return value === 'strict' || value === 'hybrid' || value === 'open'
-}
-
-/** The 3-state Strict/Hybrid/Open selector — visually a compact segmented pill, the same
- * language as the Search/Chat tab bar (`.tabs`/`.tab-btn`), scaled down for a header control. */
-function GroundingSelector({
-  value,
-  onChange,
-}: {
-  value: GroundingMode
-  onChange: (mode: GroundingMode) => void
-}) {
-  return (
-    <div className="grounding-select" role="radiogroup" aria-label="Grounding mode">
-      {(['strict', 'hybrid', 'open'] as const).map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          role="radio"
-          aria-checked={value === mode}
-          className={`grounding-btn${value === mode ? ' active' : ''}`}
-          title={GROUNDING_HINTS[mode]}
-          onClick={() => onChange(mode)}
-        >
-          {GROUNDING_LABELS[mode]}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 /** Just the file name, matching Search.tsx's citation display. */
 function fileName(path: string): string {
@@ -439,10 +401,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [grounding, setGrounding] = useState<GroundingMode>(() => {
-    const stored = localStorage.getItem(GROUNDING_STORAGE_KEY)
-    return isGroundingMode(stored) ? stored : 'strict'
-  })
+  const [grounding, setGrounding] = useState<ComposerGroundingMode>(loadStoredGrounding)
   const threadRef = useRef<HTMLDivElement>(null)
   // Auto-scroll pins to the bottom while an answer streams in, but a user who scrolls up to
   // reread something is respected — never yanked back down (P1).
@@ -493,11 +452,6 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     onTurnsChange?.(turns.length > 0)
   }, [turns.length, onTurnsChange])
 
-  function setGroundingMode(mode: GroundingMode) {
-    setGrounding(mode)
-    localStorage.setItem(GROUNDING_STORAGE_KEY, mode)
-  }
-
   useEffect(() => {
     if (!pinnedToBottomRef.current) return
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
@@ -534,6 +488,17 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       ...t,
       sources: t.sources.map((s, i) => (i === index ? { ...s, expanded: !s.expanded } : s)),
     }))
+  }
+
+  // Ingest turns (D57/Task U2) — client-side only, driven entirely by `Composer.tsx`'s own
+  // upload logic; these two just append/patch them into the SAME turn list the answer turns live
+  // in, so a batch renders inline at the moment it started, not floating outside the thread.
+  function addIngestTurn(turn: IngestTurn) {
+    setTurns((prev) => [...prev, turn])
+  }
+
+  function updateIngestTurn(id: string, files: IngestFileEntry[]) {
+    setTurns((prev) => prev.map((t) => (t.role === 'ingest' && t.id === id ? { ...t, files } : t)))
   }
 
   function newChat() {
@@ -672,14 +637,23 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               <Logo />
               <h1 className="hero-word">Condense</h1>
               <p className="hero-tagline">Search across all your knowledge</p>
+              <p className="hero-hint">
+                Drop files anywhere — or point the folder agent at a directory.
+              </p>
             </div>
           ) : (
-            turns.map((turn) =>
-              turn.role === 'user' ? (
-                <div className="chat-turn chat-user" key={turn.id}>
-                  {turn.text}
-                </div>
-              ) : (
+            turns.map((turn) => {
+              if (turn.role === 'user') {
+                return (
+                  <div className="chat-turn chat-user" key={turn.id}>
+                    {turn.text}
+                  </div>
+                )
+              }
+              if (turn.role === 'ingest') {
+                return <IngestTurnCard turn={turn} key={turn.id} />
+              }
+              return (
                 <div className="chat-turn chat-assistant" key={turn.id}>
                   {turn.streaming && turn.timeline.length === 0 && !turn.text && (
                     <div className="tl-line tl-active">
@@ -753,34 +727,23 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                       </button>
                     ))}
                 </div>
-              ),
-            )
+              )
+            })
           )}
         </div>
       </div>
 
-      <div className="composer">
-        <div className="composer-inner">
-          <div className="composer-pills">
-            <GroundingSelector value={grounding} onChange={setGroundingMode} />
-          </div>
-          <div className="row">
-            <input
-              type="text"
-              value={input}
-              placeholder="Ask a question…"
-              disabled={busy}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') send()
-              }}
-            />
-            <button type="button" className="btn-primary" onClick={send} disabled={busy || !input.trim()}>
-              {busy ? 'Thinking…' : 'Send'}
-            </button>
-          </div>
-        </div>
-      </div>
+      <Composer
+        token={token}
+        input={input}
+        onInputChange={setInput}
+        busy={busy}
+        onSend={send}
+        grounding={grounding}
+        onGroundingChange={setGrounding}
+        onIngestStart={addIngestTurn}
+        onIngestUpdate={updateIngestTurn}
+      />
 
       <ChatHistory
         token={token}
