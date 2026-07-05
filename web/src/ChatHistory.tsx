@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { apiFetch } from './api'
 
 /** One row of ``GET /v1/conversations`` (mirrors api.schemas.ConversationSummary). */
 type ConversationSummary = {
@@ -73,9 +74,7 @@ export default function ChatHistory({
       setError(null)
       setLoading(true)
       try {
-        const resp = await fetch('/v1/conversations', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const resp = await apiFetch('/v1/conversations', token)
         if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
         const data = (await resp.json()) as ConversationListResponse
         if (cancelled) return
@@ -102,9 +101,8 @@ export default function ChatHistory({
   async function remove(id: string) {
     setConfirmingId(null)
     try {
-      const resp = await fetch(`/v1/conversations/${encodeURIComponent(id)}`, {
+      const resp = await apiFetch(`/v1/conversations/${encodeURIComponent(id)}`, token, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
       setConversations((prev) => (prev ? prev.filter((c) => c.conversation_id !== id) : prev))

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { apiFetch } from './api'
 
 /** One ingested document (mirrors api.schemas.DocumentSummary). */
 type DocumentSummary = {
@@ -88,7 +89,7 @@ export default function Library({ token }: { token: string }) {
       setError(null)
       setLoading(true)
       try {
-        const resp = await fetch('/documents', { headers: { Authorization: `Bearer ${token}` } })
+        const resp = await apiFetch('/documents', token)
         if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
         const data = (await resp.json()) as DocumentsResponse
         if (cancelled) return
@@ -110,9 +111,8 @@ export default function Library({ token }: { token: string }) {
     setBusy(hash)
     setError(null)
     try {
-      const resp = await fetch(`/documents/${encodeURIComponent(hash)}`, {
+      const resp = await apiFetch(`/documents/${encodeURIComponent(hash)}`, token, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
       setDocs((prev) => (prev ? prev.filter((d) => d.source_hash !== hash) : prev))

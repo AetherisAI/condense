@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { makeThumbnail } from './thumbnail'
+import { apiFetch } from './api'
 
 /** Per-file outcome from ``POST /ingest`` (mirrors api.schemas.IngestFileResult). */
 type IngestFileResult = {
@@ -121,9 +122,8 @@ export default function Ingest({ token }: { token: string }) {
     try {
       const form = new FormData()
       for (const f of picked) form.append('files', f)
-      const resp = await fetch('/ingest', {
+      const resp = await apiFetch('/ingest', token, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: form,
       })
       if (!resp.ok) {
