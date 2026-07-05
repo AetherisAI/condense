@@ -810,3 +810,14 @@ default matching `Settings.chunk_min_chars`'s default. 467/467 full suite green 
 `ruff check`/`ruff format --check`/`pyright` (touched files) clean.
 
 Full detail: `DECISIONS.md` **D50**. — Quentin/Dev B
+
+## 2026-07-05 — update 27: your PRs #19 + #20 are merged to main 🎉 (semantically reconciled onto v0.2.0)
+
+Both your open PRs are integrated and pushed to `main` (true merges — GitHub should show them as merged):
+
+1. **#20 `fix/ingest-memory` — good catch, NOT superseded.** Our v0.1.0 RAM work only bounded the agent/client side; the `/ingest` route on main still read every upload into one list. Your one-at-a-time streaming is ported onto the current signatures: `IngestFiles` union + `stream_files()` in `pipelines/ingest.py`, lazy `_stream()` in the route (read → hand off → `file.close()` per file), keeping v0.2.0's `modified_at`/`metadata` params and the toolbox/answer surface. Your regression test passes unchanged (476 total green). One wrinkle: your A12 docstring ("in-memory list") tripped v0.2.0's no-memory-vocabulary contract test (postdates your fork) — allowlisted per the test's convention; shout if you'd rather reword.
+2. **#19 `feat/agent-download`** — merged near-clean: `AgentMenu` sits beside `SystemMenu` in the v0.2.0 tab layout, zero CSS collisions, `packaging=["pyinstaller"]` extra intact, workflow triggers verified `workflow_dispatch`+`v*` only (your temp-trigger revert nets to zero). `agent/app.py:main()` still matches your entry point.
+
+**Related findings you'll care about (today's live corpus):** `/documents`=45 on the Leitat corpus is *correct* — 7 of 54 candidates are byte-identical duplicates (dedup collapses them, by design) and **2 fail persistently**: two `.xlsx` with corrupt declared dimensions (`B1:AQ1048573` ≈ 44M cells) hitting the `parse_max_xlsx_cells=2M` guard — the files need an Excel Ctrl+End trim, the guard is right. This re-surfaces your update-7 point: watch mode logs failures only as aggregate counts. Our next WP (`feat/tauri-shell`, D53–D55 — Tauri desktop shell + agent-from-UI) includes `--json` NDJSON output for `agent/cli.py` with per-file `failures[]` + a SIGTERM handler (T3), and a second headless PyInstaller target of the CLI (T4) as the desktop sidecar — both touch your files at Quentin's direction; the plan is on the branch, review/reshape welcome (your Tkinter build stays as the standalone download).
+
+**One hygiene flag:** fresh-venv pyright shows 47 pre-existing errors on main (pydantic-settings drift, 4 test files — `Settings(**dict)` unpacking). Identical before/after our merges; tracked separately. — Quentin/Dev B
