@@ -186,7 +186,6 @@ export function IngestTurnCard({ turn }: { turn: IngestTurn }) {
               </span>
             </span>
             <span className="doc-badge" aria-hidden="true">
-              {f.status === 'uploading' && <span className="doc-spinner" />}
               {f.status === 'indexed' && '✓'}
               {f.status === 'skipped_dedup' && '⊘'}
               {f.status === 'failed' && '✕'}
@@ -215,6 +214,15 @@ export type ComposerProps = {
   onFindStart: (turn: FindTurn) => void
   /** Patches a previously-started Find turn (by id) with its settled hits, or an error. */
   onFindUpdate: (id: string, hits: FindHit[], error: string | null) => void
+  /** Reports this component's own Find-in-flight flag up to `Chat.tsx` (D57/Task U4) — one of
+   * the three flows (ask/find/ingest) `Chat` combines into the single `isBusy` it drives the
+   * living-logo indicator with. Same shape as `onIngestingChange` below. */
+  onFindingChange?: (finding: boolean) => void
+  /** Reports whether ANY `/ingest` request is currently in flight (D57/Task U4) — true for the
+   * whole span of a batch upload, false again once it settles (success or error) or there are no
+   * batches left in flight. Composer never disables its own input while this is true (uploads
+   * run alongside typing today, unchanged), it only broadcasts the flag upward. */
+  onIngestingChange?: (ingesting: boolean) => void
 }
 
 export default function Composer({
@@ -229,11 +237,31 @@ export default function Composer({
   onIngestUpdate,
   onFindStart,
   onFindUpdate,
+  onFindingChange,
+  onIngestingChange,
 }: ComposerProps) {
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [mode, setModeState] = useState<ComposerMode>(loadStoredMode)
   const [finding, setFinding] = useState(false)
+  // Counts in-flight `/ingest` requests rather than a plain boolean (D57/Task U4) — a second
+  // drag-drop batch can start while the first is still uploading, and the busy indicator must
+  // only clear once the LAST one settles, not the first.
+  const uploadingCountRef = useRef(0)
+  const [ingesting, setIngesting] = useState(false)
+
+  useEffect(() => {
+    onFindingChange?.(finding)
+  }, [finding, onFindingChange])
+
+  useEffect(() => {
+    onIngestingChange?.(ingesting)
+  }, [ingesting, onIngestingChange])
+
+  function bumpUploading(delta: 1 | -1) {
+    uploadingCountRef.current = Math.max(0, uploadingCountRef.current + delta)
+    setIngesting(uploadingCountRef.current > 0)
+  }
 
   function setMode(next: ComposerMode) {
     setModeState(next)
@@ -301,6 +329,7 @@ export default function Composer({
       return
     }
 
+    bumpUploading(1)
     try {
       const data = await postIngest(token, files)
       // The route returns one result per input file, in order — map entries[i] → results[i].
@@ -321,6 +350,8 @@ export default function Composer({
         turnId,
         entries.map((e) => ({ ...e, status: 'failed', detail: msg })),
       )
+    } finally {
+      bumpUploading(-1)
     }
   }
 

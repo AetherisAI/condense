@@ -222,6 +222,41 @@
   }
 }
 
+/* --- The mark IS the status indicator (D57/Task U4) ------------------------- */
+/* `.mark-busy` toggles on whichever wrapper currently holds the visible mark — `.topbar-brand`
+   once the hero has collapsed, `.hero` itself while the conversation is still empty (`TopBar.tsx`
+   / `Chat.tsx`) — never on `.brand-mark` directly, so the mark's own locked markup/animation
+   (`Logo.tsx`) stays untouched. Busy is the SAME four keyframes as idle above, just sped up (no
+   new shape) plus a touch of glow — a class toggle, no JS animation loop. */
+.mark-busy .brand-mark .orb,
+.mark-busy .brand-mark .core,
+.mark-busy .brand-mark .glow,
+.mark-busy .brand-mark .out {
+  animation-duration: 1.1s;
+}
+.mark-busy .brand-mark {
+  filter: drop-shadow(0 0 4px var(--accent-border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No continuous spin even while busy — a subtle whole-mark opacity pulse instead, idle stays
+     exactly as static as the block above leaves it. */
+  .mark-busy .brand-mark {
+    filter: none;
+    animation: mark-pulse 1.1s ease-in-out infinite;
+  }
+}
+
+@keyframes mark-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 /* ---- Empty-state hero (D57/Task U1) ---------------------------------------- */
 /* Shown only while the active conversation has no turns (`Chat.tsx`, inside `.chat-stream`) —
    the big centered mark + wordmark + tagline, like today's landing feel. Once a turn exists the

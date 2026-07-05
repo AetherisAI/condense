@@ -386,6 +386,11 @@ type ChatProps = {
   // Lets the topbar show/hide "New chat" the same way the old in-panel header did (only once a
   // conversation has turns) without lifting the whole thread into `App`.
   onTurnsChange?: (hasTurns: boolean) => void
+  // The living-logo status indicator (D57/Task U4) — combines all three request-in-flight flows
+  // this component knows about (Ask send/stream via its own `busy` state, Find query and ingest
+  // upload via the two flags `Composer` reports back up) into the single boolean the workbench
+  // shell drives the topbar mark with. Same lift pattern as `onTurnsChange` above.
+  onBusyChange?: (busy: boolean) => void
 }
 
 /**
@@ -396,12 +401,18 @@ type ChatProps = {
  * refetched on mount) and a History drawer lists/reopens/deletes past ones.
  */
 const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
-  { token, historyOpen, onHistoryOpenChange, onTurnsChange },
+  { token, historyOpen, onHistoryOpenChange, onTurnsChange, onBusyChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  // Find/ingest are Composer's own in-flight flags (D57/Task U4) — Composer never talks to
+  // `App`/`TopBar` directly, so it reports them here and `isBusy` below folds all three flows
+  // (ask/find/ingest) into the one boolean the living-logo indicator needs.
+  const [finding, setFinding] = useState(false)
+  const [ingesting, setIngesting] = useState(false)
+  const isBusy = busy || finding || ingesting
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [grounding, setGrounding] = useState<ComposerGroundingMode>(loadStoredGrounding)
   const threadRef = useRef<HTMLDivElement>(null)
@@ -453,6 +464,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   useEffect(() => {
     onTurnsChange?.(turns.length > 0)
   }, [turns.length, onTurnsChange])
+
+  // Drives the living-logo status indicator in the topbar (D57/Task U4) — see `isBusy` above.
+  useEffect(() => {
+    onBusyChange?.(isBusy)
+  }, [isBusy, onBusyChange])
 
   useEffect(() => {
     if (!pinnedToBottomRef.current) return
@@ -648,7 +664,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       <div className="chat-stream" ref={threadRef} onScroll={handleThreadScroll}>
         <div className="chat-inner">
           {turns.length === 0 ? (
-            <div className="hero">
+            <div className={`hero${isBusy ? ' mark-busy' : ''}`}>
               <Logo />
               <h1 className="hero-word">Condense</h1>
               <p className="hero-tagline">Search across all your knowledge</p>
@@ -763,6 +779,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         onIngestUpdate={updateIngestTurn}
         onFindStart={addFindTurn}
         onFindUpdate={updateFindTurn}
+        onFindingChange={setFinding}
+        onIngestingChange={setIngesting}
       />
 
       <ChatHistory
