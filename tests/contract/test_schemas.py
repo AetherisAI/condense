@@ -140,7 +140,7 @@ def test_grounding_segment_rejects_unknown_kind() -> None:
     """`kind` is a closed `Literal` — a consumer can exhaustively switch on it without a
     catch-all case, same discipline as `IngestStatus`/`GroundingMode`."""
     with pytest.raises(ValidationError):
-        GroundingSegment(text="x", kind="maybe")
+        GroundingSegment(text="x", kind="maybe")  # pyright: ignore[reportArgumentType]
 
 
 def test_manifest_and_health_shapes() -> None:
