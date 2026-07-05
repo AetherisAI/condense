@@ -1,0 +1,32 @@
+# Linux build environment for the Sift agent AppImage.
+# Ubuntu 24.04 ships Python 3.12, and its python3-tk matches — so Tkinter works in the
+# bundled interpreter (the classic docker-tkinter version-mismatch is avoided).
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-venv python3-tk python3-dev \
+      binutils file wget ca-certificates desktop-file-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+# appimagetool matching the image arch (so the image is self-consistent whether built as amd64 or
+# arm64). Run with --appimage-extract-and-run so it needs no FUSE inside the container.
+RUN set -eux; \
+    case "$(uname -m)" in \
+      x86_64)  tool=appimagetool-x86_64.AppImage ;; \
+      aarch64) tool=appimagetool-aarch64.AppImage ;; \
+      *) echo "unsupported build arch: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    wget -q -O /usr/local/bin/appimagetool \
+      "https://github.com/AppImage/AppImageKit/releases/download/continuous/$tool"; \
+    chmod +x /usr/local/bin/appimagetool
+
+# Bake the agent's runtime deps + PyInstaller into a venv (the source is mounted at build time).
+RUN python3 -m venv /venv \
+ && /venv/bin/pip install --upgrade pip \
+ && /venv/bin/pip install httpx watchdog platformdirs pyinstaller
+
+COPY build_linux_in_container.sh /usr/local/bin/build_linux_in_container.sh
+RUN chmod +x /usr/local/bin/build_linux_in_container.sh
+
+ENTRYPOINT ["/usr/local/bin/build_linux_in_container.sh"]
