@@ -821,3 +821,45 @@ Both your open PRs are integrated and pushed to `main` (true merges — GitHub s
 **Related findings you'll care about (today's live corpus):** `/documents`=45 on the Leitat corpus is *correct* — 7 of 54 candidates are byte-identical duplicates (dedup collapses them, by design) and **2 fail persistently**: two `.xlsx` with corrupt declared dimensions (`B1:AQ1048573` ≈ 44M cells) hitting the `parse_max_xlsx_cells=2M` guard — the files need an Excel Ctrl+End trim, the guard is right. This re-surfaces your update-7 point: watch mode logs failures only as aggregate counts. Our next WP (`feat/tauri-shell`, D53–D55 — Tauri desktop shell + agent-from-UI) includes `--json` NDJSON output for `agent/cli.py` with per-file `failures[]` + a SIGTERM handler (T3), and a second headless PyInstaller target of the CLI (T4) as the desktop sidecar — both touch your files at Quentin's direction; the plan is on the branch, review/reshape welcome (your Tkinter build stays as the standalone download).
 
 **One hygiene flag:** fresh-venv pyright shows 47 pre-existing errors on main (pydantic-settings drift, 4 test files — `Settings(**dict)` unpacking). Identical before/after our merges; tracked separately. — Quentin/Dev B
+
+---
+
+## 2026-07-05 — update 28: `agent/cli.py` gains `--json` NDJSON + SIGTERM (CROSS-BOUNDARY on `agent/cli.py` + `agent/sync.py`) — closes your update-7 ask for watch mode
+
+Landed the first slice flagged in update 27 (`feat/tauri-shell` T3, D54), on its own branch `feat/agent-json-cli` off `main@77acdf1`. Both touched files are yours — flagging per our D50 convention, review/reshape welcome.
+
+**What changed:**
+
+1. **`agent/sync.py`** — `Summary` gains `failures: tuple[Failure, ...] = ()` (new frozen dataclass `Failure(path, error)`, `slots=True`). In `sync()`, every ingest result with `status == "failed"` now also appends a `Failure(path=r["path"], error=r.get("detail"))` — the server's own `IngestFileResult.detail` string, already computed, just wasn't threaded through past the `failed += 1` counter. **This is exactly your update-7 ask** (watch mode only ever logged aggregate counts) and directly explains the two corrupt `.xlsx` files from update 27's Leitat corpus finding — they'll now name themselves instead of hiding inside "2 failed". One narrow, deliberate gap: a failure from the delete-stale-hash pass (keyed by content hash, not a watched path) is still only counted in `failed`, not named in `failures` — no natural path to report there. `Summary(error=...)` call sites (yours in `agent/app.py:380`) are untouched — new field defaults to `()`.
+
+2. **`agent/cli.py`** — new `--json` flag (default off, human output byte-for-byte unchanged without it) and an `emit()` helper (`print(json.dumps(obj), flush=True)`). Four event shapes on stdout, one JSON object per line:
+   ```json
+   {"event":"watch_started","paths":[...],"delete_removed":bool}
+   {"event":"sync","indexed":N,"replaced":N,"deleted":N,"skipped":N,"failed":N,"failures":[{"path":...,"error":...}]}
+   {"event":"dry_run","would_upload":[{"path":...,"hash":...}]}   // one-shot --dry-run only, not in the original 4-event sketch — flagging as an addition
+   {"event":"fatal","error":"..."}
+   {"event":"stopped"}
+   ```
+   One-shot mode (default, no `--watch`) reuses the same `sync` event shape for its three outcomes (nothing-to-upload / success / `PartialIngestError`) rather than per-file lines, so `failures[]` behaves identically whether the two bad xlsx show up via `--watch` or a plain one-shot run. Also added a **SIGTERM handler** in `_watch()`: a `threading.Event` now gates the wait (previously an anonymous, unreachable `threading.Event().wait()`), and `signal.signal(signal.SIGTERM, ...)` sets it — same clean `watcher.stop()` → exit 0 path Ctrl-C (SIGINT) already had. This is unconditional (not gated by `--json`) since it's a real bug for any supervisor: Tauri's sidecar `kill()` sends SIGTERM, which previously just killed the process mid-write with no cleanup.
+
+**Why `_watch()`'s wrapping try/except:** added one around the run/watch/wait body so an unexpected crash emits `{"event":"fatal",...}` + exit 1 in `--json` mode instead of a bare Python traceback breaking the "every stdout line is valid JSON" contract — but only in `--json` mode; without the flag it re-raises, so a crash still looks exactly like it did before (traceback, non-zero exit via Python's default).
+
+**TDD:** `tests/agent/test_cli_json.py` (new, 5 tests, follows `test_agent.py`'s `httpx.MockTransport` convention): dry-run NDJSON validity (populated + empty dir), one-shot `failures[].path`/`.error` for a stub-rejected file, human output unchanged + provably-not-JSON, and a real subprocess SIGTERM test (`python -m agent.cli … --watch --json`, `--server http://127.0.0.1:9` — the discard port, refused in ~90ms, so nothing real is ever contacted — SIGTERM after 1s, asserts exit 0 within 5s and a trailing `{"event":"stopped"}`). 481/481 full suite green (was 476; +5), `ruff check`/`ruff format --check` clean, pyright unchanged at the pre-existing 47-error baseline (4 test files, none touched).
+
+Next up on the same branch: T4, a second headless PyInstaller target (`sift-agent-cli`, onefile/console) of this same `agent.cli` for the Tauri sidecar — your Tkinter build (`sift-agent.spec`) is untouched and stays the standalone download. — Quentin/Dev B
+
+---
+
+## 2026-07-05 — update 29: T4 landed — second PyInstaller target `sift-agent-cli.spec` (CROSS-BOUNDARY, new files under `packaging/`)
+
+Same branch (`feat/agent-json-cli`), the T4 half promised in update 28. New files only — nothing in `sift-agent.spec`/`sift_agent_entry.py`/your build scripts touched:
+
+- **`packaging/sift-agent-cli.spec`** — a second, independent PyInstaller spec: **onefile**, **`console=True`**, freezing `agent.cli` (not `agent.app`) into a single `sift-agent-cli` binary. Same excludes (`sift`, `torch`, `numpy`, `markitdown`, `tokenizers`, `libsql`) and the same per-OS `watchdog` observer hidden-import as yours — `--watch` needs it here too.
+- **`packaging/sift_agent_cli_entry.py`** — thin `from agent.cli import main` wrapper, mirroring your `sift_agent_entry.py` convention exactly.
+- **`packaging/README.md`** — reframed the top as "two targets" (table: GUI download vs. headless sidecar) and added a "Target 2" section documenting the build command, the local smoke sequence, and the Tauri `bundle.externalBin` target-triple rename convention (`sift-agent-cli-x86_64-unknown-linux-gnu` etc., via `rustc --print host-tuple`) that the desktop WP's CI will need. Your Target 1 docs/table are unchanged, just renumbered under a new heading.
+
+**Why a second spec instead of reusing yours:** your build is onedir + `console=False` (own Tkinter window, no usable stdout) — exactly wrong for something a supervisor spawns and reads NDJSON from. Rather than bend one spec two ways, T4 keeps them fully independent; your download build is byte-for-byte unaffected (verified `sift-agent.spec` unchanged in this diff).
+
+**Local build + smoke (RAM-capped service, this machine):** `pyinstaller packaging/sift-agent-cli.spec` → 24MB single-file `dist/sift-agent-cli`. `--help` exits 0. `--json --dry-run` against a throwaway local stub server (one-shot mode always calls `/ingest/manifest` first, even under `--dry-run` — pre-existing, not something T3/T4 changed) emitted one valid `{"event":"dry_run",...}` line. SIGTERM against a `--watch` run (`--server http://127.0.0.1:9`, refused instantly, nothing real contacted) exited 0 within ~1.5s with a trailing `{"event":"stopped"}`. `ruff check .`/`ruff format --check .` clean (`.spec` files aren't linted, `.py` entry point is), pyright unchanged (47 baseline), full suite still 481/481 (packaging isn't exercised by pytest).
+
+This closes the WP's D54 M2 milestone ("agent CLI json/sigterm + headless binary — shippable alone, helps systemd users too"). Next (not on this branch): the Tauri scaffold itself (T5+) will consume `dist/sift-agent-cli` as `desktop/src-tauri/binaries/sift-agent-cli-<target-triple>`. — Quentin/Dev B
