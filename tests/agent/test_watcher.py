@@ -10,13 +10,20 @@ forever, see D29) and previously had zero automated coverage.
 from __future__ import annotations
 
 from agent.watcher import _CHANGE_EVENTS, _Handler
+from watchdog.events import FileSystemEvent
 
 READ_EVENTS = ("opened", "closed_no_write", "accessed", "closed")
 CHANGE_EVENTS = ("created", "modified", "moved", "deleted")
 
 
-class _Ev:
-    """Minimal stand-in for a ``watchdog`` ``FileSystemEvent``."""
+class _Ev(FileSystemEvent):
+    """Minimal stand-in for a ``watchdog`` ``FileSystemEvent``.
+
+    A real subclass (not just a duck-typed look-alike) so it satisfies ``_Handler.on_any_event``'s
+    ``FileSystemEvent`` parameter type; ``event_type``/``is_directory`` are set post-``__init__``
+    since the real dataclass declares them ``init=False`` (concrete watchdog subclasses like
+    ``FileCreatedEvent`` fix them as class attributes instead of taking them as constructor args).
+    """
 
     def __init__(
         self,
@@ -26,10 +33,9 @@ class _Ev:
         src: str = "/x/a.pdf",
         dest: str = "",
     ) -> None:
+        super().__init__(src, dest)
         self.event_type = event_type
         self.is_directory = is_directory
-        self.src_path = src
-        self.dest_path = dest
 
 
 def _handler(only: str | None = None) -> tuple[list[int], _Handler]:

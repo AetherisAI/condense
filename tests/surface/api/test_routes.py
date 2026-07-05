@@ -15,6 +15,7 @@ import json
 import logging
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
+from typing import Any
 
 import httpx
 import pytest
@@ -165,7 +166,7 @@ def test_status_redacts_every_secret_key() -> None:
     ``_SECRET_KEYS`` (present or future) fails loudly instead of silently passing because the
     field happened to be unset/falsy in the shared fixture.
     """
-    secret_values = {
+    secret_values: dict[str, Any] = {
         "turso_auth_token": "tt-secret",
         "embed_api_key": "embed-secret",
         "llm_api_key": "llm-secret",

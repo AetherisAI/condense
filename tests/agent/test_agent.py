@@ -13,6 +13,7 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -174,7 +175,7 @@ def test_ingest_batches_split_modified_at_and_merge_results() -> None:
     batch carries only its own files' mtimes, and the merged body keeps the server's top-level
     shape (``tenant``) while concatenating every batch's ``results``.
     """
-    posts: list[dict[str, object]] = []
+    posts: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == f"Bearer {TOKEN}"
