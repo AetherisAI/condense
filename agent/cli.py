@@ -15,13 +15,23 @@ failure from the caller's shell.
 
 ``main`` takes an optional ``client`` so tests can inject a :class:`~agent.client.SiftClient`
 built on an ``httpx.MockTransport`` and run the whole flow offline.
+
+**``--json``** (added for the Tauri desktop sidecar, see DECISIONS.md D54): every line normally
+printed to stdout becomes one NDJSON object instead (``emit``), so a supervising process can
+parse progress/failures without scraping human text. Never changes exit codes; never touches
+stderr. Human output (no flag) is byte-for-byte unchanged. **SIGTERM** (added alongside it,
+D54 — a supervisor's ``kill()`` sends SIGTERM, not the Ctrl-C SIGINT this used to require) stops
+``--watch`` the same clean way Ctrl-C always has: the watcher is stopped and the process exits 0.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import signal
 import threading
+from typing import Any
 
 from agent.client import PartialIngestError, SiftClient
 
@@ -32,9 +42,31 @@ from agent.sync import (
     DEFAULT_EXCLUDE_FILES,
     DEFAULT_INCLUDE,
     DEFAULT_MAX_FILE_SIZE_MB,
+    Summary,
     collect,
     sync,
 )
+
+
+def emit(event: dict[str, Any]) -> None:
+    """Print one NDJSON object to stdout — the whole of ``--json``'s wire format."""
+    print(json.dumps(event), flush=True)
+
+
+def _sync_event(summary: Summary) -> dict[str, Any]:
+    """A :class:`~agent.sync.Summary` as the ``sync`` NDJSON event (shared by one-shot + watch)."""
+    event: dict[str, Any] = {
+        "event": "sync",
+        "indexed": summary.indexed,
+        "replaced": summary.replaced,
+        "deleted": summary.deleted,
+        "skipped": summary.skipped,
+        "failed": summary.failed,
+        "failures": [{"path": f.path, "error": f.error} for f in summary.failures],
+    }
+    if summary.error:
+        event["error"] = summary.error
+    return event
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -56,6 +88,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="file extensions to upload",
     )
     parser.add_argument("--dry-run", action="store_true", help="list uploads without sending")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit NDJSON events on stdout instead of human-readable lines",
+    )
     parser.add_argument(
         "--max-file-size-mb",
         type=int,
@@ -94,13 +131,25 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _watch(args: argparse.Namespace, client: SiftClient) -> int:
-    """Continuous mode: full sync now, then re-sync (debounced) on every filesystem change."""
+    """Continuous mode: full sync now, then re-sync (debounced) on every filesystem change.
+
+    Stops cleanly — ``watcher.stop()`` then exit 0 — on either Ctrl-C (SIGINT, via the usual
+    ``KeyboardInterrupt``) or SIGTERM (a supervising process's ``kill()``, e.g. Tauri's sidecar
+    manager, which never sends SIGINT). Both roads lead through the same ``stop_event.wait()``:
+    the SIGTERM handler just sets it instead of raising.
+    """
     from agent.watcher import Watcher  # local import so one-shot mode needs no watchdog
 
     includes = set(args.include)
     exclude_dirs = DEFAULT_EXCLUDE_DIRS | set(args.exclude_dir)
     exclude_files = DEFAULT_EXCLUDE_FILES | set(args.exclude_file)
     managed: set[str] = set()  # paths seen on disk so far — scopes --delete-removed safely
+    stop_event = threading.Event()
+
+    def _on_sigterm(signum: int, frame: object) -> None:
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, _on_sigterm)
 
     def run() -> None:
         nonlocal managed
@@ -116,18 +165,39 @@ def _watch(args: argparse.Namespace, client: SiftClient) -> int:
             exclude_files=exclude_files,
         )
         managed = set(summary.managed)
-        print(f"[sync] {summary.line()}")
+        if args.json:
+            emit(_sync_event(summary))
+        else:
+            print(f"[sync] {summary.line()}")
 
-    run()  # initial pass
-    watcher = Watcher(args.paths, run, recursive=True)
-    watcher.start()
-    print(f"[watch] {', '.join(args.paths)} — Ctrl-C to stop")
     try:
-        threading.Event().wait()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        watcher.stop()
+        run()  # initial pass
+        watcher = Watcher(args.paths, run, recursive=True)
+        watcher.start()
+        if args.json:
+            emit(
+                {
+                    "event": "watch_started",
+                    "paths": args.paths,
+                    "delete_removed": args.delete_removed,
+                }
+            )
+        else:
+            print(f"[watch] {', '.join(args.paths)} — Ctrl-C to stop")
+        try:
+            stop_event.wait()
+        except KeyboardInterrupt:  # Ctrl-C — same clean stop as a SIGTERM
+            pass
+        finally:
+            watcher.stop()
+    except Exception as exc:
+        if not args.json:
+            raise  # unchanged human behaviour: let it crash with a traceback
+        emit({"event": "fatal", "error": str(exc)})
+        return 1
+
+    if args.json:
+        emit({"event": "stopped"})
     return 0
 
 
@@ -155,12 +225,34 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
     ]
     known = client.manifest(args.tenant)
     todo = [(rel, h, data, mtime) for rel, h, data, mtime in files if h not in known]
+    skipped_known = len(files) - len(todo)  # already on the server — never even sent (D45 parity)
     if not todo:
-        print("nothing to upload (all known)")
+        if args.json:
+            emit(
+                {
+                    "event": "sync",
+                    "indexed": 0,
+                    "replaced": 0,
+                    "deleted": 0,
+                    "skipped": skipped_known,
+                    "failed": 0,
+                    "failures": [],
+                }
+            )
+        else:
+            print("nothing to upload (all known)")
         return 0
     if args.dry_run:
-        for rel, h, _data, _m in todo:
-            print(f"WOULD UPLOAD {rel} ({h})")
+        if args.json:
+            emit(
+                {
+                    "event": "dry_run",
+                    "would_upload": [{"path": rel, "hash": h} for rel, h, _data, _m in todo],
+                }
+            )
+        else:
+            for rel, h, _data, _m in todo:
+                print(f"WOULD UPLOAD {rel} ({h})")
         return 0
     try:
         resp = client.ingest(
@@ -169,23 +261,58 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
             modified_at={rel: mtime for rel, _h, _data, mtime in todo},
         )
     except PartialIngestError as exc:
-        # One or more batches landed before a later one failed (A4) — print every status the
+        # One or more batches landed before a later one failed (A4) — report every status the
         # server actually confirmed rather than nothing, then a clear, greppable summary so a
         # partial ingest can never read as either "silent success" or "total failure".
         results = exc.partial.get("results", [])
-        for r in results:
-            print(f"{r['status']}\t{r['path']}")
         indexed = sum(1 for r in results if r.get("status") == "indexed")
         skipped = sum(1 for r in results if r.get("status") == "skipped_dedup")
-        failed = sum(1 for r in results if r.get("status") == "failed")
+        failed_results = [r for r in results if r.get("status") == "failed"]
         never_attempted = len(todo) - len(results)
-        print(
-            f"PARTIAL: {indexed} indexed, {skipped} skipped, {failed} failed, "
-            f"{never_attempted} of {len(todo)} files never attempted ({exc})"
-        )
+        if args.json:
+            emit(
+                {
+                    "event": "sync",
+                    "indexed": indexed,
+                    "replaced": 0,
+                    "deleted": 0,
+                    "skipped": skipped_known + skipped,
+                    "failed": len(failed_results),
+                    "failures": [
+                        {"path": r.get("path"), "error": r.get("detail")} for r in failed_results
+                    ],
+                    "error": str(exc),
+                    "never_attempted": never_attempted,
+                }
+            )
+        else:
+            for r in results:
+                print(f"{r['status']}\t{r['path']}")
+            print(
+                f"PARTIAL: {indexed} indexed, {skipped} skipped, {len(failed_results)} failed, "
+                f"{never_attempted} of {len(todo)} files never attempted ({exc})"
+            )
         return 1
-    for r in resp["results"]:
-        print(f"{r['status']}\t{r['path']}")
+    results = resp["results"]
+    if args.json:
+        failed_results = [r for r in results if r.get("status") == "failed"]
+        emit(
+            {
+                "event": "sync",
+                "indexed": sum(1 for r in results if r.get("status") == "indexed"),
+                "replaced": 0,
+                "deleted": 0,
+                "skipped": skipped_known
+                + sum(1 for r in results if r.get("status") == "skipped_dedup"),
+                "failed": len(failed_results),
+                "failures": [
+                    {"path": r.get("path"), "error": r.get("detail")} for r in failed_results
+                ],
+            }
+        )
+    else:
+        for r in results:
+            print(f"{r['status']}\t{r['path']}")
     return 0
 
 

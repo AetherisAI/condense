@@ -345,6 +345,18 @@ class Actions:
 
 
 @dataclass(frozen=True, slots=True)
+class Failure:
+    """One file the server reported as ``"failed"``: its upload path and the server's detail.
+
+    Surfaced so a caller (``agent.cli --json``, the desktop app) can name the file rather than
+    just counting it — see :data:`Summary.failures`.
+    """
+
+    path: str
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Summary:
     """Per-sync tallies for the UI status line, plus the paths now under management.
 
@@ -359,6 +371,13 @@ class Summary:
     D45, only the client-side count was tallied, so a path-keying mismatch that forced every file
     through the upload path (server dedup catching it every time) still reported ``0 skipped`` —
     a misleading zero that hid exactly the bandwidth/round-trip waste it should have surfaced.
+
+    ``failures`` names every file counted in ``failed`` that came from a server-reported ingest
+    result (path + the server's ``detail`` string) — before this, a watch-mode "2 failed" line
+    gave no way to tell *which* two files without digging through server logs (the corrupt-xlsx
+    gap, see DECISIONS.md D52/D54). A failure folded in from the delete-stale-hash pass below
+    (keyed by content hash, not a watched path) is counted in ``failed`` but has no natural path
+    to report, so it is *not* added here — a known, narrow gap, not a silent one.
     """
 
     indexed: int = 0
@@ -368,6 +387,7 @@ class Summary:
     failed: int = 0
     error: str | None = None
     managed: frozenset[str] = frozenset()
+    failures: tuple[Failure, ...] = ()
 
     def line(self) -> str:
         if self.error:
@@ -486,6 +506,7 @@ def sync(
     indexed = replaced = deleted = failed = skipped_dedup = 0
     error: str | None = None
     indexed_paths: set[str] = set()
+    failures: list[Failure] = []
 
     if actions.ingest:
         payload = [(name, loader_by_name[name]) for name in actions.ingest]
@@ -510,6 +531,7 @@ def sync(
                     replaced += 1
             elif status == "failed":
                 failed += 1
+                failures.append(Failure(path=path, error=r.get("detail")))
             elif status == "skipped_dedup":
                 # The engine's own content-hash dedup caught a file reconcile() thought was
                 # new/changed (D45) — not lost, not an error, just wasted bandwidth; tallied into
@@ -545,4 +567,5 @@ def sync(
         failed=failed,
         error=error,
         managed=now_managed,
+        failures=tuple(failures),
     )
