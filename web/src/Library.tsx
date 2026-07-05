@@ -21,8 +21,8 @@ const TINTS: Record<string, string> = {
   xls: '#22a06b',
   xlsx: '#22a06b',
   csv: '#22a06b',
-  md: '#7c5cff',
-  markdown: '#7c5cff',
+  md: 'var(--accent-ui)',
+  markdown: 'var(--accent-ui)',
   json: '#8f1fe6',
   yaml: '#8f1fe6',
   yml: '#8f1fe6',
@@ -166,7 +166,7 @@ export default function Library({
           )}
 
           {!loading && !error && supported && docs && docs.length === 0 && (
-            <p className="drawer-muted">No documents indexed yet. Drop files into the Documents panel.</p>
+            <p className="drawer-muted">No documents indexed yet. Drop files to add them.</p>
           )}
 
           {supported && docs && docs.length > 0 && (
