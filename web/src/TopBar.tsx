@@ -10,6 +10,7 @@ import Logo from './Logo'
  */
 export default function TopBar({
   hasTurns,
+  busy,
   historyOpen,
   onHistoryClick,
   onNewChat,
@@ -21,6 +22,12 @@ export default function TopBar({
   onSystemClick,
 }: {
   hasTurns: boolean
+  // The living-logo status indicator (D57/Task U4) — true while ANY request is in flight (Ask
+  // send/stream, Find query, ingest upload), lifted from `Chat`'s combined `isBusy`. Toggles
+  // `.mark-busy` on the wrapping element rather than on `Logo` itself, so the mark's own locked
+  // markup/animation (`Logo.tsx`) never has to change — only the CSS reached via descendant
+  // selectors (`App.css`) does.
+  busy: boolean
   historyOpen: boolean
   onHistoryClick: () => void
   onNewChat: () => void
@@ -33,7 +40,7 @@ export default function TopBar({
 }) {
   return (
     <header className="topbar">
-      <div className="topbar-brand">
+      <div className={`topbar-brand${busy ? ' mark-busy' : ''}`}>
         <Logo />
         <span className="topbar-word">Condense</span>
       </div>

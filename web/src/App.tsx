@@ -19,6 +19,10 @@ import './App.css'
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('bearerToken') ?? '')
   const [hasTurns, setHasTurns] = useState(false)
+  // The living-logo status indicator (D57/Task U4) — combined Ask/Find/ingest in-flight flag,
+  // computed and reported up by `Chat` (`onBusyChange`); `TopBar` just renders it as a class
+  // toggle, it never needs to know WHICH flow is running.
+  const [isBusy, setIsBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
@@ -37,6 +41,7 @@ export default function App() {
       <div className="workbench">
         <TopBar
           hasTurns={hasTurns}
+          busy={isBusy}
           historyOpen={historyOpen}
           onHistoryClick={() => setHistoryOpen(true)}
           onNewChat={() => chatRef.current?.newChat()}
@@ -54,6 +59,7 @@ export default function App() {
           historyOpen={historyOpen}
           onHistoryOpenChange={setHistoryOpen}
           onTurnsChange={setHasTurns}
+          onBusyChange={setIsBusy}
         />
       </div>
 
