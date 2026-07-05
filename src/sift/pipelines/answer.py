@@ -53,6 +53,30 @@ model a different-mode turn's refusal does not constrain this one — prompt-ass
 persisted history itself is never rewritten. Separately, the hybrid/open suffixes now explicitly
 override the base prompt's "say so honestly" abstention line for the no-hits/no-tool-call case —
 open mode in particular must never treat an empty or skipped search as a reason to refuse.
+
+**Reliable general-knowledge marking (D59):** live screenshot bug — a pure general-knowledge
+question, answered with NO tool calls, came back as "...(General knowledge)." (parenthetical,
+trailing) instead of the documented literal `[General knowledge]` block-prefix marker; the OLD
+exact-substring segmenter found no marker at all, so the whole answer shipped as one "grounded"
+segment (no purple anywhere) with the raw marker literal left in the visible text. Three layers,
+all in this module: (1) `_apply_provenance_backstop` — a deterministic, primary signal,
+independent of markers entirely: if hybrid/open mode gathered NO real corpus evidence this turn
+(zero tool calls, or every search/list/read call came back empty — see `_tool_result_
+has_corpus_evidence` and `run`'s `corpus_evidence_used`) and the segmenter still found no marker
+anywhere (a single whole-answer "grounded" segment), the ENTIRE answer is reclassified as one
+"general_knowledge" segment, any marker-like text stripped. Scoped narrowly — it only overrides
+that single-fully-grounded-segment shape, never a genuinely mixed marker-based split, so it
+cannot clobber a real self-reported grounded+general answer just because this turn happened to
+call no tool. (2) `_split_grounding_segments`/`_GENERAL_KNOWLEDGE_VARIANTS`/`_marker_role` —
+tolerant, case-insensitive recognition of the bracket/parenthetical/colon-prefixed marker forms,
+each classified as leading what follows (prefix, the original D48 semantics, a one-way toggle)
+or trailing its own line (suffix, the screenshot's shape — retroactively labels only that line,
+then reverts). (3) the hybrid/open suffixes gained a `_GK_MARKER_FORMAT_NOTE` paragraph spelling
+out the exact required shape with a worked example — belt-and-braces prompt hardening, not
+load-bearing on its own since (1)/(2) make correctness independent of the model actually obeying
+it. D51's strict OUTPUT guard now matches the SAME tolerant variant set (was the exact bracket
+literal only) — a variant that would have leaked real ungrounded prose past strict mode
+undetected now still triggers the abstention.
 """
 
 from __future__ import annotations
@@ -61,6 +85,7 @@ import asyncio
 import dataclasses
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -226,11 +251,30 @@ _JSON_MODE_SUFFIX = (
 # (no citations either way, same card) — indistinguishable to the reader. Each suffix is the
 # ONLY steering lever this pipeline has over what the model actually does (same as every other
 # system-prompt rule in this module); `_GENERAL_KNOWLEDGE_MARKER` is the literal string the
-# hybrid/open suffixes instruct the model to prefix ungrounded content with, and the only signal
-# :meth:`AnswerPipeline.run` uses to decide `from_general_knowledge` for those two modes — in
-# `"strict"` mode the flag is hardcoded `False` regardless of the model's output (see `run`),
-# a structural guarantee independent of whether the model actually obeyed the prompt.
+# hybrid/open suffixes instruct the model to prefix ungrounded content with, and (together with
+# `_GENERAL_KNOWLEDGE_VARIANTS` below, D59) the signal :meth:`AnswerPipeline.run` uses to decide
+# `from_general_knowledge` for those two modes — in `"strict"` mode the flag is hardcoded `False`
+# regardless of the model's output (see `run`), a structural guarantee independent of whether the
+# model actually obeyed the prompt.
 _GENERAL_KNOWLEDGE_MARKER = "[general knowledge]"
+
+# Tolerant marker recognition (D59). Motivating bug (Quentin, live, open mode, screenshot
+# evidence): a pure general-knowledge question got answered with NO tool calls and the model
+# wrote "...(General knowledge)." — parenthetical, TRAILING — instead of the documented literal
+# `[General knowledge]` block-prefix marker. The old exact-substring check (`_GENERAL_KNOWLEDGE_
+# MARKER in text.lower()`) found nothing, so the whole answer came back as one "grounded"
+# segment: no purple anywhere, and the raw "(General knowledge)." literal shipped as visible
+# prose. This regex recognizes three case-insensitive variants — the bracket form
+# (`[General knowledge]`), a parenthetical form (`(General knowledge)`), and a colon-prefixed
+# form (`General knowledge:`) — each optionally followed by one trailing sentence-ending
+# punctuation mark so a match like "(General knowledge)." consumes the stray period too (both
+# for clean stripping and so `_marker_role` below sees an accurately empty remainder when the
+# marker sits at a block's end).
+_GENERAL_KNOWLEDGE_VARIANTS = re.compile(
+    r"(?:\[\s*general\s+knowledge\s*\]|\(\s*general\s+knowledge\s*\)|general\s+knowledge\s*:)"
+    r"[.!?]?",
+    re.IGNORECASE,
+)
 
 # Strict structural OUTPUT guard (D51). Motivating bug: a real conversation showed that even
 # with `grounding="strict"` correctly sent on the request (confirmed via the captured request
@@ -259,6 +303,21 @@ _GROUNDING_STRICT_SUFFIX = (
     "retrieved from the documents."
 )
 
+# Marker-FORMAT hardening (D59, layer 3 — prompt-side reduction of the variant frequency the
+# tolerant segmenter/strict guard now handle structurally regardless; this is belt-and-braces,
+# not load-bearing on its own). Motivating bug (Quentin, live, screenshot evidence): the model
+# wrote "...(General knowledge)." — parenthetical, trailing — instead of the documented literal
+# block-prefix marker. Appended (not substituted) to both hybrid/open suffixes so every existing
+# substring assertion on those suffixes keeps matching unchanged.
+_GK_MARKER_FORMAT_NOTE = (
+    "\n\nMARKER FORMAT — get this exact shape right every time: the marker is the literal text "
+    '"[General knowledge]" placed at the START of the sentence, bullet, or paragraph it labels — '
+    "never paraphrased, never parenthesized, and never appended at the end. For example, write "
+    '"[General knowledge] Glioblastoma is a type of brain tumor." — never "Glioblastoma is a '
+    'type of brain tumor (General knowledge)." and never "...(general knowledge)" trailing at '
+    "the end of a sentence or the answer as a whole."
+)
+
 _GROUNDING_HYBRID_SUFFIX = (
     "\n\nGROUNDING MODE: HYBRID. Prefer answering from what your tools retrieve from the "
     "ingested documents. You MAY supplement a documented answer with your own general knowledge "
@@ -271,7 +330,7 @@ _GROUNDING_HYBRID_SUFFIX = (
     "question: in hybrid mode, that is never a dead end. If your tools return no hits, or hits "
     "that don't actually answer the question, answer it from your own general knowledge instead "
     '(marked with the "[General knowledge]" marker above) rather than telling the user the '
-    "documents/database don't have it."
+    "documents/database don't have it." + _GK_MARKER_FORMAT_NOTE
 )
 
 _GROUNDING_OPEN_SUFFIX = (
@@ -285,7 +344,7 @@ _GROUNDING_OPEN_SUFFIX = (
     "hits, or you don't call a tool at all, simply answer from your own general knowledge "
     '(marked with the "[General knowledge]" marker above) instead of refusing or telling the '
     "user the database/documents don't have it. Only strict mode ever abstains for lack of "
-    "document coverage — open mode never does."
+    "document coverage — open mode never does." + _GK_MARKER_FORMAT_NOTE
 )
 
 _GROUNDING_SUFFIXES: dict[GroundingMode, str] = {
@@ -324,6 +383,34 @@ _MODE_TRANSITION_CUE = (
 )
 
 
+def _marker_role(text: str, match: re.Match[str]) -> Literal["prefix", "suffix"]:
+    """Whether one ``_GENERAL_KNOWLEDGE_VARIANTS`` match leads what FOLLOWS it (the documented
+    ``[General knowledge]``-at-the-front convention, D46/D48 — a "prefix" marker) or trails a
+    block, retroactively labeling what PRECEDES it on the same line (D59's tolerant addition —
+    the screenshot's "...(General knowledge)." at the very end of the answer, nothing following
+    it — a "suffix" marker).
+
+    Heuristic: look at the rest of the marker's own line (up to the next ``"\\n"`` or the end of
+    ``text``, since the match already consumes one trailing ``.``/``!``/``?``) — nothing but
+    whitespace left means suffix; real content left means prefix, exactly like today.
+    """
+    line_end = text.find("\n", match.end())
+    if line_end == -1:
+        line_end = len(text)
+    remainder = text[match.end() : line_end].strip()
+    return "suffix" if not remainder else "prefix"
+
+
+def _strip_marker_variants(text: str) -> str:
+    """Remove every recognized general-knowledge marker occurrence from ``text`` and collapse
+    the run of whitespace a removed marker leaves behind — used by the provenance backstop
+    (D59, see :func:`_apply_provenance_backstop`) so a whole-answer override never leaves the
+    literal marker syntax sitting in the segment text it just relabeled."""
+    stripped = _GENERAL_KNOWLEDGE_VARIANTS.sub("", text)
+    stripped = re.sub(r"[ \t]{2,}", " ", stripped)
+    return stripped.strip(_GK_TRIM_CHARS)
+
+
 def _split_grounding_segments(text: str, mode: GroundingMode) -> list[dict[str, str]]:
     """Split ``final_text`` into ordered ``{"text", "kind"}`` segments (D48) — the structured
     sibling of ``from_general_knowledge``: a consumer can tell WHICH parts of the answer are
@@ -335,47 +422,96 @@ def _split_grounding_segments(text: str, mode: GroundingMode) -> list[dict[str, 
     ``"grounded"`` segment, regardless of what the text contains (even a misbehaving completer
     that emits the marker anyway is never reported as containing general knowledge).
 
-    hybrid/open scan ``text`` for every case-insensitive occurrence of the literal
-    ``_GENERAL_KNOWLEDGE_MARKER``: any text before the first occurrence is one ``"grounded"``
-    segment, and each occurrence starts a new ``"general_knowledge"`` segment running to the next
-    occurrence (or the end of the text) — so inline mixing on a single line/sentence (as the
-    hybrid/open system prompts instruct) and one marker per bullet line both split correctly.
-    Empty segments (marker with nothing before/after it) are dropped; a marker-free answer comes
-    back as a single ``"grounded"`` segment either mode would produce for the same text.
+    hybrid/open scan ``text`` for every case-insensitive ``_GENERAL_KNOWLEDGE_VARIANTS`` match
+    (D59 — tolerant of the bracket, parenthetical, and colon-prefixed forms, not just the exact
+    literal ``[General knowledge]``) and classify each one's role (:func:`_marker_role`):
+
+    - a **prefix** match behaves exactly as before (D48) — a one-way toggle. Text before it
+      keeps whatever kind was already running (``"grounded"`` initially); from the match onward
+      the running kind becomes ``"general_knowledge"`` and stays that way (a later marker just
+      starts a new segment, never reverts to grounded) — this is what makes inline mixing on one
+      line ("Per the docs, X. [General knowledge] Also, Y.") and one-marker-per-bullet-line both
+      split correctly.
+    - a **suffix** match (D59) retroactively labels only its OWN line: content from that line's
+      start up to the marker becomes ``"general_knowledge"``, anything earlier (previous lines)
+      keeps whatever kind was already running, and the running kind resets to ``"grounded"``
+      afterward — a trailing annotation closes off just the block it annotates rather than
+      bleeding backward through the whole answer or forward through the rest of it.
+
+    Empty segments (marker with nothing on the relevant side) are dropped; a marker-free answer
+    comes back as a single ``"grounded"`` segment either mode would produce for the same text.
     """
     if not text:
         return []
     if mode == "strict":
         return [{"text": text, "kind": "grounded"}]
 
-    lower = text.lower()
-    marker = _GENERAL_KNOWLEDGE_MARKER
-    indices: list[int] = []
-    start = 0
-    while (idx := lower.find(marker, start)) != -1:
-        indices.append(idx)
-        start = idx + len(marker)
-
-    if not indices:
+    matches = list(_GENERAL_KNOWLEDGE_VARIANTS.finditer(text))
+    if not matches:
         return [{"text": text, "kind": "grounded"}]
 
     segments: list[dict[str, str]] = []
-    head = text[: indices[0]].strip(_GK_TRIM_CHARS)
-    if head:
-        segments.append({"text": head, "kind": "grounded"})
-    for i, idx in enumerate(indices):
-        seg_start = idx + len(marker)
-        seg_end = indices[i + 1] if i + 1 < len(indices) else len(text)
-        chunk = text[seg_start:seg_end].strip(_GK_TRIM_CHARS)
-        if chunk:
-            segments.append({"text": chunk, "kind": "general_knowledge"})
+    cursor = 0
+    state = "grounded"
+    for match in matches:
+        if _marker_role(text, match) == "suffix":
+            line_start = text.rfind("\n", 0, match.start()) + 1
+            pre = text[cursor:line_start].strip(_GK_TRIM_CHARS)
+            if pre:
+                segments.append({"text": pre, "kind": state})
+            own_line = text[line_start : match.start()].strip(_GK_TRIM_CHARS)
+            if own_line:
+                segments.append({"text": own_line, "kind": "general_knowledge"})
+            state = "grounded"
+        else:
+            span = text[cursor : match.start()].strip(_GK_TRIM_CHARS)
+            if span:
+                segments.append({"text": span, "kind": state})
+            state = "general_knowledge"
+        cursor = match.end()
 
-    # The marker was present but every resulting slice was empty (e.g. the whole answer IS just
+    tail = text[cursor:].strip(_GK_TRIM_CHARS)
+    if tail:
+        segments.append({"text": tail, "kind": state})
+
+    # A marker was present but every resulting slice was empty (e.g. the whole answer IS just
     # the marker) — still surface it as general knowledge rather than silently dropping the
     # signal and reporting an empty `segments` list.
     if not segments:
         return [{"text": text, "kind": "general_knowledge"}]
     return segments
+
+
+def _apply_provenance_backstop(
+    segments: list[dict[str, str]], mode: GroundingMode, corpus_evidence_used: bool
+) -> list[dict[str, str]]:
+    """D59 — deterministic, PRIMARY signal, independent of whether the model remembered to emit
+    ANY marker at all. Motivating bug (Quentin, live, open mode, screenshot evidence): a pure
+    general-knowledge question answered with NO tool calls came back marked only "...(General
+    knowledge)." — the tolerant parsing above now recognizes that specific variant on its own,
+    but a model that emits NO recognizable marker text whatsoever (any phrasing, any variant) is
+    still a live risk this backstop closes independently: if this turn gathered NO real corpus
+    evidence (no tool call executed, or every search/list/read tool call came back empty — see
+    ``AnswerPipeline.run``), the model could not possibly have quoted or paraphrased the
+    documents, so the answer must be general knowledge in its entirety regardless of what the
+    text itself claims to be.
+
+    Scoped narrowly to avoid false positives against every pre-existing marker-based test: this
+    only fires when ``_split_grounding_segments`` still came back as a single, whole-answer
+    ``"grounded"`` segment — i.e. no marker, of any recognized variant, was found ANYWHERE in the
+    text. A genuinely mixed marker-based split (this turn's own segments already containing at
+    least one ``"general_knowledge"`` segment, or more than one segment at all) is the model's
+    OWN self-report and is left completely untouched — tolerant parsing above already parsed it
+    correctly, and this backstop is not a second opinion on top of it.
+    """
+    if mode not in ("hybrid", "open") or corpus_evidence_used:
+        return segments
+    if len(segments) != 1 or segments[0]["kind"] != "grounded":
+        return segments
+    stripped = _strip_marker_variants(segments[0]["text"])
+    if not stripped:
+        return segments
+    return [{"text": stripped, "kind": "general_knowledge"}]
 
 
 # Auto-title (T6, D42): one extra small `Completer.complete()` call after the FIRST assistant
@@ -472,6 +608,25 @@ def _summarize_result(name: str, result: Any) -> str:
         total = result.get("total", len(result["documents"]))
         return f"{len(result['documents'])} of {total} document(s)"
     return "done"
+
+
+def _tool_result_has_corpus_evidence(name: str, detail: Any) -> bool:
+    """Whether one executed tool call actually surfaced real corpus content (D59) — the signal
+    :meth:`AnswerPipeline.run` accumulates across a turn's whole tool loop into
+    ``corpus_evidence_used`` for :func:`_apply_provenance_backstop`.
+
+    ``search``/``get_document_chunks`` return a bare ``list`` (hits/chunks) — non-empty means
+    real passages were actually retrieved. ``list_documents`` returns a ``dict`` with a
+    ``"documents"`` key — non-empty means the corpus genuinely has matching entries (still real
+    evidence: an authoritative enumeration answer, not a guess). A tool error (``{"error": ...}``,
+    see :meth:`AnswerPipeline._call_tool`) or an empty/no-hits result of any shape is NOT
+    evidence — this must stay false exactly for the no-hits case D58's own test already scripts.
+    """
+    if isinstance(detail, list):
+        return bool(detail)
+    if isinstance(detail, dict) and "documents" in detail:
+        return bool(detail["documents"])
+    return False
 
 
 def _merge_sources(existing: list[dict[str, Any]], hits: Sequence[Any]) -> list[dict[str, Any]]:
@@ -619,6 +774,10 @@ class AnswerPipeline:
         executed = 0
         gathered: list[str] = []
         sources: list[dict[str, Any]] = []
+        # D59 provenance signal for `_apply_provenance_backstop` — whether ANY tool call this
+        # turn actually surfaced real corpus content (never flips true on a zero-tool-call turn
+        # or a turn where every search/list/read call came back empty/no-hits).
+        corpus_evidence_used = False
         deadline = time.monotonic() + settings.answer_timeout_s
         budget = settings.answer_max_tool_calls
 
@@ -673,6 +832,8 @@ class AnswerPipeline:
                     _append_tool_exchange(messages, call, detail)
                     if call.name == "search" and isinstance(detail, list):
                         sources = _merge_sources(sources, detail)
+                    if _tool_result_has_corpus_evidence(call.name, detail):
+                        corpus_evidence_used = True
                 if truncated:
                     break
         except Exception:
@@ -697,16 +858,22 @@ class AnswerPipeline:
             if format == "json":
                 final_text = await self._coerce_json(final_text, json_schema, messages, tools)
 
-            # Strict structural OUTPUT guard (D51) — see `_STRICT_ABSTENTION_TEXT` docstring.
-            # Must run BEFORE segmenting/persisting/streaming so the leaked content never
-            # reaches any of those three places, not just the `from_general_knowledge` flag.
-            if mode == "strict" and _GENERAL_KNOWLEDGE_MARKER in final_text.lower():
+            # Strict structural OUTPUT guard (D51, variant-extended D59) — see
+            # `_STRICT_ABSTENTION_TEXT` docstring. Must run BEFORE segmenting/persisting/
+            # streaming so the leaked content never reaches any of those three places, not just
+            # the `from_general_knowledge` flag. D59: matches the SAME tolerant variant set as
+            # the segmenter (bracket/parenthetical/colon forms) — the exact-substring check this
+            # replaced only caught the bracket form, which would have let a variant (Quentin's
+            # screenshot proved models emit them) leak real ungrounded prose past strict mode
+            # entirely undetected.
+            if mode == "strict" and _GENERAL_KNOWLEDGE_VARIANTS.search(final_text):
                 final_text = _STRICT_ABSTENTION_TEXT
 
-            # Structured grounding segments (D48) — the parseable sibling of the boolean flag
-            # below, same source of truth (the literal marker), same "strict" structural
+            # Structured grounding segments (D48, tolerant-variant + provenance-backstop D59) —
+            # the parseable sibling of the boolean flag below, same "strict" structural
             # guarantee: always one "grounded" segment regardless of what the text contains.
             segments = _split_grounding_segments(final_text, mode)
+            segments = _apply_provenance_backstop(segments, mode, corpus_evidence_used)
             turn_from_general_knowledge = any(
                 segment["kind"] == "general_knowledge" for segment in segments
             )
@@ -738,6 +905,7 @@ class AnswerPipeline:
             truncated = True
             if not segments:
                 segments = _split_grounding_segments(final_text, mode)
+                segments = _apply_provenance_backstop(segments, mode, corpus_evidence_used)
 
         # Strict mode is a STRUCTURAL guarantee, not just a prompt request: the flag can never
         # come back True in "strict" regardless of what the model actually returned (even a
