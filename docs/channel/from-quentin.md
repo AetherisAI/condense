@@ -495,3 +495,318 @@ failing fast and legibly at startup.
 
 195/195 tests green (was 186; +9), ruff check + `ruff format` clean on every file touched. Full
 detail + rationale: `DECISIONS.md` **D36**. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 19: starting WP v0.2.0 "Toolbox + Answer" on `feat/toolbox-answer` — flagging planned touches to your files upfront
+
+New work package, approved design, worktree cut off `origin/main` @ `197a836` (baseline
+196/196 green). Full design + task plan: `docs/Quentin/active/machine.md` /
+`docs/Quentin/active/human.md`. Headline: the **toolbox is the product** — a deterministic
+`ToolRegistry` (search / list_documents / get_document_chunks) that any consumer (our own
+`/v1/answer` chat, the future WorkyTalky brain, your modules, a bare MCP client) can drive
+with its own LLM. New `/v1` REST surface sits **beside** the existing `/search`/`/ingest`/
+`/documents`/`/healthz` — nothing existing changes shape.
+
+**Flagging four planned cross-boundary touches now, before I start, so you can weigh in
+early rather than after the fact:**
+
+1. **`core/types.py` (co-owned):** additive `metadata: dict[str, str] | None = None` on both
+   `Chunk` and `Hit` (default `None` — no existing construction site anywhere breaks). Backs
+   a new metadata-filtering channel for search/ingest.
+2. **`core/ports.py` (co-owned):** a new additive port, `ToolCompleter.complete_with_tools`,
+   for the tool-calling loop behind `/v1/answer`. Doesn't touch `Embedder`/`Reranker`/
+   `Completer`/`VectorStore` — implemented by a new method on the existing
+   `OpenAICompatCompleter`, nothing to your side beyond the port declaration itself.
+3. **`adapters/store/libsql.py` (yours):** a new `metadata` JSON `TEXT` column on `chunks`
+   (ALTER-if-missing migration, same pattern as the existing `modified_at` migration, D28) +
+   `since`/`until`/metadata-equality filtering applied *before* the vector-ranking `k` limit.
+   Planning to implement this myself against your file (same basis as D24/D25/D28 — Quentin's
+   direction), but wanted it named upfront rather than discovered in a diff.
+4. **`agent/` (yours):** a `DEFAULT_EXCLUDE_FILES` sibling to the existing
+   `DEFAULT_EXCLUDE_DIRS` (D35/R4) — filename-glob exclusion (`MEMORY.md`, `CLAUDE.md`,
+   `*.tmp`, extendable) alongside the guardrails pack (parse-size/timeout ceilings, engine
+   `Restart=on-failure`, compose healthcheck + volume + `mem_limit`).
+
+Everything above is additive/backward-compatible — no existing signature narrows, no
+existing behavior changes when the new fields/params are absent. Build order: T1 (metadata +
+JSON ingest) → T2 (toolbox `/v1` + auth) → T4 (guardrails/env hygiene) → T3 (`/v1/answer`
+agent + SSE) → T5 (UI) → E2E acceptance against the real Acme corpus. No live-LLM calls in
+the automated suite anywhere (scripted `FakeToolCompleter`); `PATCH /settings` is permanently
+excluded from the toolbox (enforced by a standing test, not just convention).
+
+Will keep this thread updated per task the way prior WPs did. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 20: T1 landed — the two flagged touches from update 19 are now real diffs
+
+T1 (metadata channel + JSON ingest) is done. Confirming the two touches I flagged upfront
+actually landed, so you can review the real diff rather than the plan:
+
+1. **`core/types.py` (co-owned):** `Chunk.metadata: dict[str, str] | None = None` and
+   `Hit.metadata: dict[str, str] | None = None` — additive, default `None`, no existing
+   construction site anywhere needed a change (verified: full suite green with zero call-site
+   edits beyond the new tests). `api/schemas.py::Source` (my file) gained the matching field.
+2. **`adapters/store/libsql.py` (yours):** a new `metadata TEXT` (JSON) column on `chunks`,
+   added via the same ALTER-if-missing migration pattern as the existing `modified_at` one on
+   `files` (D28) — a pre-existing database with no `metadata` column migrates transparently
+   on its next `ensure_ready()`, never crashes. Covered by
+   `tests/adapters/store/test_libsql_store.py::test_ensure_ready_migrates_legacy_chunks_table`
+   (builds a DB with the pre-metadata schema by hand, same style as the existing
+   `test_ensure_ready_migrates_legacy_files_table`). `upsert`/`search` serialize/parse it as
+   JSON; a chunk with no metadata round-trips as `None`, same posture as `modified_at`.
+
+**Not done in this pass (deferred, flagged so you're not surprised it's missing):** the
+metadata-equality / `since`/`until` search-time filter seam from the design doc (§2.3) — my
+task scope for T1 was storage + threading + surfacing + the new JSON ingest route only. The
+filter seam (Protocol vs. `VectorStore` port extension) is still an open decision; whoever
+picks up T2's toolbox routes will need it for `/v1/tools/search`'s `filters` param.
+
+Also new, Dev-B-owned only (no flag needed): `api/v1.py` (new `/v1` router) +
+`POST /v1/documents` (JSON ingest, the non-multipart sibling of `POST /ingest`).
+
+209/209 tests green (was 196; +13), ruff check + `ruff format` clean on every file touched
+(picked up one pre-existing, unrelated `ruff format` diff in `libsql.py` as a drive-by while
+editing it for the migration — noted in D33's log as outstanding; no logic change from the
+reformat). Full detail: `DECISIONS.md` **D37**. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 21: T2 landed — the deferred filter seam decided + another `libsql.py` touch
+
+T2 (toolbox `/v1/tools/*` + per-consumer auth) is done. The filter seam I flagged as still
+open in update 20 is now decided, and it's another touch on your file:
+
+1. **`adapters/store/libsql.py` (yours), again:** `search()` gains an additive `filters:
+   SearchFilters | None = None` param — SQL-side `json_extract(c.metadata, '$.key') = ?` per
+   key plus `f.modified_at >= / <= ?` for a `since`/`until` range, narrowing the candidate set
+   BEFORE the `LIMIT` (never a post-hoc Python filter on an already-capped top-K). Backward
+   compatible: every existing call passes no `filters` and behaves identically (verified: I
+   grepped every `.search(` call site in the tree before landing this). `list_documents()`
+   gains a parallel additive `metadata: Mapping[str, str] | None = None` — a document matches
+   if any of its chunks satisfies every given key/value, via an `EXISTS (SELECT 1 FROM chunks
+   ...)` subquery joined the same way your existing chunk-count aggregation already joins.
+   New method `get_chunks(source_hash, tenant) -> list[Chunk]`, ordered by `idx` ascending —
+   backs a new document-chunks route. All three covered in
+   `tests/adapters/store/test_libsql_store.py` against a real `tmp_path` libSQL DB (incl. a
+   `test_search_no_filters_is_unchanged` backward-compat check and a fresh-DB guard on
+   `get_chunks` mirroring the existing `known_hashes`/`list_documents` ones).
+2. **`core/ports.py`/`core/types.py` (co-owned):** `VectorStore.search` gains the same
+   additive `filters` param at the port level (a new stdlib-only `SearchFilters {metadata,
+   since, until}` dataclass backs it); `SupportsDocumentAdmin.list_documents` (my file,
+   `pipelines/documents.py`) gains the matching `metadata` param, plus a new
+   `SupportsChunkAccess` Protocol for `get_chunks` — mirrors `SupportsDocumentAdmin`'s
+   isinstance-degrade pattern, so a store without it just returns an empty chunk list rather
+   than erroring.
+
+Also new, Dev-B-owned only (no flag needed): `pipelines/tools.py` (`ToolRegistry` — the
+single source of truth every tool-driving consumer renders from), four new bearer-authed
+`/v1/tools/*` routes (`search`/`documents`/`documents/{hash}/chunks`/`schema`), and
+`Settings.auth_tokens` (per-consumer bearer tokens alongside `ingest_token`, parsed once at
+container-build time — `resolve_tenant` now accepts either).
+
+283/283 tests green (was 209; +74), ruff check + `ruff format` clean on every file touched.
+Full detail: `DECISIONS.md` **D38**. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 22: T4 landed a while back (no channel note at the time — closing that gap) + T3's new `ToolCompleter` port
+
+Two things this update:
+
+**T4 backfill (should've posted this sooner — sorry for the gap):** the guardrails pass
+(`parse_max_chars`/`parse_timeout_s`, agent `DEFAULT_EXCLUDE_FILES`, engine auto-restart,
+compose persistence) landed across three commits a while back but never got its `DECISIONS.md`
+entry or a channel note in the same commit. Backfilled now as **D39** — no new cross-boundary
+touch beyond what those three commits already did (flagged at the time in their own commit
+messages, same basis as D25/D29/D32/D34/D35/D36/D37/D38).
+
+**T3 (`/v1/answer` reference agent) landed. One co-owned touch:**
+
+1. **`core/ports.py`/`core/types.py` (co-owned, additive):** a new `ToolCompleter` Protocol —
+   `complete_with_tools(messages, tools) -> ToolCompletion` — plus `ToolCall`/`ToolCompletion`
+   (`core/types.py`, stdlib-only, same dataclass style as everything else there). Nothing
+   existing changes shape; both new types are consumed only by the new `pipelines/answer.py`
+   and implemented by the existing `OpenAICompatCompleter`/`NullCompleter` (no new adapter
+   file — one object now satisfies both `Completer` and `ToolCompleter`).
+
+Everything else this pass is Dev-B-owned, no flag needed: `pipelines/answer.py` (the
+tool-calling loop, driven through `ToolRegistry.call(...)` exclusively — a boundary-rule test
+enforces this mechanically), `adapters/llm/fake.py` (`FakeToolCompleter`, the scripted test
+double — no live LLM anywhere in the suite), `adapters/conversation/{fake,libsql}.py` (a new
+`ConversationStore` seam, mirroring the document-admin seam's pattern), and `POST /v1/answer`
+(non-stream + SSE, `api/v1.py`).
+
+332/332 tests green (was 223 at T4; +109), ruff check + `ruff format` clean on every file
+touched. Full detail: `DECISIONS.md` **D39** (T4 backfill) and **D40** (T3). — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 23: T5 landed (Chat tab + Settings UI) — no cross-boundary touch; one observation
+
+**T5 (Chat tab + activity timeline + Settings section) landed.** `web/` only — no
+`core/`/`api/schemas.py`/`factory.py` touch, so nothing to flag on the usual co-owned-seam
+basis. `web/src/Chat.tsx` (new): thread + `POST /v1/answer` `stream:true` SSE, a per-turn
+activity timeline (one quiet line per tool call, pulse while active, chevron-expand detail,
+collapses to a summary once the turn finishes), final answer in the existing recap/source card
+style with citations pulled from `search` hits seen along the way. `web/src/App.tsx` gains a
+Search/Chat tab bar. `web/src/SystemMenu.tsx`: settings regrouped to mirror `.env.example`'s
+sections with a one-line explanation per key, the `SettingsPatch` whitelist stays
+inline-editable with an optimistic "Saved ✓", model/URL/store/token keys greyed with a restart
+hint. `web/vite.config.ts` gains the `/v1` proxy entry plus an env-overridable
+`VITE_API_TARGET` (still defaults to `:8000` — no behavior change for normal dev). `npm run
+build`/`lint` clean.
+
+**One observation, not a touch:** the production `sift-engine` (`:8000`) was found already down
+at the start of this pass — confirmed no command in this session referenced that unit; it was
+down before I started and I did not attempt to restart it (not mine to touch). Verified
+visually instead via a locally-launched headless Chrome (the `claude-in-chrome` MCP tools were
+unreachable from this subagent session) against a dedicated dev instance (`sift-web-wp2`,
+`:5174`) driving a throwaway scratchpad harness (`e2e_harness.py`, NOT committed — lives outside
+the worktree) that served the real `sift.api.main:app` with fakes/nulls everywhere except a
+scripted `ToolCompleter` standing in for the LLM (same pattern as the suite's
+`FakeToolCompleter`) — genuine `ToolRegistry`/`AnswerPipeline`/SSE code paths exercised, only the
+"model" is canned. Separately, `sift-web.service` (production, port 5173) was also observed to
+stop partway through this session; I never issued a command referencing that unit name (only
+`sift-web-wp2`/`sift-e2e-wp2`, distinct transient units on `:5174`/`:8001`), and there's no OOM
+kill evidence in `dmesg`/journal — flagging so whoever owns that unit can restart it, not
+requesting action from this doc.
+
+Full plan/log: `docs/Quentin/active/machine.md` T5. — Quentin/Dev B
+
+---
+
+## 2026-07-04 — update 24: T8 temporal-knowledge pass landed — one more small touch on `libsql.py`
+
+Quentin caught the chat model answering "when was this written" from a filename date and then
+claiming it has no metadata access — even though `files.modified_at` (D28) has been sitting
+there the whole time. Turned out the gap was narrower than it looked: `Hit`/`Chunk` already
+carried `modified_at`/`metadata` end-to-end (your metadata-channel work); the documents-listing
+shape (`DocumentInfo`) never grew the same fields.
+
+1. **`adapters/store/libsql.py` (yours), one more small touch:** `_SELECT_DOCUMENTS_BASE`/
+   `_list_documents_job` now also select `f.modified_at, f.indexed_at` — both already-existing
+   columns on `files`, no new migration, no schema change. Added to the `GROUP BY` alongside the
+   pre-existing `f.indexed_at` grouping key. Covered in `tests/adapters/store/
+   test_libsql_store.py` against a real `tmp_path` DB (`test_list_documents_includes_modified_at_
+   and_indexed_at`, `test_list_documents_modified_at_is_none_when_never_provided`,
+   `test_get_chunks_includes_modified_at`).
+2. **`core/types.py` (co-owned):** `DocumentInfo` gains additive `modified_at`/`indexed_at:
+   str | None = None`, mirroring `Hit`'s own pair. No Protocol/signature change — plain
+   dataclass field additions with defaults, same basis as every prior additive-field decision.
+
+Also new, Dev-B-owned only: `api/schemas.DocumentSummary` gains the matching two fields
+(threaded through `GET /documents`/`GET /v1/tools/documents`); the three tool descriptions
+(`pipelines/tools.py`) and the `/v1/answer` system prompt now name `modified_at`/`metadata`
+explicitly and mandate honest "last modified `<date>`" phrasing (never authorship, never
+filename-guessing). One more bug found live during re-verify, unrelated to the temporal fields
+themselves: the model was guessing a `metadata` filter straight from a name in the question
+(e.g. "the NothingAD documents" → `metadata={"source": "NothingAD"}`, a tag never set at
+ingest), got zero results, and gave up instead of falling back to an unfiltered listing — fixed
+with an explicit prompt bullet.
+
+426/426 tests green (was 403; +23), ruff check + `ruff format` clean, pyright unchanged in kind
+(44 errors, confirmed identical to the pre-existing baseline by diffing before/after this pass).
+Live-verified against real Mistral (fresh `sift-engine-wp2` restart): `/v1/tools/documents` and
+`/documents` both confirmed carrying real `modified_at`; `POST /v1/answer` for "When were the
+NothingAD documents last modified?" now answers correctly 2/2 with the real timestamp, phrased
+as "last modified", never claiming a lack of metadata access.
+
+Full detail: `DECISIONS.md` **D44**. — Quentin/Dev B
+
+---
+
+## 2026-07-05 — update 25: agent path-keying fix (CROSS-BOUNDARY on `agent/sync.py`) + truthful counters + a watch-mode runbook
+
+A live self-test against the real Acme corpus (50 docs, ingested one-shot then handed to
+`--watch`) surfaced a real bug in the agent's own walker, not anything in the toolbox/answer
+work: `agent/sync.py::collect_roots()` (used by `--watch` and the desktop app) keyed every file
+by its **absolute** path, while one-shot `collect()` keyed **root-relative**. A `--watch`
+reconcile against a corpus ingested one-shot therefore never matched anything and re-uploaded
+(almost) the whole tree every restart — silently "correct" only because the engine's own
+content-hash dedup caught it, but wasteful (bandwidth + a round-trip per file per restart), and
+it meant stored `Document.path` style diverged by ingest mode.
+
+1. **`agent/sync.py` (yours), CROSS-BOUNDARY, same basis as D25/D29/D32/D34-38/D43/D44:**
+   `collect_roots()` now keys root-relative for a single root (byte-for-byte identical to
+   `collect()`), and prefixes/disambiguates by root basename for multiple roots (deterministic
+   `-2`/`-3`… on a basename collision, in root order). `Summary.skipped` now also tallies a
+   server-side `skipped_dedup` ingest result (previously only the client-side reconcile skip was
+   counted, so the counter read `0 skipped` even while this exact bug was forcing near-total
+   re-uploads every restart). `abs_upload_name()` removed (no remaining callers).
+2. **Verified, not just asserted, that `delete_removed` still works:** the actual `DELETE` is
+   keyed by content hash server-side, independent of the local key scheme — two new end-to-end
+   regressions (single-root and multi-root/prefixed) create a file, sync, delete it from disk,
+   re-sync with `delete_removed=True`, and assert the `DELETE` targets the right hash.
+3. **No data migration needed:** confirmed live via `GET /documents` on the real 50-doc corpus —
+   zero absolute-style paths present today; the only document that would have had one (this
+   session's own transient self-test file) was already deleted before this pass.
+4. **New `scripts/run-agent-watch.sh`** (mirrors your `run-engine.sh`'s cgroup posture —
+   `MemoryMax`/`MemorySwapMax=0`/no `MemoryHigh`/`OOMPolicy=kill`/`Restart=always`, plus
+   `--setenv=PYTHONUNBUFFERED=1` since stdout block-buffers once redirected to a log file).
+
+435/435 full suite green (was 426; +9), `ruff check`/`ruff format --check` clean. Live restart of
+the running `sift-agent-watch` unit + verification against the real engine done as the final
+step of this pass (results reported to Quentin directly, not re-committed — this doc's own
+record stays test-based).
+
+Full detail: `DECISIONS.md` **D45**. — Quentin/Dev B
+
+---
+
+## 2026-07-05 — update 26: xlsx "NaN" cell-filler cleanup + a degenerate-chunk floor (CROSS-BOUNDARY on `adapters/parsing/markitdown.py` + `adapters/chunking/token.py`)
+
+Quentin's direction — a read-only root-cause investigation (into the Chat UI's "p. 1" badge and
+a snippet-truncation mismatch) surfaced two independent parsing/chunking quality bugs while
+looking at a real Acme re-ingest. **Touches your two files**, same basis as
+D25/D29/D32/D34-39/D43-45 — Arthur, please review when you're back.
+
+**1. xlsx cells were rendering as literal "NaN" text.** markitdown's `XlsxConverter` is
+`pandas.read_excel(...).to_html()`, and `DataFrame.to_html()`'s `na_rep` defaults to the literal
+string `"NaN"` for every missing/empty cell — a real 82KB Acme budget spreadsheet (wide
+merged-cell headers, 5 sheets) came back with ~2,900 literal `"NaN"` occurrences, diluting
+embeddings and making snippets unreadable. **Fix, chosen over the reimplementation alternative:**
+a narrow, xlsx-only post-parse cleanup (`_strip_xlsx_nan_fillers`) that blanks a markdown-table
+cell only when its ENTIRE trimmed content is exactly `"NaN"` (never a substring, never a
+non-table line) — applied right after your D34 used-range guard and the D39 char-ceiling, both
+untouched. Considered and rejected: bypassing your `XlsxConverter` entirely with a Condense-owned
+xlsx→text step (`pandas`/`openpyxl` + `df.fillna("")` + our own multi-sheet rendering) — strictly
+more code re-implementing logic markitdown already gets right, for a fix that's otherwise a
+one-parameter change markitdown just doesn't expose. Full trade-off in `DECISIONS.md` D50.
+**Acceptance evidence** (parsed the two real motivating files directly, no live-DB writes):
+`acme-budget_Annex-II_Rev.0(1).xlsx` and `...Rev.03.xlsx` now both parse with
+**zero** `"NaN"` occurrences (was 2,904/2,994), real content (`"PERSONAL"`, `"BUDGET"` headers)
+confirmed still present.
+
+**2. `TokenChunker` windows could decode to useless filler.** A fixed-token-count window whose
+start happens to land on whitespace/template filler can decode to a handful of real-but-useless
+characters (`"do. /"`, `"plantilla.)*"` observed live) — genuinely what those tokens decode to,
+but useless as a retrievable chunk, and it still got embedded and surfaced. **Fix:** new
+`chunk_min_chars: int = 24` (config-driven, `Settings.chunk_min_chars`, `Field(ge=1)`, threaded
+through `factory.py`, `.env.example`/`docker-compose.yml` parity) drops — never merges — any
+window whose decoded, whitespace-collapsed text falls below the floor. `index` stays a
+document-global 0-based ordinal over exactly the emitted chunks (unchanged mechanism from the
+pre-existing empty-window skip), so this is safe against your store's actual schema: `chunks`'
+`PRIMARY KEY (tenant, source_hash, idx)` only needs uniqueness + `ORDER BY idx ASC` (used by
+`get_chunks`), never assumes indices map 1:1 to token-window positions.
+
+**3. Both fixes need an explicit re-ingest to reach already-indexed docs.**
+`IngestPipeline.ingest` dedups by exact content-hash before parsing/chunking runs at all, so an
+unchanged file on disk stays `skipped_dedup` forever — a straight re-sync of the existing corpus
+is a no-op for both bugs. Getting the improved text/chunks onto an already-indexed doc needs an
+explicit delete (`DELETE /documents/{hash}` or the agent's `delete_removed` path) + a fresh
+ingest of the same bytes. Also confirmed this makes "fewer chunks under the same hash" a
+non-issue in practice: `delete_document` clears the old `idx` range first, so a fresh insert's
+`0..n-1` range never coexists with stale higher-`idx` leftovers.
+
+TDD throughout (failing tests first): a crafted xlsx fixture with empty cells beside real values
+(zero "NaN", real values survive); a `"NaNoTech Corp"` substring-preservation fixture; a `.txt`
+with the real word "NaN" (cleanup is xlsx-scoped only); a test-only `_WordTokenizer` (full
+deterministic control over window boundaries — real BPE ids don't map predictably enough to
+characters) reproducing the exact `"do. /"` shape; `chunk_min_chars < 1` raising `ValueError`;
+the existing long-text reference test's chunks all `>= chunk_min_chars`; the unwired constructor
+default matching `Settings.chunk_min_chars`'s default. 467/467 full suite green (was 460; +7),
+`ruff check`/`ruff format --check`/`pyright` (touched files) clean.
+
+Full detail: `DECISIONS.md` **D50**. — Quentin/Dev B

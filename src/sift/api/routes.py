@@ -235,7 +235,13 @@ async def list_documents(
     return DocumentsResponse(
         tenant=tenant,
         documents=[
-            DocumentSummary(path=d.source_path, source_hash=d.source_hash, chunks=d.chunks)
+            DocumentSummary(
+                path=d.source_path,
+                source_hash=d.source_hash,
+                chunks=d.chunks,
+                modified_at=d.modified_at,
+                indexed_at=d.indexed_at,
+            )
             for d in docs
         ],
     )

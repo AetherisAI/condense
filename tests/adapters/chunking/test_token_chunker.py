@@ -15,6 +15,31 @@ def _doc(text: str, *, page_number: int = 1, path: str = "doc.md", h: str = "has
     return Document(path=path, content_hash=h, pages=(Page(number=page_number, text=text),))
 
 
+class _WordTokenizer:
+    """A trivial whitespace-token tokenizer — gives the degenerate-chunk-floor tests full,
+    deterministic control over window boundaries, which real BPE ids don't allow (a token
+    doesn't map 1:1 to a word/char, so engineering a specific short trailing window with real
+    tiktoken ids would be fragile and opaque). Test-only; production always uses a real
+    tokenizer (tiktoken/bge-m3).
+    """
+
+    def __init__(self) -> None:
+        self._id_to_word: list[str] = []
+        self._word_to_id: dict[str, int] = {}
+
+    def encode(self, text: str) -> list[int]:
+        ids = []
+        for word in text.split(" "):
+            if word not in self._word_to_id:
+                self._word_to_id[word] = len(self._id_to_word)
+                self._id_to_word.append(word)
+            ids.append(self._word_to_id[word])
+        return ids
+
+    def decode(self, ids: list[int]) -> str:
+        return " ".join(self._id_to_word[i] for i in ids)
+
+
 def test_satisfies_chunker_port() -> None:
     impl: Chunker = TokenChunker(tokenizer="tiktoken")
     assert isinstance(impl, Chunker)
@@ -90,3 +115,52 @@ async def test_deterministic_same_doc_twice() -> None:
 
     assert first == second
     assert len(first) > 1
+
+
+# --------------------------------------------------------- degenerate-chunk floor (D50)
+
+
+def test_min_chars_below_one_raises() -> None:
+    with pytest.raises(ValueError, match=r"chunk_min_chars"):
+        TokenChunker(chunk_size=10, chunk_overlap=4, tokenizer="tiktoken", chunk_min_chars=0)
+
+
+async def test_degenerate_trailing_window_is_dropped() -> None:
+    """The exact shape from the D50 incident: a fixed-size token window whose start happened to
+    land on whitespace/template filler decodes to a handful of characters ("do. /") — a
+    "genuine" but useless chunk that still got embedded and surfaced. `chunk_min_chars` drops
+    any window whose decoded, stripped text falls below the floor, and emitted indices stay
+    contiguous even though a window in the middle of the stream was dropped.
+    """
+    words = ["real", "prose", "sentence", "number"] * 3 + ["do.", "/"]
+    doc = _doc(" ".join(words))
+    chunker = TokenChunker(chunk_size=4, chunk_overlap=1, tokenizer="tiktoken", chunk_min_chars=10)
+    chunker._tokenizer = _WordTokenizer()  # noqa: SLF001 — deterministic word-level windows
+
+    chunks = await chunker.chunk(doc)
+
+    assert all(len(c.text) >= 10 for c in chunks)
+    assert not any(c.text in {"do. /", "do."} for c in chunks)
+    # Indices stay contiguous 0..n-1 over the emitted chunks even though a middle window (the
+    # trailing "do. /" one) was dropped — the store's PRIMARY KEY (tenant, source_hash, idx)
+    # only needs uniqueness+ordering, never assumes indices map 1:1 to token-window positions.
+    assert [c.index for c in chunks] == list(range(len(chunks)))
+
+
+async def test_normal_prose_chunks_unaffected_by_default_floor() -> None:
+    """The default `chunk_min_chars` (24) must never fire on ordinary prose windows."""
+    size, overlap = 10, 4
+    text = "token test sentence number alpha beta gamma delta " * 12
+    doc = _doc(text, page_number=3)
+    chunker = TokenChunker(chunk_size=size, chunk_overlap=overlap, tokenizer="tiktoken")
+
+    chunks = await chunker.chunk(doc)
+
+    assert len(chunks) > 1
+    assert all(len(c.text) >= chunker._chunk_min_chars for c in chunks)  # noqa: SLF001
+
+
+async def test_chunk_min_chars_default_matches_settings_default() -> None:
+    chunker = TokenChunker(tokenizer="tiktoken")
+
+    assert chunker._chunk_min_chars == 24  # noqa: SLF001 — asserting the documented default

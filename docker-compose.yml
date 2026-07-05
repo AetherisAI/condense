@@ -14,23 +14,65 @@ services:
       dockerfile: api.Dockerfile
     environment:
       STORE_BACKEND: ${STORE_BACKEND:-libsql}
-      TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
+      # Defaults to an embedded-replica file under the named `sift-data` volume below (D39) —
+      # `docker compose up` gets a working store with zero manual setup; point at a real
+      # `libsql://...` URL (+ TURSO_AUTH_TOKEN) to use cloud Turso instead.
+      TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-file:/data/sift.db}
       TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
       EMBED_BASE_URL: ${EMBED_BASE_URL:-} # host Ollama, e.g. http://host.docker.internal:11434/v1
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       EMBED_DIM: ${EMBED_DIM:-1024}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
+      # Batch size + bounded timeout phases + 429 retry budget — see .env.example (D40 amendment:
+      # full env parity, these were configurable via .env but silently ignored by compose).
+      EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-64}
+      EMBED_TIMEOUT_S: ${EMBED_TIMEOUT_S:-60.0}
+      EMBED_CONNECT_TIMEOUT_S: ${EMBED_CONNECT_TIMEOUT_S:-5.0}
+      EMBED_RETRY_ATTEMPTS: ${EMBED_RETRY_ATTEMPTS:-3}
       RERANK_STRATEGY: ${RERANK_STRATEGY:-llm}
       RERANK_BASE_URL: ${RERANK_BASE_URL:-http://tei:80}
       RERANK_MODEL: ${RERANK_MODEL:-bge-reranker-v2-m3}
       RETRIEVE_K: ${RETRIEVE_K:-30}
       FINAL_K: ${FINAL_K:-1}
+      VERSION_COLLAPSE_ENABLED: ${VERSION_COLLAPSE_ENABLED:-true}
+      VERSION_SIMILARITY_THRESHOLD: ${VERSION_SIMILARITY_THRESHOLD:-0.8}
+      RECAP_ENABLED: ${RECAP_ENABLED:-true}
+      RECAP_CONTEXT_K: ${RECAP_CONTEXT_K:-3}
+      RECAP_MAX_TOKENS: ${RECAP_MAX_TOKENS:-512}
+      RECAP_TEMPERATURE: ${RECAP_TEMPERATURE:-0.3}
+      SOURCE_SNIPPET_CHARS: ${SOURCE_SNIPPET_CHARS:-300}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      # /v1/answer reference agent (D40) — see .env.example for what each knob does.
+      ANSWER_TOOL_MODE: ${ANSWER_TOOL_MODE:-auto}
+      ANSWER_MAX_TOOL_CALLS: ${ANSWER_MAX_TOOL_CALLS:-10}
+      ANSWER_TIMEOUT_S: ${ANSWER_TIMEOUT_S:-120.0}
+      ANSWER_MAX_TOKENS: ${ANSWER_MAX_TOKENS:-1024}
+      ANSWER_HISTORY_MAX_TURNS: ${ANSWER_HISTORY_MAX_TURNS:-20}
+      ANSWER_HISTORY_TTL_DAYS: ${ANSWER_HISTORY_TTL_DAYS:-30}
+      ANSWER_AUTOTITLE_ENABLED: ${ANSWER_AUTOTITLE_ENABLED:-true}
+      ANSWER_GROUNDING_DEFAULT: ${ANSWER_GROUNDING_DEFAULT:-strict}
+      # OCR fallback (Mistral OCR; optional) — see .env.example.
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+      OCR_BASE_URL: ${OCR_BASE_URL:-}
+      OCR_MODEL: ${OCR_MODEL:-mistral-ocr-latest}
+      OCR_API_KEY: ${OCR_API_KEY:-}
+      OCR_TIMEOUT_S: ${OCR_TIMEOUT_S:-60.0}
+      OCR_CONNECT_TIMEOUT_S: ${OCR_CONNECT_TIMEOUT_S:-5.0}
       CHUNK_SIZE: ${CHUNK_SIZE:-512}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-64}
+      # Degenerate-chunk floor (D50) — see .env.example.
+      CHUNK_MIN_CHARS: ${CHUNK_MIN_CHARS:-24}
+      # Parse guards (D34/D39) — see .env.example.
+      PARSE_MAX_XLSX_CELLS: ${PARSE_MAX_XLSX_CELLS:-2000000}
+      PARSE_MAX_CHARS: ${PARSE_MAX_CHARS:-2000000}
+      PARSE_TIMEOUT_S: ${PARSE_TIMEOUT_S:-60.0}
+      # Toolbox `/v1/tools/*` surface (D38) — see .env.example.
+      TOOLS_SEARCH_K: ${TOOLS_SEARCH_K:-8}
+      TOOLS_SEARCH_MAX_K: ${TOOLS_SEARCH_MAX_K:-20}
       INGEST_TOKEN: ${INGEST_TOKEN:?set a shared bearer token in .env}
+      AUTH_TOKENS: ${AUTH_TOKENS:-}
       API_BIND: ${API_BIND:-0.0.0.0}
     ports:
       - "${API_PORT:-8000}:8000"
@@ -40,6 +82,22 @@ services:
     # http://host.docker.internal:<port> just like on Docker Desktop.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Named volume so the default embedded-replica file (TURSO_DATABASE_URL above) survives a
+    # container recreate instead of starting empty every `docker compose up` (D39).
+    volumes:
+      - sift-data:/data
+    # Liveness probe (D39, mirrors this repo's own systemd-run containment discipline) — an
+    # unhealthy container is visible to `docker compose ps`/orchestrators instead of silently
+    # accepting connections into a wedged process. curl is installed in api.Dockerfile for this.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # Compose-level ceiling mirroring this session's own systemd-run MemoryMax discipline
+    # (D29/D34) — a runaway ingest/embed spike gets killed by Docker instead of the host OOMing.
+    mem_limit: 3g
 
   web:
     # Dev B: built Vite UI served by nginx, which reverse-proxies the API surface
@@ -68,3 +126,8 @@ services:
   #   image: ollama/ollama:latest
   #   ports:
   #     - "11435:11434"
+
+volumes:
+  # Backs the `api` service's default embedded-replica TURSO_DATABASE_URL (D39) — a fresh
+  # `docker compose up` gets a working, persistent store with zero manual setup.
+  sift-data:

@@ -19,7 +19,7 @@ from sift.adapters.embedding.fake import FakeEmbedder  # noqa: E402
 from sift.adapters.store.libsql import LibSQLStore  # noqa: E402
 from sift.core.errors import ModelPinMismatch, SiftError  # noqa: E402
 from sift.core.ports import VectorStore  # noqa: E402
-from sift.core.types import Chunk  # noqa: E402
+from sift.core.types import Chunk, SearchFilters  # noqa: E402
 
 MODEL = "bge-m3"
 DIM = 8
@@ -102,6 +102,63 @@ async def test_search_round_trips_modified_at(store: LibSQLStore, embedder: Fake
     (hit,) = await store.search(query, 5, TENANT)
     assert hit.modified_at == "2026-02-03T04:05:06+00:00"  # the recency signal survives the join
     assert hit.indexed_at is not None  # ingest-time fallback is still stamped
+
+
+async def test_search_round_trips_metadata(store: LibSQLStore, embedder: FakeEmbedder) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(
+        text="tagged passage",
+        source_path="m.md",
+        page=1,
+        source_hash="hm",
+        index=0,
+        metadata={"author": "quentin", "kind": "note"},
+    )
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    (query,) = await embedder.embed(["tagged passage"])
+    (hit,) = await store.search(query, 5, TENANT)
+    assert hit.metadata == {"author": "quentin", "kind": "note"}  # survives the JSON round-trip
+
+
+async def test_search_returns_none_metadata_when_absent(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(text="no tags here", source_path="n.md", page=1, source_hash="hn", index=0)
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    (query,) = await embedder.embed(["no tags here"])
+    (hit,) = await store.search(query, 5, TENANT)
+    assert hit.metadata is None
+
+
+async def test_ensure_ready_migrates_legacy_chunks_table(tmp_path) -> None:
+    # A database created before ``metadata`` existed on ``chunks``: ensure_ready must ALTER it
+    # in, not crash.
+    db = str(tmp_path / "legacy_chunks.db")
+    conn = libsql.connect(db)
+    conn.execute(
+        f"CREATE TABLE chunks (tenant TEXT, source_hash TEXT, idx INTEGER, text TEXT, "
+        f"source_path TEXT, page INTEGER, embedding F32_BLOB({DIM}) NOT NULL, "
+        "PRIMARY KEY (tenant, source_hash, idx))"  # the pre-metadata schema
+    )
+    conn.commit()
+    conn.close()
+
+    store = LibSQLStore(db)
+    embedder = FakeEmbedder(dim=DIM)
+    try:
+        await store.ensure_ready(MODEL, DIM, TENANT)  # migrates: adds the metadata column
+        chunk = Chunk(
+            text="y", source_path="y.md", page=1, source_hash="hy", index=0, metadata={"k": "v"}
+        )
+        await store.upsert([await _embedded(embedder, chunk)], TENANT)
+        (query,) = await embedder.embed(["y"])
+        (hit,) = await store.search(query, 5, TENANT)
+        assert hit.metadata == {"k": "v"}
+    finally:
+        await store.aclose()
 
 
 async def test_ensure_ready_migrates_legacy_files_table(tmp_path) -> None:
@@ -244,6 +301,41 @@ async def test_list_documents_lists_ingested_files_with_chunk_counts(
     assert docs["h2"].chunks == 1
 
 
+async def test_list_documents_includes_modified_at_and_indexed_at(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    """D44: the documents-listing path must surface the file's true mtime (temporal-knowledge
+    plumbing) — ``indexed_at`` (when the store wrote the row) rides along too since the
+    ``files`` table already carries it for free."""
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(
+        text="a one",
+        source_path="a.md",
+        page=1,
+        source_hash="h1",
+        index=0,
+        modified_at="2026-02-03T04:05:06+00:00",
+    )
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    (doc,) = await store.list_documents(TENANT)
+
+    assert doc.modified_at == "2026-02-03T04:05:06+00:00"
+    assert doc.indexed_at is not None  # a real ISO-8601 timestamp, stamped at upsert time
+
+
+async def test_list_documents_modified_at_is_none_when_never_provided(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(text="a one", source_path="a.md", page=1, source_hash="h1", index=0)
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    (doc,) = await store.list_documents(TENANT)
+
+    assert doc.modified_at is None
+
+
 async def test_delete_document_removes_chunks_and_file_and_returns_count(
     store: LibSQLStore, embedder: FakeEmbedder
 ) -> None:
@@ -276,3 +368,172 @@ async def test_delete_document_unknown_hash_is_noop_and_returns_zero(
 
     assert await store.delete_document("does-not-exist", TENANT) == 0
     assert await store.known_hashes(TENANT) == {"hk"}  # existing doc untouched
+
+
+# --- search filters: metadata equality + since/until (WP v0.2.0 T2, D38) ------
+
+
+async def test_search_metadata_filter_narrows_via_json_extract(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        Chunk(
+            text="alpha one",
+            source_path="a.md",
+            page=1,
+            source_hash="h1",
+            index=0,
+            metadata={"project": "condense"},
+        ),
+        Chunk(
+            text="alpha two",
+            source_path="b.md",
+            page=1,
+            source_hash="h2",
+            index=0,
+            metadata={"project": "other"},
+        ),
+        Chunk(text="alpha three", source_path="c.md", page=1, source_hash="h3", index=0),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    (query,) = await embedder.embed(["alpha"])
+    hits = await store.search(query, 10, TENANT, SearchFilters(metadata={"project": "condense"}))
+
+    assert [hit.source_path for hit in hits] == ["a.md"]
+
+
+async def test_search_since_until_filter_narrows_by_modified_at(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        Chunk(
+            text="beta old",
+            source_path="old.md",
+            page=1,
+            source_hash="ho",
+            index=0,
+            modified_at="2026-01-01T00:00:00+00:00",
+        ),
+        Chunk(
+            text="beta new",
+            source_path="new.md",
+            page=1,
+            source_hash="hn",
+            index=0,
+            modified_at="2026-06-01T00:00:00+00:00",
+        ),
+        Chunk(text="beta undated", source_path="u.md", page=1, source_hash="hu", index=0),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    (query,) = await embedder.embed(["beta"])
+    hits = await store.search(query, 10, TENANT, SearchFilters(since="2026-03-01"))
+
+    assert [hit.source_path for hit in hits] == ["new.md"]
+
+    hits_bounded = await store.search(
+        query, 10, TENANT, SearchFilters(since="2026-01-01", until="2026-03-01")
+    )
+    assert [hit.source_path for hit in hits_bounded] == ["old.md"]
+
+
+async def test_search_no_filters_is_unchanged(store: LibSQLStore, embedder: FakeEmbedder) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(text="gamma", source_path="g.md", page=1, source_hash="hg", index=0)
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    (query,) = await embedder.embed(["gamma"])
+    hits = await store.search(query, 5, TENANT)  # no filters arg — backward compatible
+
+    assert [hit.source_path for hit in hits] == ["g.md"]
+
+
+# --- get_chunks (SupportsChunkAccess seam) ------------------------------------
+
+
+async def test_get_chunks_returns_ordered_chunks_for_one_document(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        Chunk(text="third", source_path="a.md", page=1, source_hash="h1", index=2),
+        Chunk(text="first", source_path="a.md", page=1, source_hash="h1", index=0),
+        Chunk(
+            text="second",
+            source_path="a.md",
+            page=1,
+            source_hash="h1",
+            index=1,
+            metadata={"k": "v"},
+        ),
+        Chunk(text="other doc", source_path="b.md", page=1, source_hash="h2", index=0),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    result = await store.get_chunks("h1", TENANT)
+
+    assert [c.text for c in result] == ["first", "second", "third"]
+    assert all(c.source_hash == "h1" for c in result)
+    assert result[1].metadata == {"k": "v"}  # metadata round-trips through the chunk-access seam
+
+
+async def test_get_chunks_includes_modified_at(store: LibSQLStore, embedder: FakeEmbedder) -> None:
+    """D44: each chunk carries its parent file's ``modified_at`` — the temporal signal a tool
+    consumer needs to answer "when was this written/modified" honestly."""
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(
+        text="dated",
+        source_path="a.md",
+        page=1,
+        source_hash="h1",
+        index=0,
+        modified_at="2026-05-06T07:08:09+00:00",
+    )
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    (result,) = await store.get_chunks("h1", TENANT)
+
+    assert result.modified_at == "2026-05-06T07:08:09+00:00"
+
+
+async def test_get_chunks_unknown_hash_returns_empty(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunk = Chunk(text="x", source_path="x.md", page=1, source_hash="hx", index=0)
+    await store.upsert([await _embedded(embedder, chunk)], TENANT)
+
+    assert await store.get_chunks("does-not-exist", TENANT) == []
+
+
+async def test_get_chunks_before_ensure_ready_returns_empty(store: LibSQLStore) -> None:
+    # Fresh DB, no schema yet — must degrade to "no chunks", never a table-missing crash.
+    assert await store.get_chunks("anything", TENANT) == []
+
+
+# --- list_documents metadata filter (SupportsDocumentAdmin, D38) -------------
+
+
+async def test_list_documents_metadata_filter_narrows_via_exists_subquery(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        Chunk(
+            text="a one",
+            source_path="a.md",
+            page=1,
+            source_hash="h1",
+            index=0,
+            metadata={"project": "condense"},
+        ),
+        Chunk(text="b one", source_path="b.md", page=1, source_hash="h2", index=0),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    docs = await store.list_documents(TENANT, metadata={"project": "condense"})
+
+    assert [d.source_hash for d in docs] == ["h1"]

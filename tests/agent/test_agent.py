@@ -515,6 +515,24 @@ def test_collect_normal_folders_unaffected_by_exclusion(tmp_path: Path) -> None:
     assert rels == {str(Path("events") / "venvoyage" / "notes.txt")}
 
 
+def test_collect_prunes_hidden_directories_by_default(tmp_path: Path) -> None:
+    """ANY directory whose name starts with ``.`` is pruned, not just the fixed
+    ``DEFAULT_EXCLUDE_DIRS`` set — a real corpus ingested ``.session_memory/*.md`` junk that the
+    named-set-only check couldn't catch (no name resembling a known vendored-tooling dir)."""
+    (tmp_path / "real.md").write_bytes(b"keep me")
+    session_memory = tmp_path / ".session_memory"
+    session_memory.mkdir()
+    (session_memory / "notes.md").write_bytes(b"session memory junk")
+    nested_hidden = tmp_path / "sub" / ".cache" / "deep"
+    nested_hidden.mkdir(parents=True)
+    (nested_hidden / "deep.md").write_bytes(b"nested hidden junk")
+
+    got = collect(str(tmp_path), {".md"})
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {"real.md"}
+
+
 def test_collect_exclude_dirs_is_overridable(tmp_path: Path) -> None:
     """Passing a custom ``exclude_dirs`` (e.g. from ``agent.cli --exclude-dir``) prunes a project-
     specific folder too, on top of (not instead of) the built-in defaults.
@@ -530,3 +548,77 @@ def test_collect_exclude_dirs_is_overridable(tmp_path: Path) -> None:
 
     rels = {rel for rel, _h, _loader, _m in got}
     assert rels == {"keep.txt"}
+
+
+def test_collect_prunes_junk_files_by_default(tmp_path: Path) -> None:
+    """``MEMORY.md``/``CLAUDE.md``/``*.tmp`` never contribute matches (D39) — a real corpus audit
+    found a stray agent-internal ``MEMORY.md`` polluting an index even though its extension
+    (``.md``) is otherwise included.
+    """
+    (tmp_path / "real.md").write_bytes(b"keep me")
+    (tmp_path / "MEMORY.md").write_bytes(b"agent bookkeeping junk")
+    (tmp_path / "CLAUDE.md").write_bytes(b"agent bookkeeping junk")
+    (tmp_path / "AGENTS.md").write_bytes(b"agent bookkeeping junk")
+    (tmp_path / "scratch.tmp").write_bytes(b"scratch junk")
+    (tmp_path / ".hidden.md").write_bytes(b"hidden junk")
+
+    got = collect(str(tmp_path), {".md", ".tmp"})
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {"real.md"}
+
+
+def test_collect_normal_files_unaffected_by_exclusion(tmp_path: Path) -> None:
+    """A file that merely *contains* an excluded name as a substring (not an exact/glob match) is
+    not excluded — only an exact filename or a matching glob pattern prunes.
+    """
+    (tmp_path / "not-MEMORY.md").write_bytes(b"real content")
+    (tmp_path / "MEMORY.md.bak").write_bytes(b"real content too")
+
+    got = collect(str(tmp_path), {".md", ".bak"})
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {"not-MEMORY.md", "MEMORY.md.bak"}
+
+
+def test_collect_exclude_files_is_overridable(tmp_path: Path) -> None:
+    """Passing a custom ``exclude_files`` (e.g. from ``agent.cli --exclude-file``) prunes a
+    project-specific filename too, on top of (not instead of) the built-in defaults.
+    """
+    (tmp_path / "keep.txt").write_bytes(b"keep")
+    (tmp_path / "draft.txt").write_bytes(b"throwaway")
+    (tmp_path / "MEMORY.md").write_bytes(b"still excluded via the built-in default")
+    (tmp_path / "keep.md").write_bytes(b"keep")
+
+    from agent.sync import DEFAULT_EXCLUDE_FILES
+
+    got = collect(
+        str(tmp_path), {".txt", ".md"}, exclude_files=DEFAULT_EXCLUDE_FILES | {"draft.txt"}
+    )
+
+    rels = {rel for rel, _h, _loader, _m in got}
+    assert rels == {"keep.txt", "keep.md"}
+
+
+def test_main_exclude_file_flag_adds_to_the_builtin_exclusions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--exclude-file`` merges with the built-in junk-filename set rather than replacing it."""
+    (tmp_path / "keep.txt").write_bytes(b"keep")
+    (tmp_path / "draft.txt").write_bytes(b"throwaway")
+    (tmp_path / "MEMORY.md").write_bytes(b"agent junk")
+
+    calls: list[str] = []
+    client = _client(set(), calls)
+
+    rc = main(
+        [str(tmp_path), "--tenant", TENANT, "--exclude-file", "draft.txt"],
+        client=client,
+    )
+    client.close()
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "keep.txt" in out
+    assert "draft.txt" not in out  # excluded via the flag
+    assert "MEMORY.md" not in out  # still excluded via the built-in default

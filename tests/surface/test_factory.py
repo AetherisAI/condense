@@ -8,9 +8,11 @@ adapter. No network is touched — the default container is self-contained.
 
 from __future__ import annotations
 
+from sift.adapters.conversation.fake import FakeConversationStore
 from sift.adapters.embedding.fake import FakeEmbedder
 from sift.adapters.embedding.openai_compat import OpenAICompatEmbedder
 from sift.adapters.llm.null import NullCompleter
+from sift.adapters.llm.openai_compat import OpenAICompatCompleter
 from sift.adapters.ocr.fallback_parser import OcrFallbackParser
 from sift.adapters.ocr.mistral import MistralOcr
 from sift.adapters.rerank.crossencoder_http import CrossEncoderReranker
@@ -20,7 +22,9 @@ from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
 from sift.core.hashing import content_hash
 from sift.factory import Container, build_container
+from sift.pipelines.answer import AnswerPipeline
 from sift.pipelines.ingest import IngestOutcome, SupportsIngest
+from sift.pipelines.tools import ToolRegistry
 
 
 def test_build_container_defaults_to_fakes() -> None:
@@ -111,6 +115,92 @@ def test_ocr_adapter_wired_with_configured_timeouts(tmp_path) -> None:
     assert isinstance(ocr, MistralOcr)
     assert ocr._timeout.read == 30.0
     assert ocr._timeout.connect == 2.0
+
+
+def test_build_container_wires_tool_registry() -> None:
+    container = build_container(Settings(ingest_token="t"))
+
+    assert isinstance(container.tools, ToolRegistry)
+    names = {tool.name for tool in container.tools.tools()}
+    assert names == {"search", "list_documents", "get_document_chunks"}
+
+
+def test_build_container_parses_auth_tokens() -> None:
+    container = build_container(
+        Settings(ingest_token="t", auth_tokens="worktalky:wt-secret,mcp:mcp-secret")
+    )
+
+    assert container.auth_tokens == {"wt-secret": "worktalky", "mcp-secret": "mcp"}
+
+
+def test_build_container_default_auth_tokens_is_empty() -> None:
+    container = build_container(Settings(ingest_token="t"))
+
+    assert container.auth_tokens == {}
+
+
+def test_build_container_wires_answer_pipeline() -> None:
+    container = build_container(Settings(ingest_token="t"))
+
+    assert isinstance(container.answer, AnswerPipeline)
+    # No LLM_BASE_URL configured -> the completer wired into `search` is the SAME object as the
+    # answer loop's ToolCompleter (WP v0.2.0 T3, D40: one adapter, both ports) — never a second.
+    assert container.answer._completer is container.search._completer
+    assert isinstance(container.answer._completer, NullCompleter)
+
+
+def test_build_container_answer_uses_configured_tool_mode() -> None:
+    container = build_container(
+        Settings(
+            ingest_token="t",
+            llm_base_url="http://llm.local/v1",
+            llm_model="gpt",
+            answer_tool_mode="prompted",
+            answer_max_tokens=256,
+            recap_max_tokens=999,
+        )
+    )
+
+    completer = container.answer._completer
+    assert isinstance(completer, OpenAICompatCompleter)
+    assert completer._tool_mode == "prompted"
+    # Distinct budgets: the answer loop's cap must never be the recap's (WP v0.2.0 T3, D40).
+    assert completer._answer_max_tokens == 256
+    assert completer._max_tokens == 999
+
+
+def test_build_container_conversation_store_defaults_to_fake() -> None:
+    container = build_container(Settings(ingest_token="t"))
+
+    assert isinstance(container.answer._conversations, FakeConversationStore)
+
+
+def test_build_container_conversation_store_is_libsql_when_turso_configured(tmp_path) -> None:
+    from sift.adapters.conversation.libsql import LibSQLConversationStore
+
+    container = build_container(
+        Settings(
+            ingest_token="t", store_backend="libsql", turso_database_url=str(tmp_path / "sift.db")
+        )
+    )
+
+    assert isinstance(container.answer._conversations, LibSQLConversationStore)
+
+
+def test_build_container_exposes_conversations_same_instance_answer_uses() -> None:
+    # WP v0.2.0 T6 (D42): `GET`/`DELETE /v1/conversations*` read the SAME store `answer` writes
+    # to, exposed directly on `Container` (mirrors `store`/`ingest` sitting beside `search`).
+    container = build_container(Settings(ingest_token="t"))
+
+    assert container.conversations is container.answer._conversations
+
+
+def test_build_container_wires_title_completer_same_instance_as_recap() -> None:
+    # T6 (D42): the auto-title pass reuses the SAME `Completer` instance already wired for the
+    # recap — never a second one — so it's budget-capped via the same recap settings.
+    container = build_container(Settings(ingest_token="t"))
+
+    assert container.answer._title_completer is container.search._completer
 
 
 async def test_stub_ingest_reports_indexed() -> None:

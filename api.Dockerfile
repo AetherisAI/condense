@@ -7,6 +7,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# curl backs docker-compose.yml's `/healthz` HEALTHCHECK (DECISIONS.md D39) — the base slim
+# image has no HTTP client at all, so a tiny, no-cache apt layer is the cheapest way to get one.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy only what the wheel build needs first, so the pip layer caches across
 # source-only changes. pyproject.toml declares readme = "README.md", so README
 # must be present for the build to succeed.

@@ -10,15 +10,35 @@ returned by the store, so it lives in ``core``.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
-from sift.core.types import DocumentInfo
+from sift.core.types import Chunk, DocumentInfo
 
 
 @runtime_checkable
 class SupportsDocumentAdmin(Protocol):
     """The seam Dev B's ``/documents`` routes depend on — structural, so a fake can stand in."""
 
-    async def list_documents(self, tenant: str) -> list[DocumentInfo]: ...
+    async def list_documents(
+        self, tenant: str, metadata: Mapping[str, str] | None = None
+    ) -> list[DocumentInfo]:
+        """List the tenant's ingested files, optionally narrowed to those with at least one
+        chunk whose ``metadata`` matches every given key/value (additive param, default
+        ``None`` — WP v0.2.0 T2's ``GET /v1/tools/documents``)."""
+        ...
 
     async def delete_document(self, source_hash: str, tenant: str) -> int: ...
+
+
+@runtime_checkable
+class SupportsChunkAccess(Protocol):
+    """The seam ``GET /v1/tools/documents/{source_hash}/chunks`` depends on (WP v0.2.0 T2).
+
+    Structural, like :class:`SupportsDocumentAdmin` — a store that hasn't grown this capability
+    is detected via ``isinstance`` and the route degrades (empty list) rather than erroring.
+    """
+
+    async def get_chunks(self, source_hash: str, tenant: str) -> list[Chunk]:
+        """Return every chunk of one ingested document, ordered by ``index`` ascending."""
+        ...

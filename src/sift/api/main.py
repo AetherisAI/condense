@@ -14,14 +14,25 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from sift.api.routes import router
+from sift.api.v1 import router as v1_router
 from sift.config import get_settings
 from sift.factory import build_container
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Build the wired container once at startup and expose it on ``app.state``."""
-    app.state.container = build_container(get_settings())
+    """Build the wired container once at startup and expose it on ``app.state``.
+
+    Also runs the store's ``ensure_ready`` migration/pin check right here (BUG #1, D40
+    amendment) — belt-and-braces alongside the identical call each toolbox executor now makes
+    (``pipelines/tools.py``): the very FIRST request against a fresh process (e.g.
+    ``GET /v1/tools/documents``) must never be the one that discovers a not-yet-migrated store.
+    ``"default"`` is the PoC's single hardcoded tenant (CLAUDE.md §3).
+    """
+    settings = get_settings()
+    container = build_container(settings)
+    await container.store.ensure_ready(settings.embed_model, settings.embed_dim, "default")
+    app.state.container = container
     yield
 
 
@@ -29,6 +40,7 @@ def create_app() -> FastAPI:
     """Assemble the FastAPI app: the lifespan-built container plus the routes."""
     app = FastAPI(title="Condense", lifespan=lifespan)
     app.include_router(router)
+    app.include_router(v1_router)
     return app
 
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
@@ -26,7 +26,7 @@ from typing import Any
 import libsql
 
 from sift.core.errors import ModelPinMismatch, SiftError
-from sift.core.types import Chunk, DocumentInfo, Hit, Vector
+from sift.core.types import Chunk, DocumentInfo, Hit, SearchFilters, Vector
 
 # ``libsql`` is a stub-less compiled extension; route attribute access through ``Any`` so
 # the rest of this module stays fully type-checked.
@@ -44,24 +44,27 @@ _DDL_FILES = (
 
 # Additive migration for databases created before ``modified_at`` existed: SQLite has no
 # "ADD COLUMN IF NOT EXISTS", so probe ``pragma_table_info`` and add it only when missing.
-_FILES_HAS_MODIFIED_AT = (
-    "SELECT 1 FROM pragma_table_info('files') WHERE name = 'modified_at'"
-)
+_FILES_HAS_MODIFIED_AT = "SELECT 1 FROM pragma_table_info('files') WHERE name = 'modified_at'"
 _ALTER_FILES_ADD_MODIFIED_AT = "ALTER TABLE files ADD COLUMN modified_at TEXT"
 
 _DDL_CHUNKS = (
     "CREATE TABLE IF NOT EXISTS chunks ("
     "tenant TEXT, source_hash TEXT, idx INTEGER, text TEXT, source_path TEXT, page INTEGER, "
-    "embedding F32_BLOB({dim}) NOT NULL, "
+    "embedding F32_BLOB({dim}) NOT NULL, metadata TEXT, "
     "PRIMARY KEY (tenant, source_hash, idx))"
 )
 
+# Additive migration for databases created before ``metadata`` existed on ``chunks`` — same
+# ALTER-if-missing pattern as ``modified_at`` on ``files`` above (D28).
+_CHUNKS_HAS_METADATA = "SELECT 1 FROM pragma_table_info('chunks') WHERE name = 'metadata'"
+_ALTER_CHUNKS_ADD_METADATA = "ALTER TABLE chunks ADD COLUMN metadata TEXT"
+
 _INSERT_CHUNK = (
-    "INSERT INTO chunks (tenant, source_hash, idx, text, source_path, page, embedding) "
-    "VALUES (?, ?, ?, ?, ?, ?, vector32(?)) "
+    "INSERT INTO chunks (tenant, source_hash, idx, text, source_path, page, embedding, metadata) "
+    "VALUES (?, ?, ?, ?, ?, ?, vector32(?), ?) "
     "ON CONFLICT(tenant, source_hash, idx) DO UPDATE SET "
     "text = excluded.text, source_path = excluded.source_path, "
-    "page = excluded.page, embedding = excluded.embedding"
+    "page = excluded.page, embedding = excluded.embedding, metadata = excluded.metadata"
 )
 
 _INSERT_FILE = (
@@ -80,23 +83,30 @@ _SELECT_PIN = "SELECT model, dim FROM model_pin WHERE tenant = ?"
 
 _INSERT_PIN = "INSERT INTO model_pin (tenant, model, dim) VALUES (?, ?, ?)"
 
-_SEARCH = (
+_SEARCH_BASE = (
     "SELECT c.text, c.source_path, c.page, c.source_hash, c.idx, "
-    "vector_distance_cos(c.embedding, vector32(?)) AS d, f.indexed_at, f.modified_at "
+    "vector_distance_cos(c.embedding, vector32(?)) AS d, f.indexed_at, f.modified_at, c.metadata "
     "FROM chunks c "
     "LEFT JOIN files f ON f.tenant = c.tenant AND f.content_hash = c.source_hash "
-    "WHERE c.tenant = ? ORDER BY d ASC LIMIT ?"
+    "WHERE {where} ORDER BY d ASC LIMIT ?"
 )
 
 _SELECT_HASHES = "SELECT content_hash FROM files WHERE tenant = ?"
 
-_SELECT_DOCUMENTS = (
-    "SELECT f.path, f.content_hash, COUNT(c.idx) "
+_SELECT_DOCUMENTS_BASE = (
+    "SELECT f.path, f.content_hash, COUNT(c.idx), f.modified_at, f.indexed_at "
     "FROM files f "
     "LEFT JOIN chunks c ON c.tenant = f.tenant AND c.source_hash = f.content_hash "
-    "WHERE f.tenant = ? "
-    "GROUP BY f.content_hash, f.path, f.indexed_at "
+    "WHERE {where} "
+    "GROUP BY f.content_hash, f.path, f.indexed_at, f.modified_at "
     "ORDER BY f.indexed_at DESC"
+)
+
+_SELECT_CHUNKS_BY_HASH = (
+    "SELECT c.text, c.source_path, c.page, c.source_hash, c.idx, c.metadata, f.modified_at "
+    "FROM chunks c "
+    "LEFT JOIN files f ON f.tenant = c.tenant AND f.content_hash = c.source_hash "
+    "WHERE c.tenant = ? AND c.source_hash = ? ORDER BY c.idx ASC"
 )
 
 _COUNT_CHUNKS_BY_HASH = "SELECT COUNT(*) FROM chunks WHERE tenant = ? AND source_hash = ?"
@@ -109,6 +119,49 @@ _DELETE_FILE_BY_HASH = "DELETE FROM files WHERE tenant = ? AND content_hash = ?"
 def _vector_json(vector: Vector) -> str:
     """Serialize a vector to the JSON array literal ``vector32`` accepts."""
     return json.dumps([float(component) for component in vector])
+
+
+def _search_sql(
+    tenant: str, vector: Vector, k: int, filters: SearchFilters | None
+) -> tuple[str, list[Any]]:
+    """Build the ``search`` SQL + its bound params, narrowing by ``filters`` BEFORE the ``LIMIT``
+    (WP v0.2.0 T2, D38): metadata equality via ``json_extract``, ``modified_at`` range via a
+    plain string comparison (consistent zero-padded ISO-8601 sorts lexicographically the same as
+    chronologically — no datetime parsing needed store-side)."""
+    clauses = ["c.tenant = ?"]
+    params: list[Any] = [_vector_json(vector), tenant]
+    if filters is not None:
+        if filters.metadata:
+            for key, value in filters.metadata.items():
+                clauses.append("json_extract(c.metadata, ?) = ?")
+                params.append(f"$.{key}")
+                params.append(value)
+        if filters.since is not None:
+            clauses.append("f.modified_at >= ?")
+            params.append(filters.since)
+        if filters.until is not None:
+            clauses.append("f.modified_at <= ?")
+            params.append(filters.until)
+    sql = _SEARCH_BASE.format(where=" AND ".join(clauses))
+    params.append(k)
+    return sql, params
+
+
+def _documents_sql(metadata: Mapping[str, str] | None) -> tuple[str, list[Any]]:
+    """Build the ``list_documents`` SQL + its bound params: a document matches ``metadata`` when
+    at least one of its chunks carries every given key/value (equality, via ``json_extract``)."""
+    clauses = ["f.tenant = ?"]
+    params: list[Any] = []
+    if metadata:
+        for key, value in metadata.items():
+            clauses.append(
+                "EXISTS (SELECT 1 FROM chunks mc WHERE mc.tenant = f.tenant AND "
+                "mc.source_hash = f.content_hash AND json_extract(mc.metadata, ?) = ?)"
+            )
+            params.append(f"$.{key}")
+            params.append(value)
+    sql = _SELECT_DOCUMENTS_BASE.format(where=" AND ".join(clauses))
+    return sql, params
 
 
 class LibSQLStore:
@@ -150,23 +203,33 @@ class LibSQLStore:
         async with self._lock:
             await self._submit(functools.partial(self._upsert_job, tuple(chunks), tenant))
 
-    async def search(self, vector: Vector, k: int, tenant: str) -> list[Hit]:
-        return await self._submit(functools.partial(self._search_job, vector, k, tenant))
+    async def search(
+        self, vector: Vector, k: int, tenant: str, filters: SearchFilters | None = None
+    ) -> list[Hit]:
+        return await self._submit(functools.partial(self._search_job, vector, k, tenant, filters))
 
     async def known_hashes(self, tenant: str) -> set[str]:
         return await self._submit(functools.partial(self._known_hashes_job, tenant))
 
     # --- document-admin seam (SupportsDocumentAdmin) ------------------------------
 
-    async def list_documents(self, tenant: str) -> list[DocumentInfo]:
+    async def list_documents(
+        self, tenant: str, metadata: Mapping[str, str] | None = None
+    ) -> list[DocumentInfo]:
         # Read-only: no lock, mirroring search / known_hashes.
-        return await self._submit(functools.partial(self._list_documents_job, tenant))
+        return await self._submit(functools.partial(self._list_documents_job, tenant, metadata))
 
     async def delete_document(self, source_hash: str, tenant: str) -> int:
         async with self._lock:
             return await self._submit(
                 functools.partial(self._delete_document_job, source_hash, tenant)
             )
+
+    # --- chunk-access seam (SupportsChunkAccess) ----------------------------------
+
+    async def get_chunks(self, source_hash: str, tenant: str) -> list[Chunk]:
+        # Read-only: no lock, mirroring search / list_documents.
+        return await self._submit(functools.partial(self._get_chunks_job, source_hash, tenant))
 
     async def aclose(self) -> None:
         await self._submit(self._close_job)
@@ -181,6 +244,8 @@ class LibSQLStore:
         conn.execute(_DDL_CHUNKS.format(dim=dim))
         if not conn.execute(_FILES_HAS_MODIFIED_AT).fetchall():
             conn.execute(_ALTER_FILES_ADD_MODIFIED_AT)  # migrate a pre-``modified_at`` database
+        if not conn.execute(_CHUNKS_HAS_METADATA).fetchall():
+            conn.execute(_ALTER_CHUNKS_ADD_METADATA)  # migrate a pre-``metadata`` database
         conn.commit()
 
         rows = conn.execute(_SELECT_PIN, (tenant,)).fetchall()
@@ -220,6 +285,7 @@ class LibSQLStore:
                     chunk.source_path,
                     chunk.page,
                     _vector_json(chunk.vector),
+                    json.dumps(chunk.metadata) if chunk.metadata is not None else None,
                 ),
             )
             conn.execute(
@@ -228,9 +294,12 @@ class LibSQLStore:
             )
         conn.commit()
 
-    def _search_job(self, vector: Vector, k: int, tenant: str) -> list[Hit]:
+    def _search_job(
+        self, vector: Vector, k: int, tenant: str, filters: SearchFilters | None
+    ) -> list[Hit]:
         conn = self._connection()
-        rows = conn.execute(_SEARCH, (_vector_json(vector), tenant, k)).fetchall()
+        sql, params = _search_sql(tenant, vector, k, filters)
+        rows = conn.execute(sql, params).fetchall()
         return [
             Hit(
                 text=row[0],
@@ -241,6 +310,7 @@ class LibSQLStore:
                 index=row[4],
                 indexed_at=row[6],
                 modified_at=row[7],
+                metadata=json.loads(row[8]) if row[8] else None,
             )
             for row in rows
         ]
@@ -255,14 +325,46 @@ class LibSQLStore:
         rows = conn.execute(_SELECT_HASHES, (tenant,)).fetchall()
         return {row[0] for row in rows}
 
-    def _list_documents_job(self, tenant: str) -> list[DocumentInfo]:
+    def _list_documents_job(
+        self, tenant: str, metadata: Mapping[str, str] | None
+    ) -> list[DocumentInfo]:
         conn = self._connection()
         # Same fresh-database guard as ``_known_hashes_job``: the document list is read
         # before the first ingest creates the schema, so an empty store is "no documents".
         if not conn.execute(_FILES_TABLE_EXISTS).fetchall():
             return []
-        rows = conn.execute(_SELECT_DOCUMENTS, (tenant,)).fetchall()
-        return [DocumentInfo(source_path=row[0], source_hash=row[1], chunks=row[2]) for row in rows]
+        sql, extra_params = _documents_sql(metadata)
+        rows = conn.execute(sql, (tenant, *extra_params)).fetchall()
+        return [
+            DocumentInfo(
+                source_path=row[0],
+                source_hash=row[1],
+                chunks=row[2],
+                modified_at=row[3],
+                indexed_at=row[4],
+            )
+            for row in rows
+        ]
+
+    def _get_chunks_job(self, source_hash: str, tenant: str) -> list[Chunk]:
+        conn = self._connection()
+        # Same fresh-database guard as ``_known_hashes_job``/``_list_documents_job``: reading
+        # before any ``ensure_ready()`` call must report "no chunks", never a table-missing crash.
+        if not conn.execute(_FILES_TABLE_EXISTS).fetchall():
+            return []
+        rows = conn.execute(_SELECT_CHUNKS_BY_HASH, (tenant, source_hash)).fetchall()
+        return [
+            Chunk(
+                text=row[0],
+                source_path=row[1],
+                page=row[2],
+                source_hash=row[3],
+                index=row[4],
+                metadata=json.loads(row[5]) if row[5] else None,
+                modified_at=row[6],
+            )
+            for row in rows
+        ]
 
     def _delete_document_job(self, source_hash: str, tenant: str) -> int:
         conn = self._connection()

@@ -8,11 +8,19 @@ never imports ``sift``.
 
 Upload names are the file's path **relative to the watched root, normalised to POSIX** so the
 same file maps to the same server ``path`` key on macOS, Windows, and Linux — which is what
-makes path-based replacement deterministic across machines.
+makes path-based replacement deterministic across machines. This is true for a **single**
+watched root regardless of which collector built the key (:func:`collect` for one-shot,
+:func:`collect_roots` for ``--watch``/the desktop app) — see DECISIONS.md D45: before D45,
+:func:`collect_roots` keyed by *absolute* path while :func:`collect` keyed root-relative, so a
+watch-mode reconcile against a one-shot-ingested corpus never matched anything and re-uploaded
+(almost) the whole tree every restart. With **multiple** watched roots, each key is prefixed
+with its root's basename (disambiguated on collision, see :func:`_root_prefixes`) so two roots
+that each contain e.g. ``notes.md`` still map to two distinct, stable server paths.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import os
 import warnings
@@ -81,8 +89,39 @@ _EXCLUDE_DIR_SUFFIXES = (".dist-info", ".egg-info")
 
 
 def _is_excluded_dir(name: str, exclude_dirs: frozenset[str] | set[str]) -> bool:
-    """True if a directory named ``name`` should be pruned from the walk entirely."""
-    return name in exclude_dirs or name.endswith(_EXCLUDE_DIR_SUFFIXES)
+    """True if a directory named ``name`` should be pruned from the walk entirely.
+
+    ANY directory whose basename starts with ``.`` is pruned unconditionally, on top of the
+    named/suffix checks below — a real corpus ingested ``.session_memory/*.md`` junk that no
+    fixed-name set could have anticipated (an agent/editor/tool's own hidden bookkeeping dir,
+    not the user's content). This is on top of, never instead of, ``exclude_dirs`` — a caller's
+    own additions (``agent.cli --exclude-dir``, ``AgentConfig.exclude_dirs``) still prune their
+    named dirs exactly as before.
+    """
+    return name.startswith(".") or name in exclude_dirs or name.endswith(_EXCLUDE_DIR_SUFFIXES)
+
+
+# Individual *filenames* (not directories — see DEFAULT_EXCLUDE_DIRS above) never matched even
+# when their extension is in ``includes``: an agent's own bookkeeping files sitting inside a
+# watched folder are not the user's content. Glob (``fnmatch``) patterns, matched against the
+# bare basename — a real corpus audit found a stray ``MEMORY.md`` polluting an index (D39).
+# Overridable per call (``collect``/``collect_roots``/``sync``), via
+# ``agent.config.AgentConfig.exclude_files`` (desktop app), and via ``agent.cli --exclude-file``
+# (headless one-shot/``--watch``) — same shape as ``DEFAULT_EXCLUDE_DIRS`` (D35).
+DEFAULT_EXCLUDE_FILES: frozenset[str] = frozenset(
+    {
+        "MEMORY.md",
+        "CLAUDE.md",
+        "AGENTS.md",
+        "*.tmp",
+        ".*",
+    }
+)
+
+
+def _is_excluded_file(name: str, exclude_files: frozenset[str] | set[str]) -> bool:
+    """True if a file named ``name`` (bare basename) should never be matched/uploaded."""
+    return any(fnmatch.fnmatch(name, pattern) for pattern in exclude_files)
 
 
 def upload_name(root: str, full: str) -> str:
@@ -90,28 +129,67 @@ def upload_name(root: str, full: str) -> str:
     return PurePath(os.path.relpath(full, root)).as_posix()
 
 
-def abs_upload_name(full: str) -> str:
-    """Absolute POSIX upload key — unique across *multiple* watched folders (no relpath clash)."""
-    return PurePath(os.path.abspath(full)).as_posix()
+def _name_root(root: str) -> str:
+    """The directory a file's upload-name relpath is computed against.
+
+    A file ``root`` (as opposed to a directory) has no directory of its own to be relative to,
+    so its key is computed relative to its *parent* — giving just the bare filename, same as
+    :func:`collect` has always done. Shared by :func:`collect` and :func:`collect_roots` so both
+    collectors agree on a single root's keys byte-for-byte (D45).
+    """
+    return (os.path.dirname(root) or ".") if os.path.isfile(root) else root
+
+
+def _root_prefixes(roots: list[str]) -> dict[str, str | None]:
+    """Per-root upload-key prefix: ``None`` for a lone root, else a disambiguated basename.
+
+    A single watched root needs **no prefix at all** — that's what makes :func:`collect_roots`
+    produce the exact same keys as one-shot :func:`collect` for the single-root case (D45), which
+    is what lets ``--watch`` reconcile cleanly against a corpus ingested one-shot.
+
+    With multiple roots, each file's key is prefixed with its root's basename so two roots that
+    happen to share a relative name (e.g. two folders each containing ``notes.md``) still map to
+    two distinct, stable documents. A basename collision *across roots* (e.g. two roots both
+    named ``Acme``, nested under different parents) is disambiguated deterministically by
+    suffixing ``-2``, ``-3``, … in the order ``roots`` was given — never dependent on set/dict
+    iteration order, so the same ``roots`` list always yields the same prefixes.
+    """
+    if len(roots) <= 1:
+        return dict.fromkeys(roots)
+    counts: dict[str, int] = {}
+    prefixes: dict[str, str] = {}
+    for root in roots:
+        base = os.path.basename(os.path.normpath(root)) or root
+        counts[base] = counts.get(base, 0) + 1
+        prefixes[root] = base if counts[base] == 1 else f"{base}-{counts[base]}"
+    return prefixes
 
 
 def _iter_matching(
     root: str,
     includes: set[str],
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
+    exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
 ):
     """Yield absolute paths of files under ``root`` (a file or directory) matching ``includes``.
 
     Any subdirectory whose basename is excluded (see :data:`DEFAULT_EXCLUDE_DIRS`) is pruned
     from the walk entirely — its contents are never listed, hashed, or matched, however deep.
+    Any filename matching an ``exclude_files`` glob (see :data:`DEFAULT_EXCLUDE_FILES`) is
+    skipped even when its extension is otherwise included.
     """
     if os.path.isfile(root):
-        if os.path.splitext(root)[1].lower() in includes:
+        name = os.path.basename(root)
+        if os.path.splitext(root)[1].lower() in includes and not _is_excluded_file(
+            name, exclude_files
+        ):
             yield os.path.abspath(root)
         return
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not _is_excluded_dir(d, exclude_dirs)]
         for name in filenames:
+            if _is_excluded_file(name, exclude_files):
+                continue
             full = os.path.join(dirpath, name)
             if os.path.splitext(full)[1].lower() in includes:
                 yield full
@@ -184,6 +262,7 @@ def collect(
     *,
     max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
+    exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
 ) -> list[tuple[str, str, Callable[[], bytes], str]]:
     """Walk one ``root`` → ``(relpath_name, sha256_hex, loader, modified_at)`` (one-shot keys).
 
@@ -191,12 +270,14 @@ def collect(
     computed by streaming the file, so no matched file's full contents are held in memory just to
     catalogue it (A3). A file larger than ``max_file_size_mb`` is skipped entirely (with a
     ``UserWarning``) — never hashed, never loaded. Any directory named in ``exclude_dirs`` (default
-    :data:`DEFAULT_EXCLUDE_DIRS`) is pruned from the walk before it's ever listed (D35).
+    :data:`DEFAULT_EXCLUDE_DIRS`) is pruned from the walk before it's ever listed (D35); any
+    filename matching ``exclude_files`` (default :data:`DEFAULT_EXCLUDE_FILES`) is skipped the
+    same way, even when its extension is otherwise included (D39).
     """
     max_bytes = max_file_size_mb * 1024 * 1024
-    name_root = (os.path.dirname(root) or ".") if os.path.isfile(root) else root
+    name_root = _name_root(root)
     found: list[tuple[str, str, Callable[[], bytes], str]] = []
-    for full in _by_mtime(_iter_matching(root, includes, exclude_dirs)):
+    for full in _by_mtime(_iter_matching(root, includes, exclude_dirs, exclude_files)):
         if _skip_oversized(full, max_bytes, max_file_size_mb):
             continue
         sha = _sha256_file(full)
@@ -210,24 +291,46 @@ def collect_roots(
     *,
     max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
+    exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
 ) -> list[tuple[str, str, Callable[[], bytes], str]]:
-    """Walk every root; return ``(abs_name, sha256_hex, loader, modified_at)``, de-duped per root.
+    """Walk every root; return ``(name, sha256_hex, loader, modified_at)``, de-duped across roots.
 
-    Absolute keys mean two watched folders that each contain ``notes.md`` stay distinct documents.
+    **Keying (D45):** for a single root, the key is root-relative POSIX — byte-for-byte the same
+    key :func:`collect` would produce for that same root, which is what lets a ``--watch``
+    reconcile match a corpus ingested one-shot instead of re-uploading it every restart. For
+    *multiple* roots, each key is prefixed with its root's (disambiguated) basename — see
+    :func:`_root_prefixes` — so two roots that happen to share a relative name still stay two
+    distinct documents.
+
+    A file reached through more than one declared root (overlapping/nested roots) is only
+    catalogued once, under whichever root visits it first — de-duped by its *resolved* physical
+    path, not by upload key (two different roots can legitimately produce two different keys for
+    the same bytes; only literally re-visiting the same file is deduped).
+
     Ordered oldest-modified first (see :func:`_by_mtime`) so recency survives into the index.
-    ``loader``, the size guard, and ``exclude_dirs`` behave exactly as in :func:`collect` (A3/D35).
+    ``loader``, the size guard, ``exclude_dirs``, and ``exclude_files`` behave exactly as in
+    :func:`collect` (A3/D35/D39).
     """
     max_bytes = max_file_size_mb * 1024 * 1024
-    first_seen: dict[str, str] = {}  # upload name → first full path, deduped across roots
+    prefixes = _root_prefixes(roots)
+    seen_physical: set[str] = set()  # resolved abs path → already catalogued (overlapping roots)
+    by_full: dict[str, str] = {}  # full path → its upload key, first root to visit it wins
     for root in roots:
-        for full in _iter_matching(root, includes, exclude_dirs):
-            first_seen.setdefault(abs_upload_name(full), full)
+        name_root = _name_root(root)
+        prefix = prefixes.get(root)
+        for full in _iter_matching(root, includes, exclude_dirs, exclude_files):
+            resolved = os.path.abspath(full)
+            if resolved in seen_physical:
+                continue
+            seen_physical.add(resolved)
+            rel = upload_name(name_root, full)
+            by_full[full] = f"{prefix}/{rel}" if prefix else rel
     found: list[tuple[str, str, Callable[[], bytes], str]] = []
-    for full in _by_mtime(first_seen.values()):
+    for full in _by_mtime(by_full):
         if _skip_oversized(full, max_bytes, max_file_size_mb):
             continue
         sha = _sha256_file(full)
-        found.append((abs_upload_name(full), sha, _read_file(full), _modified_iso(full)))
+        found.append((by_full[full], sha, _read_file(full), _modified_iso(full)))
     return found
 
 
@@ -248,6 +351,14 @@ class Summary:
     ``managed`` is the set of upload-paths this sync saw on disk — feed it back into the next
     :func:`sync` call as ``managed=`` so ``delete_removed`` only ever removes files this agent
     actually tracked (never other documents that happen to share the tenant).
+
+    ``skipped`` is **truthful** (D45): it counts both a client-side skip (reconcile decided the
+    path's hash already matches remote, so the file was never even uploaded) AND a server-side
+    ``skipped_dedup`` result (the file WAS uploaded — reconcile thought it was new/changed — but
+    the engine's own content-hash dedup recognised the bytes and skipped re-embedding). Before
+    D45, only the client-side count was tallied, so a path-keying mismatch that forced every file
+    through the upload path (server dedup catching it every time) still reported ``0 skipped`` —
+    a misleading zero that hid exactly the bandwidth/round-trip waste it should have surfaced.
     """
 
     indexed: int = 0
@@ -320,6 +431,7 @@ def sync(
     managed: set[str] | None = None,
     max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
+    exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
 ) -> Summary:
     """Run one full reconcile pass across one or more ``roots``: ingest new/changed, delete stale.
 
@@ -328,8 +440,9 @@ def sync(
     the *previous* sync saw on disk (``Summary.managed``); with ``delete_removed`` on, only those
     are eligible for removal — so the agent never deletes documents another source ingested. The
     returned ``Summary.managed`` is this pass's on-disk set, to thread into the next call.
-    ``max_file_size_mb`` and ``exclude_dirs`` are the per-file size guard and vendored-dir pruning
-    passed through to :func:`collect_roots` (A3/D35).
+    ``max_file_size_mb``, ``exclude_dirs``, and ``exclude_files`` are the per-file size guard,
+    vendored-dir pruning, and junk-filename pruning passed through to :func:`collect_roots`
+    (A3/D35/D39).
 
     Falls back to add-only if the store doesn't support listing documents (``supported=False``):
     replacement/removal need ``/documents``, so without it we can still ingest (the engine's
@@ -346,7 +459,11 @@ def sync(
     """
     roots = [roots] if isinstance(roots, str) else list(roots)
     files = collect_roots(
-        roots, includes, max_file_size_mb=max_file_size_mb, exclude_dirs=exclude_dirs
+        roots,
+        includes,
+        max_file_size_mb=max_file_size_mb,
+        exclude_dirs=exclude_dirs,
+        exclude_files=exclude_files,
     )
     local = {name: digest for name, digest, _loader, _m in files}
     loader_by_name = {name: loader for name, _digest, loader, _m in files}
@@ -366,7 +483,7 @@ def sync(
         managed=(managed if managed is not None else set()),
     )
 
-    indexed = replaced = deleted = failed = 0
+    indexed = replaced = deleted = failed = skipped_dedup = 0
     error: str | None = None
     indexed_paths: set[str] = set()
 
@@ -393,6 +510,11 @@ def sync(
                     replaced += 1
             elif status == "failed":
                 failed += 1
+            elif status == "skipped_dedup":
+                # The engine's own content-hash dedup caught a file reconcile() thought was
+                # new/changed (D45) — not lost, not an error, just wasted bandwidth; tallied into
+                # the truthful ``skipped`` total below rather than silently dropped.
+                skipped_dedup += 1
 
     # Only remove a replaced document's stale hash once its replacement is *confirmed* indexed —
     # never on a batch exception, and never on a per-file "failed" status inside an otherwise-200
@@ -418,7 +540,7 @@ def sync(
     return Summary(
         indexed=indexed,
         replaced=replaced,
-        skipped=len(actions.skip),
+        skipped=len(actions.skip) + skipped_dedup,
         deleted=deleted,
         failed=failed,
         error=error,

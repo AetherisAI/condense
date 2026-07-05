@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
 
 /** One citation as returned by ``GET /search`` (mirrors api.schemas.Source). */
 type Source = {
@@ -84,6 +85,10 @@ function SourceGlyph() {
 export default function Search({ token }: { token: string }) {
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<SearchResponse | null>(null)
+  // The exact text a result's sources were fetched for — kept separate from `query` (which keeps
+  // tracking the live input) so editing the box after a search without re-running it can't cause
+  // the term-highlighter to bold terms that were never actually searched for.
+  const [queriedText, setQueriedText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -116,6 +121,7 @@ export default function Search({ token }: { token: string }) {
     setResult(null)
     setCopied(false)
     setLoading(true)
+    setQueriedText(query)
     try {
       // The AI-recap toggle drives the engine's recap flag (off → no LLM summary, just sources).
       const resp = await fetch(`/search?q=${encodeURIComponent(query)}&recap=${recapEnabled}`, {
@@ -160,7 +166,7 @@ export default function Search({ token }: { token: string }) {
             if (e.key === 'Enter') runSearch()
           }}
         />
-        <button type="button" onClick={runSearch} disabled={loading || !query}>
+        <button type="button" className="btn-primary" onClick={runSearch} disabled={loading || !query}>
           {loading ? 'Searching…' : 'Search'}
         </button>
       </div>
@@ -258,13 +264,17 @@ export default function Search({ token }: { token: string }) {
                       <span className="source-path" title={s.path}>
                         {fileName(s.path)}
                       </span>
-                      <span className="badge badge-page">p. {s.page}</span>
+                      {showPageBadge(s.page) && <span className="badge badge-page">p. {s.page}</span>}
                       <span className="badge badge-score">{(s.score * 100).toFixed(0)}% match</span>
                       {s.index != null && (
                         <span className="badge badge-passage">passage #{s.index}</span>
                       )}
                     </div>
-                    {s.snippet && <blockquote className="snippet">“{s.snippet}”</blockquote>}
+                    {s.snippet && (
+                      <blockquote className="snippet">
+                        “{highlightQueryTerms(collapseWhitespace(s.snippet), queriedText)}”
+                      </blockquote>
+                    )}
                   </div>
                 ))}
               </div>

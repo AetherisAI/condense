@@ -243,6 +243,28 @@ async def test_embed_called_once_per_indexed_doc() -> None:
     assert counting.calls == 2
 
 
+async def test_metadata_threads_into_stored_chunks() -> None:
+    """Per-file ``metadata`` (keyed like ``modified_at``, D28's pattern) lands on the stored
+    chunk and survives a search round-trip; a file absent from the map stores ``None``."""
+    store = FakeVectorStore()
+    embedder = FakeEmbedder(dim=DIM)
+    pipeline = _pipeline(store, embedder)
+    files = [("tagged.md", b"alpha beta"), ("plain.md", b"gamma delta")]
+    metadata = {"tagged.md": {"author": "quentin", "kind": "note"}}
+
+    outcomes = await pipeline.ingest(files, TENANT, metadata=metadata)
+
+    assert [o.status for o in outcomes] == ["indexed", "indexed"]
+
+    (tagged_query,) = await embedder.embed(["alpha beta"])
+    (tagged_hit,) = await store.search(tagged_query, 1, TENANT)
+    assert tagged_hit.metadata == {"author": "quentin", "kind": "note"}
+
+    (plain_query,) = await embedder.embed(["gamma delta"])
+    (plain_hit,) = await store.search(plain_query, 1, TENANT)
+    assert plain_hit.metadata is None
+
+
 async def test_ensure_ready_called_once_per_batch() -> None:
     spy = SpyStore()
     pipeline = _pipeline(spy, FakeEmbedder(dim=DIM))
