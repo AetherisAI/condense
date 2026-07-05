@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Annotated
 
@@ -174,14 +175,26 @@ async def ingest(
     ``modified_at`` is an optional JSON object ``{upload_name: iso8601}`` of each file's
     last-modified time, sent by the agent so version-collapse can prefer the newest copy.
 
+    Files are streamed to the pipeline one at a time (read → hand off → release) rather than all
+    read into a single in-memory list, so a large multi-file upload doesn't spike RAM to the sum of
+    every file — peak stays at roughly one file plus its chunks (Arthur's A12).
+
     Every outcome is logged server-side (README §F1/E3): a batch that comes back HTTP 200 must
     never silently hide a lost file — each failure gets its own WARNING line (path + detail),
     plus one INFO summary of the whole batch's indexed/skipped/failed counts.
     """
-    payload = [(file.filename or "", await file.read()) for file in files]
     mtimes = _parse_modified_at(modified_at)
+
+    async def _stream() -> AsyncIterator[tuple[str, bytes]]:
+        for file in files:
+            data = await file.read()
+            try:
+                yield (file.filename or "", data)
+            finally:
+                await file.close()  # release the spooled upload before reading the next
+
     try:
-        outcomes = await container.ingest.ingest(payload, tenant, modified_at=mtimes)
+        outcomes = await container.ingest.ingest(_stream(), tenant, modified_at=mtimes)
     except ModelPinMismatch as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     results = [
