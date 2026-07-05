@@ -72,10 +72,19 @@ function TrashIcon() {
  * Library drawer: a slide-out panel listing every document indexed in the libSQL store, with a
  * per-document delete. Opens on demand and fetches ``GET /documents``; ``DELETE /documents/{hash}``
  * removes one. If the configured store doesn't support listing yet (``supported: false``) it says
- * so plainly rather than erroring — the engine gains those two methods and this lights up.
+ * so plainly rather than erroring — the engine gains those two methods and this lights up. Its
+ * own floating FAB trigger is gone (D57/Task U1) — `open` is controlled from the workbench
+ * topbar's "Library" button.
  */
-export default function Library({ token }: { token: string }) {
-  const [open, setOpen] = useState(false)
+export default function Library({
+  token,
+  open,
+  onOpenChange,
+}: {
+  token: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null)
   const [supported, setSupported] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -127,25 +136,7 @@ export default function Library({ token }: { token: string }) {
 
   return (
     <>
-      <button
-        type="button"
-        className="library-fab btn-primary"
-        onClick={() => setOpen(true)}
-        title="Browse indexed documents"
-      >
-        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-          <path
-            d="M2 4.5l2-2h3l1.5 1.5H14v8.5H2z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinejoin="round"
-          />
-        </svg>
-        Library
-      </button>
-
-      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+      {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
       <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open}>
         <div className="drawer-head">
@@ -154,7 +145,7 @@ export default function Library({ token }: { token: string }) {
           <button
             type="button"
             className="drawer-close"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Close library"
           >
             ✕

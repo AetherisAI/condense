@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 /** One downloadable build of the desktop ingestion agent. */
 type Build = {
@@ -51,53 +51,31 @@ const BUILDS: Build[] = [
 ]
 
 /**
- * A "Download the agent" chip that sits just under the System chip (same pill design) and opens a
- * right-side drawer — identical mechanics to SystemMenu — offering the desktop ingestion agent for
- * each OS. Downloads are public static files under /downloads (no token), so this panel needs no
- * props. Closes on backdrop-click or Escape.
+ * A "Download the agent" drawer offering the desktop ingestion agent for each OS. Downloads are
+ * public static files under /downloads (no token). Its own chip trigger is gone (D57/Task U1;
+ * temporary until U6 absorbs this into the System drawer) — `open` is controlled from the
+ * workbench topbar's "Agent" button. Closes on backdrop-click or Escape.
  */
-export default function AgentMenu() {
-  const [open, setOpen] = useState(false)
-
+export default function AgentMenu({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   // Dismiss on Escape while open — outside clicks are caught by the drawer backdrop.
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') onOpenChange(false)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [open, onOpenChange])
 
   return (
     <>
-      <div className="agentbar">
-        <button
-          type="button"
-          className="sys-chip"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Agent
-        </button>
-      </div>
-
-      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+      {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
       <aside
         className={`drawer${open ? ' open' : ''}`}
@@ -110,7 +88,7 @@ export default function AgentMenu() {
           <button
             type="button"
             className="drawer-close"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Close agent panel"
           >
             ✕

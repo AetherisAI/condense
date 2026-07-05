@@ -39,15 +39,24 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 #root {
   width: 100%;
-  min-height: 100svh;
+  height: 100svh;
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
   background: var(--page-bg);
+  /* The workbench (`App.tsx`'s `.workbench`) is the only page and fills exactly 100svh — its own
+     conversation stream (`.chat-stream`) is the ONLY scrollable region, so the page itself never
+     scrolls (D57/Task U1). */
+  overflow: hidden;
 }
 
 h1,
