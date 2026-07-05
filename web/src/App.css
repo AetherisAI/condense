@@ -1218,6 +1218,98 @@ button:disabled {
   margin: 0;
 }
 
+/* ---- Find turns (D57/Task U3) ------------------------------------------------ */
+/* The retrieval-only sibling of an ingest turn (`FindTurn.tsx`'s `FindTurnCard`) — a ranked
+   result list rendered client-side, no LLM involved. Reuses `.source-head`/`.badge`/`.snippet`
+   (Search.tsx's own citation markup) for each row's head + quote; only the rank badge, the
+   clickable-row toggle, and the top-match tint are new. */
+.find-turn-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+}
+
+.find-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.find-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--page-bg);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.find-row:hover {
+  border-color: var(--border-strong);
+}
+
+.find-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* Top match — visually first-class but calm: the same accent family already used for query-term
+   hits/GK segments, not a new hue. */
+.find-row-top {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.find-rank {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+}
+
+.find-row-top .find-rank {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.find-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* A quiet chip for `modified_at` — same visual weight as `.badge-score`, not accent-tinted. */
+.badge-date {
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+}
+
+/* Overrides `.snippet-clamp`'s 3-line clamp down to 2 for Find rows (source order breaks the tie
+   — both are single-class selectors of equal specificity, and this rule is declared later). */
+.find-snippet-clamp {
+  -webkit-line-clamp: 2;
+}
+
 /* ---- Documents: drop zone + queued list ------------------------------------ */
 .ingest-head {
   display: flex;
@@ -1752,8 +1844,11 @@ button:disabled {
   gap: 8px;
 }
 
-/* ---- Grounding mode selector (D46) — a compact 3-way segmented pill, same visual language
-   as the Search/Chat tab bar (`.tabs`/`.tab-btn`), scaled down for a header control. ------- */
+/* ---- Segmented pill (D46; generic since D57/Task U3) — a compact segmented control, same
+   visual language as the Search/Chat tab bar (`.tabs`/`.tab-btn`), scaled down for a header
+   control. Originally the grounding mode selector; `Composer.tsx`'s Ask/Find `ModeToggle` reuses
+   these same two classes rather than duplicating the CSS, since the pattern itself was never
+   grounding-specific. ------------------------------------------------------------------------ */
 .grounding-select {
   display: inline-flex;
   gap: 2px;
@@ -1790,6 +1885,13 @@ button:disabled {
 
 .grounding-btn:focus-visible {
   box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* Dimmed, non-interactive state (D57/Task U3) — the grounding toggle only means something in Ask
+   mode; while Find is active it stays in place (layout stability) but reads as switched off. */
+.grounding-select.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* ---- Composer attach button (D57/Task U2) ----------------------------------- */

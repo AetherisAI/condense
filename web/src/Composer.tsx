@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { fmtSize, postIngest } from './ingestClient'
 import { persistGrounding, type ComposerGroundingMode } from './grounding'
+import { apiFetch } from './api'
+import type { FindHit, FindTurn } from './FindTurn'
 
 /**
- * The workbench's composer (D57/Task U2) — extracted out of `Chat.tsx`: the grounding toggle, the
- * input row (attach + text + Send), and in-chat ingest (attach button, hidden multi-file input,
- * and a whole-window drag-drop overlay). Chat still owns the conversation thread and the request
- * that answers it — this component only reports intent up (`onSend`, `onGroundingChange`) and
- * drives ingest turns into that same thread via `onIngestStart`/`onIngestUpdate`, since an ingest
- * turn must render inline, in order, alongside the answer/user turns it's a sibling of.
+ * The workbench's composer (D57/Task U2+U3) — extracted out of `Chat.tsx`: the Ask/Find mode
+ * segment, the grounding toggle, the input row (attach + text + Send), and in-chat ingest (attach
+ * button, hidden multi-file input, and a whole-window drag-drop overlay). Chat still owns the
+ * conversation thread — this component only reports intent up (`onSend`, `onGroundingChange`) and
+ * drives ingest/find turns into that same thread via their own start/update callback pairs, since
+ * both must render inline, in order, alongside the answer/user turns they're siblings of.
  *
  * **Grounding (D46, UI-only change):** the old Strict/Hybrid/Open 3-way pill is now a 2-state
  * `Corpus only ⇄ + General knowledge` toggle. This is a UI simplification ONLY — "hybrid" stays a
@@ -16,7 +18,44 @@ import { persistGrounding, type ComposerGroundingMode } from './grounding'
  * conversations that already recorded it; this toggle just never offers it as a choice going
  * forward, and `loadStoredGrounding` migrates anyone's remembered "hybrid" preference to "open"
  * (the bucket the API always treated it closest to for a corpus-first assistant).
+ *
+ * **Mode (D57/Task U3):** `Ask` is today's `/v1/answer` flow (unchanged). `Find` is retrieval-only
+ * — this component itself calls `POST /v1/tools/search` (the toolbox's raw-retrieval primitive,
+ * D57's product statement: Find mode IS the toolbox's search tool) and renders a `FindTurn`, no
+ * LLM involved. The grounding toggle only means something for Ask, so it's dimmed/disabled (never
+ * hidden — layout stability) while Find is active.
  */
+
+type ComposerMode = 'ask' | 'find'
+
+const MODE_STORAGE_KEY = 'composerMode'
+
+function loadStoredMode(): ComposerMode {
+  return localStorage.getItem(MODE_STORAGE_KEY) === 'find' ? 'find' : 'ask'
+}
+
+/** The compact 2-way segmented toggle for Ask/Find — same visual language/classes as the
+ * grounding toggle below (`.grounding-select`/`.grounding-btn` are a generic segmented-pill
+ * pattern, not grounding-specific, so both toggles share it rather than duplicating the CSS). */
+function ModeToggle({ value, onChange }: { value: ComposerMode; onChange: (mode: ComposerMode) => void }) {
+  return (
+    <div className="grounding-select" role="radiogroup" aria-label="Composer mode">
+      {(['ask', 'find'] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          role="radio"
+          aria-checked={value === mode}
+          className={`grounding-btn${value === mode ? ' active' : ''}`}
+          title={mode === 'ask' ? 'Ask — a conversational answer, with sources.' : 'Find — ranked results from your corpus, no LLM.'}
+          onClick={() => onChange(mode)}
+        >
+          {mode === 'ask' ? 'Ask' : 'Find'}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 const GROUNDING_LABELS: Record<ComposerGroundingMode, string> = {
   strict: 'Corpus only',
@@ -29,16 +68,28 @@ const GROUNDING_HINTS: Record<ComposerGroundingMode, string> = {
 }
 
 /** The compact 2-way segmented toggle — same visual language/classes as the retired 3-way pill
- * (`.grounding-select`/`.grounding-btn`), so the look carries over unchanged. */
+ * (`.grounding-select`/`.grounding-btn`), so the look carries over unchanged.
+ *
+ * `disabled` (D57/Task U3) dims the whole control and blocks interaction without unmounting it —
+ * grounding only means something for Ask mode, but layout stability means it stays in place
+ * (never hidden) while Find is active, with a `title` explaining why. */
 function GroundingToggle({
   value,
   onChange,
+  disabled = false,
 }: {
   value: ComposerGroundingMode
   onChange: (mode: ComposerGroundingMode) => void
+  disabled?: boolean
 }) {
   return (
-    <div className="grounding-select" role="radiogroup" aria-label="Grounding mode">
+    <div
+      className={`grounding-select${disabled ? ' is-disabled' : ''}`}
+      role="radiogroup"
+      aria-label="Grounding mode"
+      aria-disabled={disabled}
+      title={disabled ? 'Grounding only applies to Ask mode.' : undefined}
+    >
       {(['strict', 'open'] as const).map((mode) => (
         <button
           key={mode}
@@ -47,6 +98,7 @@ function GroundingToggle({
           aria-checked={value === mode}
           className={`grounding-btn${value === mode ? ' active' : ''}`}
           title={GROUNDING_HINTS[mode]}
+          disabled={disabled}
           onClick={() => onChange(mode)}
         >
           {GROUNDING_LABELS[mode]}
@@ -158,6 +210,11 @@ export type ComposerProps = {
   onIngestStart: (turn: IngestTurn) => void
   /** Patches a previously-started ingest turn (by id) with its files' settled outcomes. */
   onIngestUpdate: (id: string, files: IngestFileEntry[]) => void
+  /** Appends a brand-new Find turn (empty `hits`, no error yet) to the conversation stream
+   * (D57/Task U3) — mirrors `onIngestStart`'s shape. */
+  onFindStart: (turn: FindTurn) => void
+  /** Patches a previously-started Find turn (by id) with its settled hits, or an error. */
+  onFindUpdate: (id: string, hits: FindHit[], error: string | null) => void
 }
 
 export default function Composer({
@@ -170,9 +227,56 @@ export default function Composer({
   onGroundingChange,
   onIngestStart,
   onIngestUpdate,
+  onFindStart,
+  onFindUpdate,
 }: ComposerProps) {
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [mode, setModeState] = useState<ComposerMode>(loadStoredMode)
+  const [finding, setFinding] = useState(false)
+
+  function setMode(next: ComposerMode) {
+    setModeState(next)
+    localStorage.setItem(MODE_STORAGE_KEY, next)
+  }
+
+  /** Find mode's send path (D57/Task U3) — retrieval only, no LLM: embeds the query and reranks
+   * against the corpus via the toolbox's own search tool. Mirrors `handleFiles`' start/settle
+   * shape (append an in-flight turn, then patch it once settled) so a Find turn renders inline
+   * the moment it's fired, same as an ingest turn. */
+  async function runFind() {
+    const query = input.trim()
+    if (!query || busy || finding) return
+    onInputChange('')
+    const turnId = crypto.randomUUID()
+    onFindStart({ id: turnId, role: 'find', query, hits: [] as FindHit[], error: null })
+    setFinding(true)
+    try {
+      const resp = await apiFetch('/v1/tools/search', token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      })
+      if (!resp.ok) {
+        throw new Error(`Find failed: ${resp.status} ${resp.statusText}`)
+      }
+      const data = (await resp.json()) as { hits: FindHit[] }
+      onFindUpdate(turnId, data.hits, null)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      onFindUpdate(turnId, [], msg)
+    } finally {
+      setFinding(false)
+    }
+  }
+
+  function handleSend() {
+    if (mode === 'find') {
+      void runFind()
+    } else {
+      onSend()
+    }
+  }
 
   async function handleFiles(files: File[]) {
     if (files.length === 0) return
@@ -295,7 +399,8 @@ export default function Composer({
 
       <div className="composer-inner">
         <div className="composer-pills">
-          <GroundingToggle value={grounding} onChange={setGrounding} />
+          <ModeToggle value={mode} onChange={setMode} />
+          <GroundingToggle value={grounding} onChange={setGrounding} disabled={mode === 'find'} />
         </div>
         <div className="row">
           <button
@@ -323,15 +428,20 @@ export default function Composer({
           <input
             type="text"
             value={input}
-            placeholder="Ask a question…"
-            disabled={busy}
+            placeholder={mode === 'find' ? 'Find in your documents…' : 'Ask a question…'}
+            disabled={busy || finding}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') onSend()
+              if (e.key === 'Enter') handleSend()
             }}
           />
-          <button type="button" className="btn-primary" onClick={onSend} disabled={busy || !input.trim()}>
-            {busy ? 'Thinking…' : 'Send'}
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleSend}
+            disabled={busy || finding || !input.trim()}
+          >
+            {finding ? 'Finding…' : busy ? 'Thinking…' : 'Send'}
           </button>
         </div>
       </div>
