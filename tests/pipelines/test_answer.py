@@ -695,7 +695,18 @@ async def test_hybrid_mode_flags_from_general_knowledge_when_model_labels_conten
 async def test_hybrid_mode_does_not_flag_when_answer_stays_fully_grounded(
     settings, embedder, store
 ) -> None:
-    completer = FakeToolCompleter([ToolCompletion(content="Per the docs, the answer is X.")])
+    """D59 note: this scenario's completer now performs a real `search` before answering. The
+    new provenance backstop (D59, below) would otherwise reclassify a fully-unmarked answer with
+    ZERO corpus evidence as general knowledge regardless of what its text claims to be — a
+    genuinely grounded, unmarked answer needs genuine tool-call evidence behind it, not just the
+    absence of a marker, to keep this test's "no false positive" premise intact and realistic."""
+    await _seed(store, embedder, settings)
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(tool_calls=(ToolCall(name="search", arguments={"query": "X"}),)),
+            ToolCompletion(content="Per the docs, the answer is X."),
+        ]
+    )
     pipeline = _pipeline(completer, embedder, store, settings)
 
     events = await _collect(pipeline, "what is X?", grounding="hybrid")
@@ -969,6 +980,190 @@ async def test_open_mode_answers_from_general_knowledge_after_empty_search_hits(
     assert grounding.data["from_general_knowledge"] is True
     done = events[-1]
     assert done.data["truncated"] is False
+
+
+# --- D59: reliable general-knowledge marking — provenance backstop + tolerant markers --------
+#
+# Motivating live bug (Quentin, screenshot evidence, production, open mode): a pure
+# general-knowledge question ("What is a glioblastoma?") got answered with NO tool calls, and
+# the model wrote "...(General knowledge)." — parenthetical, trailing — instead of the exact
+# `[General knowledge]` block-prefix marker the prompt asks for. The OLD segmenter's exact-
+# substring check found no marker at all, so the whole answer came back as one "grounded"
+# segment — no purple anywhere in the UI, and the raw "(General knowledge)." literal shipped as
+# plain visible text. Three layers close this: a deterministic provenance backstop (no corpus
+# evidence this turn ⇒ whole answer is general, regardless of markers), tolerant marker parsing
+# (recognizes bracket/parenthetical/colon-prefixed variants, at a block's start OR its end), and
+# a strict-guard extension to the same variant set (D51 only ever matched the bracket literal).
+
+
+async def test_open_mode_zero_tool_calls_trailing_variant_marked_general_knowledge(
+    settings, embedder, store
+) -> None:
+    """The exact screenshot shape: zero tool calls, a trailing parenthetical variant instead of
+    the documented marker. The whole answer must come back as ONE general-knowledge segment,
+    `from_general_knowledge=True`, with the literal marker text stripped from the segment."""
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(
+                content=(
+                    "Glioblastoma is a highly aggressive brain tumor arising from glial cells "
+                    "(General knowledge)."
+                )
+            )
+        ]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "What is a glioblastoma?", grounding="open")
+
+    grounding = next(e for e in events if e.type == "grounding")
+    assert grounding.data["from_general_knowledge"] is True
+    segments = grounding.data["segments"]
+    assert len(segments) == 1
+    assert segments[0]["kind"] == "general_knowledge"
+    assert "glioblastoma" in segments[0]["text"].lower()
+    assert "general knowledge" not in segments[0]["text"].lower()
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    assert "glioblastoma" in answer_delta.data["text"].lower()
+
+
+async def test_open_mode_zero_tool_calls_unmarked_answer_still_marked_general_knowledge(
+    settings, embedder, store
+) -> None:
+    """The provenance backstop in isolation, with NO marker of any kind in the text at all —
+    tolerant parsing alone finds nothing here (as before D59, this would report a single
+    "grounded" segment). Zero tool calls this turn means no corpus evidence could exist, so the
+    deterministic provenance rule overrides regardless — closing the gap for a model that fails
+    to self-label at all, not just one that uses an unrecognized marker phrasing."""
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(
+                content="Glioblastomas are aggressive brain tumors arising from glial cells."
+            )
+        ]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "What is a glioblastoma?", grounding="open")
+
+    grounding = next(e for e in events if e.type == "grounding")
+    assert grounding.data["from_general_knowledge"] is True
+    assert grounding.data["segments"] == [
+        {
+            "text": "Glioblastomas are aggressive brain tumors arising from glial cells.",
+            "kind": "general_knowledge",
+        }
+    ]
+
+
+async def test_open_mode_real_hits_no_marker_stays_grounded(settings, embedder, store) -> None:
+    """No false positives (mirrors the existing hybrid fixture above, now in open mode): when
+    this turn actually gathered real corpus evidence, an unmarked answer must stay fully
+    grounded — the provenance backstop is scoped to the NO-evidence case only."""
+    await _seed(store, embedder, settings)
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(tool_calls=(ToolCall(name="search", arguments={"query": "Alice"}),)),
+            ToolCompletion(content="Alice's CV is on file."),
+        ]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "Tell me about Alice", grounding="open")
+
+    grounding = next(e for e in events if e.type == "grounding")
+    assert grounding.data["from_general_knowledge"] is False
+    assert grounding.data["segments"] == [{"text": "Alice's CV is on file.", "kind": "grounded"}]
+
+
+async def test_hybrid_mixed_answer_trailing_parenthetical_variant_splits_and_strips(
+    settings, embedder, store
+) -> None:
+    """A genuinely mixed answer (real corpus evidence gathered) using the trailing/parenthetical
+    variant for its general-knowledge sentence — tolerant parsing must split it correctly (the
+    grounded lead stays its own segment) and strip the literal marker text, without the
+    provenance backstop clobbering it (real evidence was used, so it does not apply)."""
+    await _seed(store, embedder, settings)
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(tool_calls=(ToolCall(name="search", arguments={"query": "Alice"}),)),
+            ToolCompletion(
+                content=(
+                    "Alice's CV lists five years of Python experience (alice.md, p.1).\n"
+                    "The Python language itself was first released in 1991 (General knowledge)."
+                )
+            ),
+        ]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "Tell me about Alice and Python", grounding="hybrid")
+
+    grounding = next(e for e in events if e.type == "grounding")
+    assert grounding.data["from_general_knowledge"] is True
+    segments = grounding.data["segments"]
+    assert segments[0]["kind"] == "grounded"
+    assert "alice.md" in segments[0]["text"]
+    assert segments[-1]["kind"] == "general_knowledge"
+    assert "1991" in segments[-1]["text"]
+    assert "general knowledge" not in segments[-1]["text"].lower()
+
+
+async def test_hybrid_mode_recognizes_colon_prefixed_marker_variant(
+    settings, embedder, store
+) -> None:
+    """The `General knowledge:` colon-prefixed variant, mixed with real grounded content — must
+    split and strip exactly like the documented bracket form does."""
+    await _seed(store, embedder, settings)
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(tool_calls=(ToolCall(name="search", arguments={"query": "Alice"}),)),
+            ToolCompletion(
+                content=(
+                    "Alice's CV is on file (alice.md, p.1). "
+                    "General knowledge: Python is a general-purpose programming language."
+                )
+            ),
+        ]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "Tell me about Alice and Python", grounding="hybrid")
+
+    grounding = next(e for e in events if e.type == "grounding")
+    assert grounding.data["from_general_knowledge"] is True
+    segments = grounding.data["segments"]
+    assert segments[0]["kind"] == "grounded"
+    assert "alice.md" in segments[0]["text"]
+    assert segments[-1]["kind"] == "general_knowledge"
+    assert "python is a general-purpose programming language" in segments[-1]["text"].lower()
+    assert "general knowledge:" not in segments[-1]["text"].lower()
+
+
+async def test_strict_mode_replaces_leaked_general_knowledge_parenthetical_variant(
+    settings, embedder, store
+) -> None:
+    """D51's strict OUTPUT guard extended to the same tolerant variant set (D59): a
+    parenthetical variant must trigger the SAME abstention the exact bracket literal already
+    does — the pre-existing D51 tests above (bracket form, mid-sentence bracket form) are
+    unmodified and still green, this only ADDS coverage for a variant that used to leak past."""
+    completer = FakeToolCompleter(
+        [ToolCompletion(content="Paris is the capital of France (General knowledge).")]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "What's the capital of France?", grounding="strict")
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    assert "paris" not in answer_delta.data["text"].lower()
+    assert "documents don't cover this" in answer_delta.data["text"].lower()
+    grounding = next(e for e in events if e.type == "grounding")
+    assert grounding.data["grounding_used"] == "strict"
+    assert grounding.data["from_general_knowledge"] is False
+    assert len(grounding.data["segments"]) == 1
+    assert grounding.data["segments"][0]["kind"] == "grounded"
+    assert "paris" not in grounding.data["segments"][0]["text"].lower()
 
 
 # --- BUG-1 (D48): the SSE stream must ALWAYS reach "done", even on an unexpected failure -----
