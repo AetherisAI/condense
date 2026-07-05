@@ -4,9 +4,11 @@ import Logo from './Logo'
  * The workbench's sticky top bar (D57/Task U1): the small animated Condense mark + wordmark on
  * the left (the brand once the empty-state hero has collapsed — see `Chat.tsx`'s `.hero`), and a
  * right-hand cluster of buttons that open the EXISTING drawers/components unchanged — this file
- * only owns the triggers, never the drawer contents (`SystemMenu`/`AgentMenu`/`Library`/
- * `ChatHistory` keep their own markup, just rendered elsewhere with their `open` state lifted
- * here so a single button per drawer can live in one place instead of four floating chips).
+ * only owns the triggers, never the drawer contents (`SystemMenu`/`Library`/`ChatHistory` keep
+ * their own markup, just rendered elsewhere with their `open` state lifted here so a single
+ * button per drawer can live in one place instead of four floating chips). The standalone "Agent"
+ * button/drawer is retired (D57/Task U6) — its downloads now live inside the System drawer's
+ * "Folder agent" section.
  */
 export default function TopBar({
   hasTurns,
@@ -16,8 +18,6 @@ export default function TopBar({
   onNewChat,
   libraryOpen,
   onLibraryClick,
-  agentOpen,
-  onAgentClick,
   systemOpen,
   onSystemClick,
 }: {
@@ -33,8 +33,6 @@ export default function TopBar({
   onNewChat: () => void
   libraryOpen: boolean
   onLibraryClick: () => void
-  agentOpen: boolean
-  onAgentClick: () => void
   systemOpen: boolean
   onSystemClick: () => void
 }) {
@@ -66,14 +64,6 @@ export default function TopBar({
           aria-expanded={libraryOpen}
         >
           Library
-        </button>
-        <button
-          type="button"
-          className="topbar-btn"
-          onClick={onAgentClick}
-          aria-expanded={agentOpen}
-        >
-          Agent
         </button>
         <button
           type="button"

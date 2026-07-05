@@ -7,6 +7,7 @@ import { apiFetch } from './api'
 import Composer, { IngestTurnCard, type IngestFileEntry, type IngestTurn } from './Composer'
 import { FindTurnCard, type FindHit, type FindTurn } from './FindTurn'
 import { loadStoredGrounding, type ComposerGroundingMode } from './grounding'
+import { fetchDocuments } from './documents'
 
 /** Grounding mode (D46) — the trust boundary between the corpus and the model's own general
  * knowledge. Mirrors ``api.schemas.AnswerRequest.grounding``/``Settings.answer_grounding_
@@ -128,6 +129,10 @@ type ConversationDetail = {
  * Search tab is active, so a plain `useState` alone would lose it; refetching the conversation
  * on remount is simpler and cheaper than lifting the whole thread's state up into `App`. */
 const STORAGE_KEY = 'chatConversationId'
+
+/** Once dismissed, the empty-corpus nudge (D57/Task U6) never shows again — a plain boolean
+ * flag, same "once and done" shape as `libraryOpen`'s own localStorage read in `App.tsx`. */
+const NUDGE_DISMISS_KEY = 'agentNudgeDismissed'
 
 /** Just the file name, matching Search.tsx's citation display. */
 function fileName(path: string): string {
@@ -391,6 +396,10 @@ type ChatProps = {
   // upload via the two flags `Composer` reports back up) into the single boolean the workbench
   // shell drives the topbar mark with. Same lift pattern as `onTurnsChange` above.
   onBusyChange?: (busy: boolean) => void
+  // Empty-corpus nudge's "Get the agent" button (D57/Task U6) — opens the System drawer already
+  // scrolled to its "Folder agent" section; implemented in `App.tsx` since that's where the
+  // drawer's own open state and ref both live.
+  onOpenAgent?: () => void
 }
 
 /**
@@ -401,7 +410,7 @@ type ChatProps = {
  * refetched on mount) and a History drawer lists/reopens/deletes past ones.
  */
 const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
-  { token, historyOpen, onHistoryOpenChange, onTurnsChange, onBusyChange },
+  { token, historyOpen, onHistoryOpenChange, onTurnsChange, onBusyChange, onOpenAgent },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([])
@@ -419,6 +428,43 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // Auto-scroll pins to the bottom while an answer streams in, but a user who scrolls up to
   // reread something is respected — never yanked back down (P1).
   const pinnedToBottomRef = useRef(true)
+  // Empty-corpus nudge (D57/Task U6) — `corpusEmpty` starts `false` (not "show"/"unknown") so the
+  // nudge never flashes on while `/documents` is still loading; it flips to `true` only once a
+  // response CONFIRMS both that document listing is supported and that it returned zero rows.
+  const [corpusEmpty, setCorpusEmpty] = useState(false)
+  const [nudgeDismissed, setNudgeDismissed] = useState(
+    () => localStorage.getItem(NUDGE_DISMISS_KEY) === 'true',
+  )
+
+  // Checks the corpus size once a token exists, independent of the Library drawer ever opening
+  // (D57/Task U6) — the nudge must be able to show on the very first empty-state landing, before
+  // the user has touched Library at all. Reuses `fetchDocuments` (`documents.ts`) rather than a
+  // second inlined `/documents` fetch, same shared helper `Library.tsx` calls. `cancelled` avoids
+  // a stale response (e.g. from a token that's since changed again) landing after a fresher one.
+  useEffect(() => {
+    if (!token) {
+      setCorpusEmpty(false)
+      return
+    }
+    let cancelled = false
+    fetchDocuments(token)
+      .then((data) => {
+        if (!cancelled) setCorpusEmpty(data.supported && data.documents.length === 0)
+      })
+      .catch(() => {
+        if (!cancelled) setCorpusEmpty(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  function dismissNudge() {
+    localStorage.setItem(NUDGE_DISMISS_KEY, 'true')
+    setNudgeDismissed(true)
+  }
+
+  const showAgentNudge = corpusEmpty && !nudgeDismissed
 
   async function fetchConversation(id: string): Promise<ConversationDetail | null> {
     const resp = await apiFetch(`/v1/conversations/${encodeURIComponent(id)}`, token)
@@ -671,6 +717,28 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               <p className="hero-hint">
                 Drop files anywhere — or point the folder agent at a directory.
               </p>
+
+              {showAgentNudge && (
+                <div className="agent-nudge" role="status">
+                  <p className="agent-nudge-text">
+                    Your corpus is empty — drop files here, or install the folder agent to watch
+                    a directory.
+                  </p>
+                  <div className="agent-nudge-actions">
+                    <button type="button" className="agent-nudge-cta" onClick={onOpenAgent}>
+                      Get the agent
+                    </button>
+                    <button
+                      type="button"
+                      className="agent-nudge-dismiss"
+                      onClick={dismissNudge}
+                      aria-label="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             turns.map((turn) => {

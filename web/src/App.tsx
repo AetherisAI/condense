@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Library from './Library'
 import Chat, { type ChatHandle } from './Chat'
 import SlashField from './SlashField'
-import SystemMenu from './SystemMenu'
-import AgentMenu from './AgentMenu'
+import SystemMenu, { type SystemMenuHandle } from './SystemMenu'
 import TopBar from './TopBar'
 import './App.css'
 
@@ -14,7 +13,10 @@ import './App.css'
  * stay in the tree for U2/U3 to absorb but are not mounted here. Holds the one shared bearer
  * token (entered in the System drawer, persisted to localStorage) plus which drawer (if any) is
  * open — lifted up here so a single topbar button per drawer replaces the old floating chips,
- * without touching the drawers' own markup/behavior.
+ * without touching the drawers' own markup/behavior. The standalone Agent drawer is retired
+ * (D57/Task U6) — its downloads now live inside `SystemMenu`'s own "Folder agent" section, opened
+ * (and scrolled to) via `openAgentSection` below when the empty-corpus nudge's "Get the agent"
+ * button is clicked.
  */
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('bearerToken') ?? '')
@@ -24,13 +26,13 @@ export default function App() {
   // toggle, it never needs to know WHICH flow is running.
   const [isBusy, setIsBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  // Library's open state persists across reloads (D57/Task U5) — History/Agent/System stay
+  // Library's open state persists across reloads (D57/Task U5) — History/System stay
   // session-only (reopened via their topbar button same as before); Library is the one drawer
   // worth keeping open across a refresh since browsing the corpus is often a standalone task.
   const [libraryOpen, setLibraryOpen] = useState(() => localStorage.getItem('libraryOpen') === 'true')
-  const [agentOpen, setAgentOpen] = useState(false)
   const [systemOpen, setSystemOpen] = useState(false)
   const chatRef = useRef<ChatHandle>(null)
+  const systemMenuRef = useRef<SystemMenuHandle>(null)
 
   // Persist the token so it doesn't have to be re-entered on every page refresh.
   useEffect(() => {
@@ -40,6 +42,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('libraryOpen', String(libraryOpen))
   }, [libraryOpen])
+
+  // Opens the System drawer already scrolled to its "Folder agent" section (D57/Task U6) — the
+  // empty-corpus nudge's "Get the agent" button drives this; the drawer is always mounted (just
+  // translated off-screen when closed), so the ref's `scrollIntoView` works whether or not it was
+  // already open. `requestAnimationFrame` gives the `open` class one paint to apply first, so the
+  // scroll lands inside a drawer that's actually laid out at its final size.
+  function openAgentSection() {
+    setSystemOpen(true)
+    requestAnimationFrame(() => systemMenuRef.current?.scrollToAgent())
+  }
 
   return (
     <>
@@ -54,8 +66,6 @@ export default function App() {
           onNewChat={() => chatRef.current?.newChat()}
           libraryOpen={libraryOpen}
           onLibraryClick={() => setLibraryOpen(true)}
-          agentOpen={agentOpen}
-          onAgentClick={() => setAgentOpen(true)}
           systemOpen={systemOpen}
           onSystemClick={() => setSystemOpen(true)}
         />
@@ -67,11 +77,17 @@ export default function App() {
           onHistoryOpenChange={setHistoryOpen}
           onTurnsChange={setHasTurns}
           onBusyChange={setIsBusy}
+          onOpenAgent={openAgentSection}
         />
       </div>
 
-      <SystemMenu token={token} setToken={setToken} open={systemOpen} onOpenChange={setSystemOpen} />
-      <AgentMenu open={agentOpen} onOpenChange={setAgentOpen} />
+      <SystemMenu
+        ref={systemMenuRef}
+        token={token}
+        setToken={setToken}
+        open={systemOpen}
+        onOpenChange={setSystemOpen}
+      />
       <Library token={token} open={libraryOpen} onOpenChange={setLibraryOpen} />
     </>
   )
