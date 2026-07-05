@@ -273,3 +273,27 @@ async def test_ensure_ready_called_once_per_batch() -> None:
     await pipeline.ingest(files, TENANT)
 
     assert spy.ensure_ready_calls == 1
+
+
+async def test_ingest_streams_files_one_at_a_time() -> None:
+    """Peak memory guard: the pipeline pulls files lazily (one in flight), it must NOT drain the
+    whole source up front. The route passes an async generator over UploadFiles so only one file's
+    bytes are resident at a time; buffering them all is the RAM-spike regression this locks out.
+    """
+    pipeline = _pipeline(FakeVectorStore(), FakeEmbedder(dim=DIM))
+
+    live = 0
+    max_live = 0
+
+    async def source():
+        nonlocal live, max_live
+        for i in range(5):
+            live += 1  # this file's bytes become resident
+            max_live = max(max_live, live)
+            yield (f"f{i}.md", f"line {i}".encode())
+            live -= 1  # resumed only after the pipeline finished with the previous file
+
+    outcomes = await pipeline.ingest(source(), TENANT)
+
+    assert [o.status for o in outcomes] == ["indexed"] * 5
+    assert max_live == 1  # never more than one file resident; == 5 would mean it buffered them all

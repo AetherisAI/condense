@@ -217,3 +217,17 @@ Found + fixed a real ingest bug while testing a folder of plain-text files end-t
 **Verified live:** the file that failed now ingests (`status: indexed`, 11 chunks) and the query that returned nothing now answers correctly. Full gate green in CI conditions: `ruff check` ✅ · `ruff format --check` ✅ · `pyright` 0 errors ✅ · `pytest` 129 passed ✅. Engine-only; touches no `core/`, `api/`, or `factory.py` — nothing of yours.
 
 **One heads-up (not in this PR):** `/ingest` returns **HTTP 200 even when individual files fail** (the failure sits in `results[].status == "failed"`). Your agent + web UI should surface that so a partial-failure sync doesn't look like a clean one. I can take the route/pipeline side; flag if you'd rather handle the UI signal. — Arthur/Dev A
+
+---
+
+## 2026-07-02 — update 9: `/ingest` RAM-spike fix — streams files one at a time (`fix/ingest-memory`)
+
+A colleague hit a big memory spike on ingest — confirmed and fixed. Decision **A12**. (update 8 is the parallel `feat/agent-download`.)
+
+**Cause:** `POST /ingest` did `payload = [(name, await f.read()) for f in files]` — it read **every** uploaded file fully into one list before ingesting, so peak RAM ≈ the sum of all files in the request. A folder ingest or a couple of 500-page PDFs spiked memory / risked OOM on the shared engine. (The pipeline itself already looped per-file; the route was the buffer.)
+
+**Fix:** the route now passes a **lazy async generator** over the `UploadFile`s (read → yield → `close`), so only one file's bytes are resident at a time. The ingest seam widened from `Sequence[...]` to `IngestFiles = AsyncIterable | Iterable` (new `stream_files()` helper; `IngestPipeline` + `_StubIngest` use `async for`). **Backward-compatible** — lists still work, so no existing-test churn.
+
+**⚠️ Touches your `api/routes.py`** (the `/ingest` handler) and the co-owned `SupportsIngest` seam in `pipelines/ingest.py` — please review. Regression test `test_ingest_streams_files_one_at_a_time` (asserts ≤1 file resident); full suite **130 green**; live multi-file `/ingest` still indexes.
+
+**Related, not in this PR:** the **agent** (`agent/sync.py`) also reads the whole folder into memory before uploading — a client-side spike on the user's machine. Lower priority (their box, not the shared engine); I can stream that next if you want. — Arthur/Dev A

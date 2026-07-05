@@ -36,6 +36,10 @@ _ALLOWED_LINES: frozenset[str] = frozenset(
         '"""In-memory test double for the ``ConversationStore`` seam (``pipelines/answer.py``, '
         "D40).",
         '"""A libSQL-backed store when a Turso database is configured, else the in-memory fake —',
+        # fix/ingest-memory (A12): "in-memory list" describing the old buffering /ingest route —
+        # the same RAM sense as every other allowlisted line above.
+        "read into a single in-memory list, so a large multi-file upload doesn't spike RAM to the "
+        "sum of",
     }
 )
 

@@ -13,7 +13,7 @@ configured) so the default/test path never needs the ``libsql`` extra installed.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from sift.adapters.conversation.fake import FakeConversationStore
@@ -29,7 +29,13 @@ from sift.config import Settings, parse_auth_tokens
 from sift.core.hashing import content_hash
 from sift.core.ports import Completer, Embedder, Parser, Reranker, ToolCompleter, VectorStore
 from sift.pipelines.answer import AnswerPipeline, ConversationStore
-from sift.pipelines.ingest import IngestOutcome, IngestPipeline, SupportsIngest
+from sift.pipelines.ingest import (
+    IngestFiles,
+    IngestOutcome,
+    IngestPipeline,
+    SupportsIngest,
+    stream_files,
+)
 from sift.pipelines.search import SearchPipeline
 from sift.pipelines.tools import ToolRegistry, build_tool_registry
 
@@ -72,14 +78,14 @@ class _StubIngest:
 
     async def ingest(
         self,
-        files: Sequence[tuple[str, bytes]],
+        files: IngestFiles,
         tenant: str,
         modified_at: Mapping[str, str] | None = None,
         metadata: Mapping[str, dict[str, str]] | None = None,
     ) -> list[IngestOutcome]:
         return [
             IngestOutcome(path=name, status="indexed", content_hash=content_hash(data), chunks=1)
-            for name, data in files
+            async for name, data in stream_files(files)
         ]
 
 

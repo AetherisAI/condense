@@ -1,15 +1,17 @@
 """The ingest pipeline — parse → chunk → embed → upsert, with dedup and failure isolation.
 
 Ports only (the dependency rule: ``pipelines`` never imports an adapter). It takes a *batch*
-of ``(filename, bytes)`` (matching the multipart ``/ingest`` route) and returns one
-:class:`IngestOutcome` per input file, in input order. The pin check happens once up front so a
+of ``(filename, bytes)`` — a plain list (JSON ingest, tests) or a lazy async stream (the
+multipart ``/ingest`` route, so peak RAM stays at roughly one file, not the sum of the batch;
+see :data:`IngestFiles`/:func:`stream_files`) — and returns one :class:`IngestOutcome` per
+input file, in input order. The pin check happens once up front so a
 :class:`~sift.core.errors.ModelPinMismatch` fails the whole batch fast (HTTP 409 in Dev B's
 routes); any other per-file error is isolated so its siblings still index.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import Literal, Protocol, runtime_checkable
 
@@ -17,6 +19,22 @@ from sift.core.errors import ModelPinMismatch
 from sift.core.hashing import content_hash
 from sift.core.ports import Chunker, Embedder, Parser, VectorStore
 from sift.core.types import Chunk
+
+# A source of ``(filename, bytes)`` files. Accepts a lazy **async** stream — the ``/ingest`` route
+# passes an async generator that reads one UploadFile at a time, so only a single file's bytes are
+# resident (bounded peak RAM, no spike on a large multi-file upload) — or any plain iterable (a
+# list, in tests). Normalized to one async stream by :func:`stream_files`.
+IngestFiles = AsyncIterable[tuple[str, bytes]] | Iterable[tuple[str, bytes]]
+
+
+async def stream_files(files: IngestFiles) -> AsyncIterator[tuple[str, bytes]]:
+    """Yield ``(filename, bytes)`` from either an async or a sync source as one async stream."""
+    if isinstance(files, AsyncIterable):
+        async for item in files:
+            yield item
+    else:
+        for item in files:
+            yield item
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -36,7 +54,7 @@ class SupportsIngest(Protocol):
 
     async def ingest(
         self,
-        files: Sequence[tuple[str, bytes]],
+        files: IngestFiles,
         tenant: str,
         modified_at: Mapping[str, str] | None = None,
         metadata: Mapping[str, dict[str, str]] | None = None,
@@ -65,7 +83,7 @@ class IngestPipeline:
 
     async def ingest(
         self,
-        files: Sequence[tuple[str, bytes]],
+        files: IngestFiles,
         tenant: str,
         modified_at: Mapping[str, str] | None = None,
         metadata: Mapping[str, dict[str, str]] | None = None,
@@ -75,7 +93,7 @@ class IngestPipeline:
         mtimes = modified_at or {}
         file_metadata = metadata or {}
         outcomes: list[IngestOutcome] = []
-        for filename, data in files:
+        async for filename, data in stream_files(files):
             try:
                 digest = content_hash(data)
                 if digest in known:

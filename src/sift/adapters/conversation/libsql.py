@@ -61,9 +61,7 @@ _ALTER_CONVERSATIONS_ADD_SOURCES = "ALTER TABLE conversations ADD COLUMN sources
 _CONVERSATIONS_HAS_GROUNDING_USED = (
     "SELECT 1 FROM pragma_table_info('conversations') WHERE name = 'grounding_used'"
 )
-_ALTER_CONVERSATIONS_ADD_GROUNDING_USED = (
-    "ALTER TABLE conversations ADD COLUMN grounding_used TEXT"
-)
+_ALTER_CONVERSATIONS_ADD_GROUNDING_USED = "ALTER TABLE conversations ADD COLUMN grounding_used TEXT"
 _CONVERSATIONS_HAS_FROM_GENERAL_KNOWLEDGE = (
     "SELECT 1 FROM pragma_table_info('conversations') WHERE name = 'from_general_knowledge'"
 )
