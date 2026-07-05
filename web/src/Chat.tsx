@@ -472,6 +472,22 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     return (await resp.json()) as ConversationDetail
   }
 
+  // Rehydration staleness guard (D57/Task U8) — a monotonically-increasing "session generation"
+  // bumped by every action that authoritatively decides which conversation is active: `send()`
+  // (starts a turn — possibly a brand-new conversation), `newChat()` (clears to no conversation),
+  // and `openConversation()` (switches to an explicit, user-picked one). The mount-time rehydrate
+  // effect below — and `openConversation` itself — snapshot the generation the instant they start
+  // their fetch; if it has moved by the time the network round-trip resolves, something else has
+  // ALREADY decided what "active" means and the late result is discarded instead of stomping it.
+  // This is the same "am I still the one who should apply?" shape as the `cancelled` flags used
+  // elsewhere in this file (the corpus-empty check above, this effect's own cleanup) but a plain
+  // per-effect `cancelled` boolean only guards against ITS OWN effect re-running (e.g. `token`
+  // changing) — it says nothing about a completely different action (a send, a New chat click)
+  // racing ahead of it, which is exactly the bug this guards against (found live in QA: a slow
+  // rehydrate landing after the user had already sent a message or started a new chat wiped that
+  // fresh state out from under them).
+  const sessionGenerationRef = useRef(0)
+
   // Rehydrate the last-open conversation on mount — the effect that makes switching Search ->
   // Chat -> Search -> Chat keep the same conversation in view (P2) even though this component
   // fully unmounts while the Search tab is active.
@@ -479,10 +495,18 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     if (!token) return
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) return
+    const generation = sessionGenerationRef.current
     let cancelled = false
     async function rehydrate() {
       const detail = await fetchConversation(stored!).catch(() => null)
       if (cancelled) return
+      // Stale guard: apply this fetch's result ONLY if nothing has moved the "active conversation"
+      // since it started — no send, New chat, or History switch raced ahead of it. Because those
+      // are the only three actions that change what's active, an unchanged generation guarantees
+      // both halves of the requirement at once: the active conversation is still whatever it was
+      // when this fetch began (i.e. still unset, about to become `stored`), AND none of those
+      // three actions started in the meantime.
+      if (sessionGenerationRef.current !== generation) return
       if (detail) {
         setConversationId(detail.conversation_id)
         setTurns(turnsFromDetail(detail))
@@ -579,6 +603,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   function newChat() {
+    // Bumps first (D57/Task U8) — invalidates any in-flight rehydration fetch before the state it
+    // would otherwise stomp is even cleared, so there's no window where a late resolve could race
+    // back in ahead of this clear.
+    sessionGenerationRef.current += 1
     setTurns([])
     setConversationId(null)
     setInput('')
@@ -586,9 +614,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   async function openConversation(id: string) {
+    // Same staleness guard as the mount-time rehydrate (D57/Task U8): bump before the fetch so a
+    // pending rehydrate (or an earlier, still in-flight `openConversation` call) can't land after
+    // and overwrite the conversation the user just explicitly picked; capture-and-check the
+    // generation after awaiting so THIS call also backs off if something newer has since won.
+    const generation = ++sessionGenerationRef.current
     pinnedToBottomRef.current = true
     const detail = await fetchConversation(id).catch(() => null)
     if (!detail) return
+    if (sessionGenerationRef.current !== generation) return
     setConversationId(detail.conversation_id)
     setTurns(turnsFromDetail(detail))
   }
@@ -596,6 +630,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   async function send() {
     const text = input.trim()
     if (!text || busy) return
+    // Bumps before the optimistic append (D57/Task U8) — a rehydrate that's still in flight when
+    // the user sends must never be allowed to land afterward and wipe the turn this starts.
+    sessionGenerationRef.current += 1
     setInput('')
     pinnedToBottomRef.current = true
     const userTurn: UserTurn = { id: crypto.randomUUID(), role: 'user', text }
