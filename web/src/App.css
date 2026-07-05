@@ -260,6 +260,14 @@
   margin: 0;
 }
 
+/* Quiet second line under the tagline (D57/Task U2) — points at the two ways documents get in
+   (drag-drop, folder agent) without competing with the tagline above it. */
+.hero-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 2px 0 0;
+}
+
 @keyframes hero-in {
   from {
     opacity: 0;
@@ -1198,6 +1206,18 @@ button:disabled {
   pointer-events: none;
 }
 
+/* ---- Ingest turns (D57/Task U2) --------------------------------------------- */
+/* A client-side-only turn rendered inline in the chat stream for one in-chat upload batch
+   (`Composer.tsx`'s `IngestTurnCard`) — reuses `.doc-list`/`.doc-item`/`.doc-badge` below
+   (including the `.doc-failed` error tint, already built on the `--error*` vars) rather than a
+   parallel design system; only this small header line is new. */
+.ingest-turn-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+}
+
 /* ---- Documents: drop zone + queued list ------------------------------------ */
 .ingest-head {
   display: flex;
@@ -1770,6 +1790,59 @@ button:disabled {
 
 .grounding-btn:focus-visible {
   box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* ---- Composer attach button (D57/Task U2) ----------------------------------- */
+.attach-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--page-bg);
+  border: 1px solid var(--border-strong);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.attach-btn:hover:not(:disabled) {
+  color: var(--text-h);
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.attach-btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* ---- Whole-window drag-drop overlay (D57/Task U2) --------------------------- */
+/* Reuses `.drawer-backdrop`'s own dim scrim (same rule, no new hardcoded color) — this class only
+   adds the centering + raises the stack above drawers (z-index 40/50) so a drag started while a
+   drawer is open still reads clearly. `pointer-events: none` keeps the window-level drag/drop
+   listeners (not this element) in charge; the card underneath is purely informational. */
+.drop-overlay {
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-overlay-card {
+  padding: 22px 34px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1.5px dashed var(--accent);
+  color: var(--text-h);
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
 }
 
 /* ---- "From general knowledge" chip (D46) — a subtle trust-boundary flag on a message that
