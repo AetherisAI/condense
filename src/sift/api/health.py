@@ -34,6 +34,38 @@ async def _probe_openai_compat(
         return ComponentHealth(status="down", model=model, detail=type(exc).__name__)
 
 
+async def _probe_embeddings(settings: Settings) -> ComponentHealth:
+    """A single-token ``POST {base}/embeddings`` — the actual capability search depends on.
+
+    Unlike the LLM backend, the embed backend is commonly TEI (text-embeddings-inference),
+    which does NOT serve ``GET {base}/models`` under its OpenAI-compat base — only
+    ``POST {base}/embeddings`` (its own liveness lives at root ``/health``/``/info``, not under
+    ``/v1``). Reusing ``_probe_openai_compat`` there 404'd even though embedding calls worked
+    perfectly. A minimal real embed call is definitive and still cheap, and reuses the same
+    config-driven timeout phases as the production embedder (``embed_connect_timeout_s`` bounds
+    the handshake, ``embed_timeout_s`` the rest) rather than the other probes' fixed 4s.
+    """
+    base_url = settings.embed_base_url
+    assert base_url is not None  # only called once the caller has checked this
+    headers = (
+        {"Authorization": f"Bearer {settings.embed_api_key}"} if settings.embed_api_key else {}
+    )
+    timeout = httpx.Timeout(settings.embed_timeout_s, connect=settings.embed_connect_timeout_s)
+    payload = {"model": settings.embed_model, "input": ["ok"]}
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                f"{base_url.rstrip('/')}/embeddings", json=payload, headers=headers
+            )
+        if resp.is_success:
+            return ComponentHealth(status="ok", model=settings.embed_model)
+        return ComponentHealth(
+            status="down", model=settings.embed_model, detail=f"HTTP {resp.status_code}"
+        )
+    except Exception as exc:  # noqa: BLE001 — a probe must never raise
+        return ComponentHealth(status="down", model=settings.embed_model, detail=type(exc).__name__)
+
+
 async def _probe_tei(base_url: str, model: str | None) -> ComponentHealth:
     """TEI cross-encoder exposes a ``/health`` endpoint."""
     try:
@@ -62,9 +94,7 @@ async def gather_components(
     async def embeddings() -> ComponentHealth:
         if not settings.embed_base_url:
             return ComponentHealth(status="not_configured", model=settings.embed_model)
-        return await _probe_openai_compat(
-            settings.embed_base_url, settings.embed_api_key, settings.embed_model
-        )
+        return await _probe_embeddings(settings)
 
     async def llm() -> ComponentHealth:
         if not settings.llm_base_url:
