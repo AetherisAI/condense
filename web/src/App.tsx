@@ -24,7 +24,10 @@ export default function App() {
   // toggle, it never needs to know WHICH flow is running.
   const [isBusy, setIsBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [libraryOpen, setLibraryOpen] = useState(false)
+  // Library's open state persists across reloads (D57/Task U5) — History/Agent/System stay
+  // session-only (reopened via their topbar button same as before); Library is the one drawer
+  // worth keeping open across a refresh since browsing the corpus is often a standalone task.
+  const [libraryOpen, setLibraryOpen] = useState(() => localStorage.getItem('libraryOpen') === 'true')
   const [agentOpen, setAgentOpen] = useState(false)
   const [systemOpen, setSystemOpen] = useState(false)
   const chatRef = useRef<ChatHandle>(null)
@@ -33,6 +36,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('bearerToken', token)
   }, [token])
+
+  useEffect(() => {
+    localStorage.setItem('libraryOpen', String(libraryOpen))
+  }, [libraryOpen])
 
   return (
     <>

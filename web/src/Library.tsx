@@ -74,7 +74,9 @@ function TrashIcon() {
  * removes one. If the configured store doesn't support listing yet (``supported: false``) it says
  * so plainly rather than erroring — the engine gains those two methods and this lights up. Its
  * own floating FAB trigger is gone (D57/Task U1) — `open` is controlled from the workbench
- * topbar's "Library" button.
+ * topbar's "Library" button. Slides in from the LEFT (`.drawer-left`, D57/Task U5) — every other
+ * drawer opens from the right; open state persists across reloads (`App.tsx`, `libraryOpen` in
+ * localStorage). Closes on backdrop-click or Escape, same as System/Agent.
  */
 export default function Library({
   token,
@@ -90,6 +92,20 @@ export default function Library({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+
+  // Dismiss on Escape while open — outside clicks are caught by the drawer backdrop. Mirrors
+  // System/Agent's exact pattern; unlike History (the one drawer that can share the screen with
+  // several others stacked behind it), Library — now the sole LEFT-hand drawer, structurally last
+  // in the DOM among the four — never has anything else painting in front of it, so it always
+  // closes unconditionally on Escape (see ChatHistory.tsx for the yield-to-others nuance).
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onOpenChange(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onOpenChange])
 
   useEffect(() => {
     if (!open) return
@@ -138,7 +154,12 @@ export default function Library({
     <>
       {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
-      <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open}>
+      <aside
+        className={`drawer drawer-left${open ? ' open' : ''}`}
+        role="dialog"
+        aria-label="Library"
+        aria-hidden={!open}
+      >
         <div className="drawer-head">
           <h2>Library</h2>
           {supported && count > 0 && <span className="drawer-count">{count}</span>}

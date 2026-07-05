@@ -52,7 +52,9 @@ function TrashIcon() {
  * whichever conversation is currently open in the Chat panel, and lets the user reopen (click a
  * row) or delete (trash icon, click-again-to-confirm — no native `confirm()` dialog) any of them.
  * Its own trigger chip is gone (D57/Task U1) — `open` is controlled from the workbench topbar,
- * which is the single button that shows/hides this drawer now.
+ * which is the single button that shows/hides this drawer now. Closes on backdrop-click or
+ * Escape (D57/Task U5) — see the Escape effect below for the stacking rule it uses so a single
+ * Escape press never closes two drawers at once.
  */
 export default function ChatHistory({
   token,
@@ -71,6 +73,30 @@ export default function ChatHistory({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
+  // Dismiss on Escape while open — outside clicks are caught by the drawer backdrop (same base
+  // pattern as System/Agent). History is the one drawer every other drawer can be stacked in
+  // front of (it's the earliest `.drawer` in document order — nested inside `Chat` — while
+  // Library/Agent/System all render after it from `App.tsx`, so at equal z-index they paint on
+  // top of it). If another drawer is open when Escape is pressed, this yields instead of closing
+  // alongside it, so one Escape press closes exactly one drawer rather than the whole stack.
+  // Library mirrors System/Agent's plain always-close pattern instead (see Library.tsx) since —
+  // now that it's the sole LEFT-hand, last-in-DOM drawer — nothing else is ever stacked in front
+  // of it. This doesn't (and can't, without touching SystemMenu/AgentMenu, out of this task's
+  // scope) fully resolve every N-drawer combination — e.g. System+Agent open together still both
+  // close on Escape, same as before this change — but it does guarantee History never double
+  // -closes with anything, and Library+History specifically resolves to exactly one close.
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      const openDrawers = document.querySelectorAll('.drawer.open')
+      if (openDrawers.length > 1) return // something else is open — let it close first
+      onOpenChange(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onOpenChange])
 
   useEffect(() => {
     if (!open) return
