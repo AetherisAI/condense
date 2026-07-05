@@ -1,26 +1,31 @@
-> **v0.2.0 shipped 2026-07-05** — toolbox + /v1/answer chat agent + grounding modes + rich chat merged to main (55b52b4, tag v0.2.0). Previous WP archived at `docs/Quentin/archive/v0.2.0-toolbox-answer/`. Next: Tauri desktop app + ingest-agent-from-UI (see HANDOFF-NEXT-SESSION.md).
+# Chat-First UX Refactor ("the workbench") — Human Doc
 
-# <Slice> — Human Doc
+> **≤500 words. Decision-first.** Fast-read companion to `machine.md`.
 
-> **≤500 words. Decision-first.** This is the fast-read companion to `machine.md`. If you only have two minutes, read this.
-
-**Status:** planned | in-progress | merged `v0.<n>.0` &nbsp;·&nbsp; **Branch:** `feat/<slice>` &nbsp;·&nbsp; **Updated:** YYYY-MM-DD
+**Status:** in-progress · **Branch:** `feat/ux-refactor` · **Updated:** 2026-07-05
 
 ## What & why
-<2–3 lines: what this slice delivers and why it exists in the architecture.>
+Turn the two-tab prototype into one viewport-filling, chat-first page that feels like a finished local product — the headline surface for the open-source launch. RAG-first: the chat is the interface **to the corpus**, not another ChatGPT (Quentin's direction, 2026-07-05). Sequencing per D56: foundations → this WP → Tauri shell.
 
 ## Key decisions
-- <decision> — see `DECISIONS.md#<anchor>`
-- <decision> — see `DECISIONS.md#<anchor>`
+- **D57 — the workbench layout:** sticky slim topbar (mark + Library/History/System), the conversation stream is the *only* scrollable region, composer fixed at bottom. Big logo + tagline appear only as the empty-state hero, then collapse into the topbar. **Signature:** the animated Condense mark doubles as the streaming/loading indicator.
+- **Search tab dies; "Find" mode is born:** retrieval-only becomes a composer mode (`Ask | Find`) rendering ranked result turns in-stream (top match purple-tinted, no LLM call). AI-recap + Human/Machine toggles deleted — superseded.
+- **Ingest moves into the composer:** ＋ button + drop-anywhere overlay → in-stream ingest turns showing per-file results **including failures with reasons** (today they're invisible; the two corrupt `.xlsx` are the test case).
+- **Hybrid grounding removed from the UI only** (strict ⇄ open toggle; API keeps hybrid for consumers; stored hybrid turns still render).
+- **System drawer goes simple-first:** Connection (token + base URL) / Model (provider auto-detect badge from key shape) / Folder agent (PR #19 downloads move here + empty-corpus nudge; Agent chip retired) / **Advanced accordion** holding today's full raw-settings table.
+- **Library becomes a LEFT drawer** (topbar toggle). Topbar replaces floating chips — which also dissolves the History-✕ z-index bug.
+- **Colors unchanged, tokens unified:** both existing purples stay but become vars (`--accent` brand/emphasis, `--accent-ui` controls) — zero hard-coded hexes after U7.
 
-## Ports / interfaces touched
-- <port or schema this slice implements or consumes, e.g. `Embedder.embed`>
+## Interfaces touched
+- Frontend only (`web/src`), on top of foundations: `api.ts` client + `CORS_ORIGINS` (running in parallel, same branch) and `agent --json` (separate branch `feat/agent-json-cli`). No `core/`, no API changes.
 
 ## Risks / open questions
-- <risk, blocker, or thing to confirm with Arthur>
+- Chat.tsx is the load-bearing file (SSE reader, persistence) — every task gates on build+lint AND coordinator visual QA in Chrome (:5174) before commit.
+- Find turns are client-side only (not persisted server-side) — acceptable v1; noted in machine.md T U3.
+- Desktop-first: don't break ≥768px, but no mobile design this WP.
 
 ## Status / next action
-- <what's done, what's the immediate next step>
+- Foundations agent (api.ts+CORS) + agent-CLI agent running. UX tasks U1–U8 queued; coordinator QAs each in Chrome before its commit.
 
 ## Pointer
-- Full plan, tasks, and code: [`./machine.md`](./machine.md)
+- Full design, audit, tasks: [`./machine.md`](./machine.md)
