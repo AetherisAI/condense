@@ -41,6 +41,18 @@ network blip, a serialization bug) degrades to a graceful `truncated=True` finis
 letting an exception escape `run()` uncaught — the SSE stream must always reach `"grounding"`
 then `"done"` so a consumer (the Chat UI) can rely on `"done"` to finalize instead of hanging
 forever waiting for a frame that a crashed generator will never send.
+
+**Mode separation across a mode switch (D58):** live-repro'd bug — a `"strict"` turn's honest
+abstention ("the documents don't cover this"), replayed verbatim as plain assistant history into
+a LATER `"open"`-mode turn in the same conversation, made the completer imitate the refusal
+again (calling no tool at all) even though `grounding="open"` was genuinely in effect for that
+turn. `_render_history_messages` now tags a replayed assistant turn with the mode it was
+actually answered under (D51 persists `grounding_used` per turn) whenever that differs from the
+current turn's mode, and `_MODE_TRANSITION_CUE` is appended to the system prompt telling the
+model a different-mode turn's refusal does not constrain this one — prompt-assembly only, the
+persisted history itself is never rewritten. Separately, the hybrid/open suffixes now explicitly
+override the base prompt's "say so honestly" abstention line for the no-hits/no-tool-call case —
+open mode in particular must never treat an empty or skipped search as a reason to refuse.
 """
 
 from __future__ import annotations
@@ -254,7 +266,12 @@ _GROUNDING_HYBRID_SUFFIX = (
     'sourced from the documents by prefixing it with the exact literal marker "[General '
     'knowledge]" — never blend ungrounded content in silently. A reader must always be able to '
     "tell, from the answer's text alone, which parts came from the documents and which came "
-    "from your own knowledge."
+    "from your own knowledge.\n\n"
+    "This OVERRIDES the base instruction above to simply say the documents don't cover a "
+    "question: in hybrid mode, that is never a dead end. If your tools return no hits, or hits "
+    "that don't actually answer the question, answer it from your own general knowledge instead "
+    '(marked with the "[General knowledge]" marker above) rather than telling the user the '
+    "documents/database don't have it."
 )
 
 _GROUNDING_OPEN_SUFFIX = (
@@ -262,7 +279,13 @@ _GROUNDING_OPEN_SUFFIX = (
     "knowledge freely, using the document tools only when they're actually useful, never as a "
     "hard requirement. Whenever your answer draws on your own general knowledge rather than the "
     'ingested documents, mark that content with the exact literal marker "[General knowledge]" '
-    "so it can be flagged to the reader."
+    "so it can be flagged to the reader.\n\n"
+    "This OVERRIDES the base instruction above to say the documents don't cover a question: in "
+    "open mode that instruction never applies. If a tool call returns no hits, weak/irrelevant "
+    "hits, or you don't call a tool at all, simply answer from your own general knowledge "
+    '(marked with the "[General knowledge]" marker above) instead of refusing or telling the '
+    "user the database/documents don't have it. Only strict mode ever abstains for lack of "
+    "document coverage — open mode never does."
 )
 
 _GROUNDING_SUFFIXES: dict[GroundingMode, str] = {
@@ -275,6 +298,30 @@ _GROUNDING_SUFFIXES: dict[GroundingMode, str] = {
 # "[General knowledge] - ") — trimmed off a segment's own ends, never from its interior, so a
 # segment's text never starts/ends with a stray "-"/":" left over from the marker syntax.
 _GK_TRIM_CHARS = " \t\n:-–—"
+
+# History-contamination fix (mirrors D51's BUG-A, in the OTHER direction). Live-repro'd bug:
+# a `"strict"` turn honestly abstained ("the documents don't cover this"); the user then
+# switched the pill to `"open"` in the SAME conversation and asked a plain general-knowledge
+# question — with the correct `grounding="open"` genuinely sent (re-confirmed, not re-litigated:
+# D51 already proved per-request `grounding` is correct) the completer nonetheless refused AGAIN,
+# calling no tool at all, purely by imitating the previous turn's refusal shape once it was
+# replayed verbatim as plain assistant history with no indication it was answered under
+# different rules. `_render_history_messages` tags any replayed assistant turn recorded (D51
+# persists `grounding_used` per turn) under a mode OTHER than the current one; this cue is
+# appended to the system prompt ONLY when such a turn is actually present (never
+# unconditionally, so every existing single-turn system-prompt assertion is unaffected).
+_MODE_TRANSITION_CUE = (
+    "\n\nNOTE ON CONVERSATION HISTORY: some earlier assistant turns above are tagged "
+    '"(Answered under <mode> mode.)" because they were answered under a DIFFERENT grounding '
+    "mode than the one now in effect for THIS turn (see GROUNDING MODE above). Judge each "
+    "historical turn by the mode noted on it, never by the mode in effect now. In particular, a "
+    'refusal or abstention made under strict mode (e.g. "the documents don\'t cover this") '
+    "reflects ONLY strict mode's rules and does NOT constrain this turn — if this turn's mode is "
+    "hybrid or open, you may still answer a question the documents don't cover using your own "
+    "general knowledge (marked per this turn's mode rules above), even if an earlier strict-mode "
+    "turn abstained on the same or a similar question. Do not imitate a previous turn's refusal "
+    "just because it appears earlier in this conversation."
+)
 
 
 def _split_grounding_segments(text: str, mode: GroundingMode) -> list[dict[str, str]]:
@@ -346,14 +393,54 @@ def _system_prompt(
     format: Literal["text", "json"],
     json_schema: Mapping[str, Any] | None,
     grounding: GroundingMode,
+    *,
+    mode_transition: bool = False,
 ) -> str:
     prompt = _SYSTEM_PROMPT + _GROUNDING_SUFFIXES[grounding]
+    if mode_transition:
+        prompt += _MODE_TRANSITION_CUE
     if format != "json":
         return prompt
     schema_note = ""
     if json_schema:
         schema_note = f" It must conform to this JSON Schema: {json.dumps(dict(json_schema))}"
     return prompt + _JSON_MODE_SUFFIX + schema_note
+
+
+def _render_history_messages(
+    history: Sequence[ConversationTurn], mode: GroundingMode
+) -> list[dict[str, Any]]:
+    """Render persisted history as this turn's replayed chat messages — prompt-ASSEMBLY only,
+    never touches persistence (the turns themselves are stored unchanged, verbatim, by
+    ``AnswerPipeline.run``'s own ``append_turn`` calls).
+
+    An assistant turn recorded (D51 persists ``grounding_used`` per turn) under a mode OTHER
+    than the one now in effect is prefixed with ``"(Answered under <mode> mode.)"`` so the
+    model can tell, from the transcript alone, that an earlier refusal/abstention was made under
+    different rules than THIS turn's — see ``_MODE_TRANSITION_CUE`` for the system-prompt
+    instruction on how to treat it. A turn with no recorded mode (a user turn, or an assistant
+    turn that predates D51) is replayed exactly as before, untagged.
+    """
+    rendered: list[dict[str, Any]] = []
+    for turn in history:
+        content = turn.content
+        if (
+            turn.role == "assistant"
+            and turn.grounding_used is not None
+            and turn.grounding_used != mode
+        ):
+            content = f"(Answered under {turn.grounding_used} mode.) {content}"
+        rendered.append({"role": turn.role, "content": content})
+    return rendered
+
+
+def _history_has_other_mode_turn(history: Sequence[ConversationTurn], mode: GroundingMode) -> bool:
+    """Whether any assistant turn in ``history`` was recorded under a mode other than ``mode``
+    — the condition under which ``_MODE_TRANSITION_CUE`` is worth the extra prompt tokens."""
+    return any(
+        turn.role == "assistant" and turn.grounding_used is not None and turn.grounding_used != mode
+        for turn in history
+    )
 
 
 def _summarize_args(name: str, args: Mapping[str, Any]) -> str:
@@ -515,9 +602,15 @@ class AnswerPipeline:
         # the user turn just appended above but nothing past it yet (T6, D42 auto-title).
         is_first_answer = not any(turn.role == "assistant" for turn in history)
 
+        mode_transition = _history_has_other_mode_turn(history, mode)
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": _system_prompt(format, json_schema, mode)},
-            *({"role": turn.role, "content": turn.content} for turn in history),
+            {
+                "role": "system",
+                "content": _system_prompt(
+                    format, json_schema, mode, mode_transition=mode_transition
+                ),
+            },
+            *_render_history_messages(history, mode),
         ]
         tools = self._tools.to_openai_functions()
 

@@ -837,6 +837,140 @@ async def test_assistant_turn_persists_strict_abstention_not_leaked_content(
     assert assistant_turn.from_general_knowledge is False
 
 
+# --- D58: mode separation across a mode switch (history-contamination + open dead-end) ------
+#
+# Motivating live bug (Quentin): "Sometimes I'm in general knowledge mode and the AI model says
+# that he can't answer a general question because he can't find a document about the inquiry in
+# the Database. Only when I query twice forcing general knowledge answer does he give out
+# general knowledge." Reproduced live against the real engine: a strict-mode turn honestly
+# abstains ("the documents don't cover this"); switching to open mode in the SAME conversation
+# and asking a plain general-knowledge question made the completer refuse AGAIN — imitating the
+# previous turn's refusal shape once it was replayed as plain, untagged assistant history.
+
+
+async def test_history_tags_other_mode_turn_and_cues_mode_transition(
+    settings, embedder, store
+) -> None:
+    """The actual history-contamination fix: a prior turn recorded under a DIFFERENT mode than
+    the one now in effect must be tagged in the replayed transcript, and the system prompt must
+    tell the model that turn's refusal doesn't bind this one."""
+    completer1 = FakeToolCompleter([ToolCompletion(content="The documents don't cover this.")])
+    pipeline, conversations = _pipeline_with_conversations(completer1, embedder, store, settings)
+    events = await _collect(pipeline, "What is the capital of Australia?", grounding="strict")
+    conv_id = next(e for e in events if e.type == "done").data["conversation_id"]
+
+    completer2 = FakeToolCompleter(
+        [ToolCompletion(content="[General knowledge] Canberra is the capital of Australia.")]
+    )
+    pipeline2 = AnswerPipeline(completer2, pipeline._tools, conversations, settings)
+    await _collect(
+        pipeline2,
+        "I really do want your best guess anyway.",
+        conversation_id=conv_id,
+        grounding="open",
+    )
+
+    (second_call_messages,) = completer2.calls
+    system_content = second_call_messages[0]["content"]
+    assert system_content is not None
+    lowered_system = system_content.lower()
+    assert "note on conversation history" in lowered_system
+    assert "does not constrain this turn" in lowered_system
+
+    prior_assistant = next(
+        m
+        for m in second_call_messages[1:]
+        if m["role"] == "assistant" and "capital" not in m["content"].lower()
+    )
+    # the ORIGINAL content is still there (never rewritten), just tagged with its real mode.
+    assert "answered under strict mode" in prior_assistant["content"].lower()
+    assert "the documents don't cover this" in prior_assistant["content"].lower()
+
+
+async def test_history_no_transition_cue_when_every_turn_shares_current_mode(
+    settings, embedder, store
+) -> None:
+    """No false positives: when every historical turn was already answered under the SAME mode
+    as this turn, neither the cue nor any tag should be added — keeps every existing
+    single-turn system-prompt assertion (and prompt size) unaffected for the common case."""
+    completer1 = FakeToolCompleter([ToolCompletion(content="Here's what the docs say.")])
+    pipeline, conversations = _pipeline_with_conversations(completer1, embedder, store, settings)
+    events = await _collect(pipeline, "Tell me about X", grounding="hybrid")
+    conv_id = next(e for e in events if e.type == "done").data["conversation_id"]
+
+    completer2 = FakeToolCompleter([ToolCompletion(content="Here's more.")])
+    pipeline2 = AnswerPipeline(completer2, pipeline._tools, conversations, settings)
+    await _collect(pipeline2, "Tell me more", conversation_id=conv_id, grounding="hybrid")
+
+    (second_call_messages,) = completer2.calls
+    system_content = second_call_messages[0]["content"]
+    assert "note on conversation history" not in system_content.lower()
+    prior_assistant = next(m for m in second_call_messages[1:] if m["role"] == "assistant")
+    assert prior_assistant["content"] == "Here's what the docs say."  # untagged, unchanged
+
+
+async def test_open_system_prompt_overrides_abstention_on_no_hits(
+    settings, embedder, store
+) -> None:
+    """Tool-loop dead-end fix: the open suffix must explicitly override the base prompt's "say
+    so honestly" abstention line for the no-hits/no-tool-call case — otherwise a model that
+    reads the base prompt's abstention instruction literally treats an empty/skipped search as
+    a reason to refuse, exactly like a document-grounded mode would."""
+    completer = FakeToolCompleter([ToolCompletion(content="done")])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    await _collect(pipeline, "hi", grounding="open")
+
+    system_content = completer.calls[0][0]["content"]
+    assert system_content is not None
+    lowered = system_content.lower()
+    assert "overrides the base instruction" in lowered
+    assert "no hits" in lowered
+    assert "never does" in lowered or "never applies" in lowered
+
+
+async def test_hybrid_system_prompt_overrides_abstention_on_no_hits(
+    settings, embedder, store
+) -> None:
+    completer = FakeToolCompleter([ToolCompletion(content="done")])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    await _collect(pipeline, "hi", grounding="hybrid")
+
+    system_content = completer.calls[0][0]["content"]
+    assert system_content is not None
+    lowered = system_content.lower()
+    assert "overrides the base instruction" in lowered
+    assert "no hits" in lowered
+
+
+async def test_open_mode_answers_from_general_knowledge_after_empty_search_hits(
+    settings, embedder, store
+) -> None:
+    """The pipeline mechanics: a search call that comes back with zero hits must not itself
+    force an abstention — a scripted completer that answers from general knowledge after seeing
+    an empty result list must come through as `from_general_knowledge=True`, never replaced or
+    treated as truncated."""
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(tool_calls=(ToolCall(name="search", arguments={"query": "capital"}),)),
+            ToolCompletion(content="[General knowledge] Canberra is the capital of Australia."),
+        ]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)  # empty store => zero hits
+
+    events = await _collect(pipeline, "What is the capital of Australia?", grounding="open")
+
+    tool_result = next(e for e in events if e.type == "tool_result")
+    assert "0" in tool_result.data["summary"]
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    assert "canberra" in answer_delta.data["text"].lower()
+    grounding = next(e for e in events if e.type == "grounding")
+    assert grounding.data["from_general_knowledge"] is True
+    done = events[-1]
+    assert done.data["truncated"] is False
+
+
 # --- BUG-1 (D48): the SSE stream must ALWAYS reach "done", even on an unexpected failure -----
 
 
