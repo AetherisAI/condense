@@ -51,17 +51,22 @@ function TrashIcon() {
  * demand (fetches ``GET /v1/conversations`` lazily, same pattern as ``Library.tsx``), highlights
  * whichever conversation is currently open in the Chat panel, and lets the user reopen (click a
  * row) or delete (trash icon, click-again-to-confirm — no native `confirm()` dialog) any of them.
+ * Its own trigger chip is gone (D57/Task U1) — `open` is controlled from the workbench topbar,
+ * which is the single button that shows/hides this drawer now.
  */
 export default function ChatHistory({
   token,
   currentConversationId,
   onOpen,
+  open,
+  onOpenChange,
 }: {
   token: string
   currentConversationId: string | null
   onOpen: (conversationId: string) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -112,7 +117,7 @@ export default function ChatHistory({
   }
 
   function select(id: string) {
-    setOpen(false)
+    onOpenChange(false)
     onOpen(id)
   }
 
@@ -120,11 +125,7 @@ export default function ChatHistory({
 
   return (
     <>
-      <button type="button" className="chat-history-btn" onClick={() => setOpen(true)}>
-        History
-      </button>
-
-      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+      {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
       <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open}>
         <div className="drawer-head">
@@ -133,7 +134,7 @@ export default function ChatHistory({
           <button
             type="button"
             className="drawer-close"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Close history"
           >
             ✕

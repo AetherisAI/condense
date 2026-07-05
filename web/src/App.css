@@ -8,35 +8,96 @@
   pointer-events: none;
 }
 
-/* ---- Layout ---------------------------------------------------------------- */
-.app {
+/* ---- The workbench shell (D57/Task U1) ------------------------------------- */
+/* One 100svh grid: sticky topbar / the conversation stream (`Chat.tsx`'s `.chat-stream` — the
+   ONLY scrollable region) / a fixed composer. `body` never scrolls — see index.css's `#root`. */
+.workbench {
   position: relative;
   z-index: 1;
-  max-width: 780px;
-  margin: 0 auto;
-  padding: 56px 20px 80px;
+  height: 100svh;
   display: flex;
   flex-direction: column;
-  gap: 20px;
 }
 
-.app-header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.brand {
+.topbar {
+  flex-shrink: 0;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 11px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.topbar-word {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text-h);
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.topbar-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 980px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.topbar-btn:hover:not(:disabled) {
+  color: var(--text-h);
+  background: var(--page-bg);
+}
+
+.topbar-btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.topbar-btn[aria-expanded='true'] {
+  color: var(--text-h);
+  border-color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .brand-mark {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
+}
+
+/* Small in the topbar (the brand once the hero has collapsed) — see `.hero .brand-mark` below
+   for the larger empty-state size. */
+.topbar-brand .brand-mark {
+  width: 24px;
+  height: 24px;
 }
 
 /* --- Condense mark animation (locked design handoff): ring → core → emit, 4s loop --- */
@@ -156,21 +217,58 @@
   .brand-mark .glow {
     opacity: 0.18;
   }
+  .hero {
+    animation: none;
+  }
 }
 
-.app-header h1 {
-  font-size: 40px;
+/* ---- Empty-state hero (D57/Task U1) ---------------------------------------- */
+/* Shown only while the active conversation has no turns (`Chat.tsx`, inside `.chat-stream`) —
+   the big centered mark + wordmark + tagline, like today's landing feel. Once a turn exists the
+   hero is gone and the small `.topbar-brand` mark carries the brand instead; the fade-in keeps
+   the collapse smooth rather than an abrupt layout jump. */
+.hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 40px 20px;
+  animation: hero-in 0.3s ease;
+}
+
+.hero .brand-mark {
+  width: 64px;
+  height: 64px;
+}
+
+.hero-word {
+  font-size: 34px;
   letter-spacing: -1px;
-  margin: 0;
+  margin: 6px 0 0;
   background: linear-gradient(90deg, var(--text-h), var(--accent));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.tagline {
+.hero-tagline {
   color: var(--muted);
   font-size: 15px;
+  margin: 0;
+}
+
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---- Token field ----------------------------------------------------------- */
@@ -925,55 +1023,7 @@ button:disabled {
   color: var(--error);
 }
 
-/* ---- System status chip + popover ------------------------------------------ */
-.sys {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 10; /* just the chip — its drawer/backdrop render at root and layer above this */
-  font-size: 13px;
-}
-
-/* Same pill as the Library FAB (.library-fab), but white — the System counterpart. */
-.sys-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 120px; /* uniform width across the System / Agent / Library corner pills */
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: 980px;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  transition:
-    background 0.18s ease,
-    border-color 0.18s ease,
-    transform 0.06s ease;
-}
-.sys-chip:hover:not(:disabled) {
-  background: var(--page-bg);
-  border-color: var(--muted);
-}
-.sys-chip:active {
-  transform: scale(0.97);
-}
-
-/* Gear icon doubles as the health light: purple = ok, red = down, grey = unknown. */
-.sys-gear {
-  color: var(--muted);
-  transition: color 0.18s ease;
-}
-.sys-gear-up {
-  color: #7c5cff;
-}
-.sys-gear-down {
-  color: var(--error);
-}
-
+/* ---- System drawer (D57/Task U1: trigger now lives in the topbar, not a floating chip) ------ */
 .sys-dot {
   width: 8px;
   height: 8px;
@@ -1076,16 +1126,7 @@ button:disabled {
   text-decoration: underline;
 }
 
-/* ---- Agent download chip + drawer ------------------------------------------ */
-/* Sits directly under the System chip (.sys is top:16px) — same pill (.sys-chip). */
-.agentbar {
-  position: fixed;
-  top: 64px;
-  right: 16px;
-  z-index: 10;
-  font-size: 13px;
-}
-
+/* ---- Agent download drawer (D57/Task U1: trigger now lives in the topbar) ------------------- */
 .agent-intro {
   margin: 0 0 4px;
   font-size: 13.5px;
@@ -1344,28 +1385,7 @@ button:disabled {
   }
 }
 
-/* ---- Library drawer (ingested documents) ----------------------------------- */
-/* A primary action (same solid pill + hover as Send/Search, via `.btn-primary`) — only the
-   fixed-position/shadow layout is its own. */
-.library-fab {
-  position: fixed;
-  right: 22px;
-  bottom: 22px;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 120px; /* match the System / Agent corner pills */
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: var(--shadow);
-}
-
-.library-fab:active {
-  transform: scale(0.97);
-}
-
+/* ---- Library drawer (ingested documents; D57/Task U1: trigger now lives in the topbar) ------ */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -1657,74 +1677,59 @@ button:disabled {
   font-weight: 400;
 }
 
-/* ---- Tabs (Search / Chat) ---------------------------------------------------- */
-.tabs {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 3px;
-  padding: 4px;
-  background: var(--page-bg);
-  border: 1px solid var(--border);
-  border-radius: 980px;
-}
-
-.tab-btn {
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  border-radius: 980px;
-  padding: 7px 18px;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease;
-}
-
-.tab-btn:hover:not(.active) {
-  color: var(--text-h);
-}
-
-.tab-btn.active {
-  color: #fff;
-  background: #7c5cff;
-}
-
-.tab-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
-}
-
-/* ---- Chat -------------------------------------------------------------------- */
-.chat-head {
+/* ---- Chat workbench (D57/Task U1) ------------------------------------------- */
+/* Fills the `.workbench` grid's remaining row below the topbar; internally split into the
+   scrollable stream and the fixed composer via flexbox (`min-height: 0` on both is required for
+   `overflow-y: auto` to actually constrain `.chat-stream` instead of growing past the viewport). */
+.chat-workbench {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
 }
 
-.chat-head-actions {
+.chat-stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden; /* hard backstop (D47): rich content ONLY ever scrolls in its own box */
+  display: flex;
+  flex-direction: column;
+}
+
+/* The readable column — same width the old boxed chat card used — centered inside the
+   full-bleed `.chat-stream`/`.composer`. */
+.chat-inner {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 28px 20px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--page-bg);
+}
+
+.composer-inner {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 12px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer-pills {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.chat-new,
-.chat-history-btn {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  padding: 5px 12px;
-  border-radius: 980px;
-}
-
-.chat-new:hover:not(:disabled),
-.chat-history-btn:hover {
-  color: var(--text-h);
-  background: var(--page-bg);
 }
 
 /* ---- Grounding mode selector (D46) — a compact 3-way segmented pill, same visual language
@@ -1820,20 +1825,6 @@ button:disabled {
   border-radius: 980px;
   padding: 1.5px 8px;
   margin-bottom: 5px;
-}
-
-.chat-thread {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  max-height: 560px;
-  overflow-y: auto;
-  overflow-x: hidden; /* hard backstop (D47): rich content ONLY ever scrolls in its own box */
-  padding-right: 2px;
-}
-
-.chat-empty {
-  padding: 20px 0;
 }
 
 .chat-turn {

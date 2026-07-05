@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import ChatHistory from './ChatHistory'
 import ChatMarkdown from './markdown/ChatMarkdown'
+import Logo from './Logo'
 import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
 import { apiFetch } from './api'
 
@@ -405,6 +406,24 @@ function SourcesPanel({
   )
 }
 
+/** Imperative surface exposed to the workbench shell (`App.tsx`) — the topbar's "New chat"
+ * button lives outside this component's own tree, so it drives `newChat()` through a ref instead
+ * of a prop callback (the function closes over live `turns`/`conversationId` state, which would
+ * otherwise need lifting wholesale into `App`). */
+export type ChatHandle = { newChat: () => void }
+
+type ChatProps = {
+  token: string
+  // The History drawer (`ChatHistory`) is still rendered from here — right next to the
+  // conversation state it reads/writes — but its OPEN state is controlled from the workbench
+  // shell so a single topbar button can trigger it (D57/Task U1: no more floating chips).
+  historyOpen: boolean
+  onHistoryOpenChange: (open: boolean) => void
+  // Lets the topbar show/hide "New chat" the same way the old in-panel header did (only once a
+  // conversation has turns) without lifting the whole thread into `App`.
+  onTurnsChange?: (hasTurns: boolean) => void
+}
+
 /**
  * Chat panel — a thread view over ``POST /v1/answer`` (``stream:true``). Per exchange: the
  * user's bubble, then the streamed ANSWER (always in focus, never pushed below a source wall),
@@ -412,7 +431,10 @@ function SourcesPanel({
  * current conversation persists across a tab switch (`conversation_id` in `localStorage`,
  * refetched on mount) and a History drawer lists/reopens/deletes past ones.
  */
-export default function Chat({ token }: { token: string }) {
+const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
+  { token, historyOpen, onHistoryOpenChange, onTurnsChange },
+  ref,
+) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -460,6 +482,16 @@ export default function Chat({ token }: { token: string }) {
   useEffect(() => {
     if (conversationId) localStorage.setItem(STORAGE_KEY, conversationId)
   }, [conversationId])
+
+  // Lets the topbar's "New chat" button (outside this component's tree) drive `newChat` — see
+  // the `ChatHandle` comment above.
+  useImperativeHandle(ref, () => ({ newChat }))
+
+  // Tells the topbar whether to show "New chat" at all (same gating the old in-panel header
+  // used: only once the conversation has turns).
+  useEffect(() => {
+    onTurnsChange?.(turns.length > 0)
+  }, [turns.length, onTurnsChange])
 
   function setGroundingMode(mode: GroundingMode) {
     setGrounding(mode)
@@ -632,124 +664,133 @@ export default function Chat({ token }: { token: string }) {
   }
 
   return (
-    <section className="panel chat">
-      <div className="chat-head">
-        <h2>Chat</h2>
-        <div className="chat-head-actions">
-          <GroundingSelector value={grounding} onChange={setGroundingMode} />
-          <ChatHistory token={token} currentConversationId={conversationId} onOpen={openConversation} />
-          {turns.length > 0 && (
-            <button type="button" className="chat-new" onClick={newChat}>
-              New chat
-            </button>
+    <div className="chat-workbench">
+      <div className="chat-stream" ref={threadRef} onScroll={handleThreadScroll}>
+        <div className="chat-inner">
+          {turns.length === 0 ? (
+            <div className="hero">
+              <Logo />
+              <h1 className="hero-word">Condense</h1>
+              <p className="hero-tagline">Search across all your knowledge</p>
+            </div>
+          ) : (
+            turns.map((turn) =>
+              turn.role === 'user' ? (
+                <div className="chat-turn chat-user" key={turn.id}>
+                  {turn.text}
+                </div>
+              ) : (
+                <div className="chat-turn chat-assistant" key={turn.id}>
+                  {turn.streaming && turn.timeline.length === 0 && !turn.text && (
+                    <div className="tl-line tl-active">
+                      <span className="tl-icon">
+                        <SparkleGlyph />
+                      </span>
+                      <span className="tl-text">Thinking…</span>
+                    </div>
+                  )}
+
+                  {turn.error && <p className="error">{turn.error}</p>}
+
+                  {turn.text && (
+                    <div className="recap chat-answer">
+                      {turn.groundingSegments.length > 0 ? (
+                        turn.groundingSegments.map((segment, index) =>
+                          segment.kind === 'general_knowledge' ? (
+                            <div className="gk-segment" key={index}>
+                              <span className="gk-segment-tag">general knowledge</span>
+                              <ChatMarkdown text={segment.text} />
+                            </div>
+                          ) : (
+                            <ChatMarkdown text={segment.text} key={index} />
+                          ),
+                        )
+                      ) : (
+                        <ChatMarkdown text={turn.text} />
+                      )}
+                    </div>
+                  )}
+
+                  {turn.fromGeneralKnowledge && (
+                    <span className="gk-chip" title="This answer contains content the assistant drew from its own general knowledge, not your ingested documents.">
+                      from general knowledge — not your documents
+                    </span>
+                  )}
+
+                  {turn.truncated && (
+                    <p className="chat-truncated">Stopped early — ran out of tool-call budget.</p>
+                  )}
+
+                  {turn.sources.length > 0 && (
+                    <SourcesPanel
+                      sources={turn.sources}
+                      query={turn.question}
+                      open={turn.sourcesOpen}
+                      onToggleOpen={() => toggleSourcesOpen(turn.id)}
+                      onToggleCard={(index) => toggleSourceCard(turn.id, index)}
+                    />
+                  )}
+
+                  {turn.timeline.length > 0 &&
+                    (turn.timelineOpen ? (
+                      <div className="timeline">
+                        {turn.timeline.map((entry) => (
+                          <TimelineLine
+                            key={entry.id}
+                            entry={entry}
+                            onToggle={() => toggleEntry(turn.id, entry.id)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="tl-summary"
+                        onClick={() => toggleTimelineOpen(turn.id)}
+                      >
+                        {timelineSummary(turn.timeline)}
+                        <span className="tl-summary-more">expand</span>
+                      </button>
+                    ))}
+                </div>
+              ),
+            )
           )}
         </div>
       </div>
 
-      <div className="chat-thread" ref={threadRef} onScroll={handleThreadScroll}>
-        {turns.length === 0 && (
-          <p className="empty chat-empty">
-            Ask a question — the assistant searches your documents and cites what it finds.
-          </p>
-        )}
-        {turns.map((turn) =>
-          turn.role === 'user' ? (
-            <div className="chat-turn chat-user" key={turn.id}>
-              {turn.text}
-            </div>
-          ) : (
-            <div className="chat-turn chat-assistant" key={turn.id}>
-              {turn.streaming && turn.timeline.length === 0 && !turn.text && (
-                <div className="tl-line tl-active">
-                  <span className="tl-icon">
-                    <SparkleGlyph />
-                  </span>
-                  <span className="tl-text">Thinking…</span>
-                </div>
-              )}
-
-              {turn.error && <p className="error">{turn.error}</p>}
-
-              {turn.text && (
-                <div className="recap chat-answer">
-                  {turn.groundingSegments.length > 0 ? (
-                    turn.groundingSegments.map((segment, index) =>
-                      segment.kind === 'general_knowledge' ? (
-                        <div className="gk-segment" key={index}>
-                          <span className="gk-segment-tag">general knowledge</span>
-                          <ChatMarkdown text={segment.text} />
-                        </div>
-                      ) : (
-                        <ChatMarkdown text={segment.text} key={index} />
-                      ),
-                    )
-                  ) : (
-                    <ChatMarkdown text={turn.text} />
-                  )}
-                </div>
-              )}
-
-              {turn.fromGeneralKnowledge && (
-                <span className="gk-chip" title="This answer contains content the assistant drew from its own general knowledge, not your ingested documents.">
-                  from general knowledge — not your documents
-                </span>
-              )}
-
-              {turn.truncated && (
-                <p className="chat-truncated">Stopped early — ran out of tool-call budget.</p>
-              )}
-
-              {turn.sources.length > 0 && (
-                <SourcesPanel
-                  sources={turn.sources}
-                  query={turn.question}
-                  open={turn.sourcesOpen}
-                  onToggleOpen={() => toggleSourcesOpen(turn.id)}
-                  onToggleCard={(index) => toggleSourceCard(turn.id, index)}
-                />
-              )}
-
-              {turn.timeline.length > 0 &&
-                (turn.timelineOpen ? (
-                  <div className="timeline">
-                    {turn.timeline.map((entry) => (
-                      <TimelineLine
-                        key={entry.id}
-                        entry={entry}
-                        onToggle={() => toggleEntry(turn.id, entry.id)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="tl-summary"
-                    onClick={() => toggleTimelineOpen(turn.id)}
-                  >
-                    {timelineSummary(turn.timeline)}
-                    <span className="tl-summary-more">expand</span>
-                  </button>
-                ))}
-            </div>
-          ),
-        )}
+      <div className="composer">
+        <div className="composer-inner">
+          <div className="composer-pills">
+            <GroundingSelector value={grounding} onChange={setGroundingMode} />
+          </div>
+          <div className="row">
+            <input
+              type="text"
+              value={input}
+              placeholder="Ask a question…"
+              disabled={busy}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') send()
+              }}
+            />
+            <button type="button" className="btn-primary" onClick={send} disabled={busy || !input.trim()}>
+              {busy ? 'Thinking…' : 'Send'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="row">
-        <input
-          type="text"
-          value={input}
-          placeholder="Ask a question…"
-          disabled={busy}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') send()
-          }}
-        />
-        <button type="button" className="btn-primary" onClick={send} disabled={busy || !input.trim()}>
-          {busy ? 'Thinking…' : 'Send'}
-        </button>
-      </div>
-    </section>
+      <ChatHistory
+        token={token}
+        currentConversationId={conversationId}
+        onOpen={openConversation}
+        open={historyOpen}
+        onOpenChange={onHistoryOpenChange}
+      />
+    </div>
   )
-}
+})
+
+export default Chat

@@ -189,18 +189,22 @@ function coerce(key: string, raw: string): unknown {
 }
 
 /**
- * A subtle top-right status chip with a live health dot (pings the open /healthz). Click to
- * open a clean popover showing API health + the effective config (from the auth'd /status,
- * secrets already redacted server-side), rendered like a .env file. Closes on outside-click/Esc.
+ * A drawer showing API health + the effective config (from the auth'd /status, secrets already
+ * redacted server-side), rendered like a .env file. Its own top-right status chip trigger is gone
+ * (D57/Task U1) — `open` is controlled from the workbench topbar's "System" button. Closes on
+ * backdrop-click/Esc.
  */
 export default function SystemMenu({
   token,
   setToken,
+  open,
+  onOpenChange,
 }: {
   token: string
   setToken: (t: string) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [apiBase, setApiBaseInput] = useState(() => getApiBase())
   const [health, setHealth] = useState<Health>('unknown')
   const [data, setData] = useState<StatusResponse | null>(null)
@@ -224,11 +228,11 @@ export default function SystemMenu({
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') onOpenChange(false)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [open, onOpenChange])
 
   // (Re)load status when the panel opens or the token changes — so entering the token right
   // here immediately populates components + settings.
@@ -282,34 +286,9 @@ export default function SystemMenu({
     }
   }
 
-  function toggle() {
-    setOpen((o) => !o)
-  }
-
   return (
     <>
-      <div className="sys">
-        <button type="button" className="sys-chip" onClick={toggle} aria-expanded={open}>
-          <svg
-            className={`sys-gear sys-gear-${health}`}
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-          System
-        </button>
-      </div>
-
-      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+      {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
       <aside
         className={`drawer${open ? ' open' : ''}`}
@@ -319,10 +298,15 @@ export default function SystemMenu({
       >
         <div className="drawer-head">
           <h2>System</h2>
+          <span
+            className={`sys-dot ${dotFor(health === 'up' ? 'ok' : health === 'down' ? 'down' : '')}`}
+            title={`API ${health}`}
+            aria-hidden="true"
+          />
           <button
             type="button"
             className="drawer-close"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Close system panel"
           >
             ✕
