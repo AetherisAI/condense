@@ -847,3 +847,19 @@ Landed the first slice flagged in update 27 (`feat/tauri-shell` T3, D54), on its
 **TDD:** `tests/agent/test_cli_json.py` (new, 5 tests, follows `test_agent.py`'s `httpx.MockTransport` convention): dry-run NDJSON validity (populated + empty dir), one-shot `failures[].path`/`.error` for a stub-rejected file, human output unchanged + provably-not-JSON, and a real subprocess SIGTERM test (`python -m agent.cli … --watch --json`, `--server http://127.0.0.1:9` — the discard port, refused in ~90ms, so nothing real is ever contacted — SIGTERM after 1s, asserts exit 0 within 5s and a trailing `{"event":"stopped"}`). 481/481 full suite green (was 476; +5), `ruff check`/`ruff format --check` clean, pyright unchanged at the pre-existing 47-error baseline (4 test files, none touched).
 
 Next up on the same branch: T4, a second headless PyInstaller target (`sift-agent-cli`, onefile/console) of this same `agent.cli` for the Tauri sidecar — your Tkinter build (`sift-agent.spec`) is untouched and stays the standalone download. — Quentin/Dev B
+
+---
+
+## 2026-07-05 — update 29: T4 landed — second PyInstaller target `sift-agent-cli.spec` (CROSS-BOUNDARY, new files under `packaging/`)
+
+Same branch (`feat/agent-json-cli`), the T4 half promised in update 28. New files only — nothing in `sift-agent.spec`/`sift_agent_entry.py`/your build scripts touched:
+
+- **`packaging/sift-agent-cli.spec`** — a second, independent PyInstaller spec: **onefile**, **`console=True`**, freezing `agent.cli` (not `agent.app`) into a single `sift-agent-cli` binary. Same excludes (`sift`, `torch`, `numpy`, `markitdown`, `tokenizers`, `libsql`) and the same per-OS `watchdog` observer hidden-import as yours — `--watch` needs it here too.
+- **`packaging/sift_agent_cli_entry.py`** — thin `from agent.cli import main` wrapper, mirroring your `sift_agent_entry.py` convention exactly.
+- **`packaging/README.md`** — reframed the top as "two targets" (table: GUI download vs. headless sidecar) and added a "Target 2" section documenting the build command, the local smoke sequence, and the Tauri `bundle.externalBin` target-triple rename convention (`sift-agent-cli-x86_64-unknown-linux-gnu` etc., via `rustc --print host-tuple`) that the desktop WP's CI will need. Your Target 1 docs/table are unchanged, just renumbered under a new heading.
+
+**Why a second spec instead of reusing yours:** your build is onedir + `console=False` (own Tkinter window, no usable stdout) — exactly wrong for something a supervisor spawns and reads NDJSON from. Rather than bend one spec two ways, T4 keeps them fully independent; your download build is byte-for-byte unaffected (verified `sift-agent.spec` unchanged in this diff).
+
+**Local build + smoke (RAM-capped service, this machine):** `pyinstaller packaging/sift-agent-cli.spec` → 24MB single-file `dist/sift-agent-cli`. `--help` exits 0. `--json --dry-run` against a throwaway local stub server (one-shot mode always calls `/ingest/manifest` first, even under `--dry-run` — pre-existing, not something T3/T4 changed) emitted one valid `{"event":"dry_run",...}` line. SIGTERM against a `--watch` run (`--server http://127.0.0.1:9`, refused instantly, nothing real contacted) exited 0 within ~1.5s with a trailing `{"event":"stopped"}`. `ruff check .`/`ruff format --check .` clean (`.spec` files aren't linted, `.py` entry point is), pyright unchanged (47 baseline), full suite still 481/481 (packaging isn't exercised by pytest).
+
+This closes the WP's D54 M2 milestone ("agent CLI json/sigterm + headless binary — shippable alone, helps systemd users too"). Next (not on this branch): the Tauri scaffold itself (T5+) will consume `dist/sift-agent-cli` as `desktop/src-tauri/binaries/sift-agent-cli-<target-triple>`. — Quentin/Dev B
