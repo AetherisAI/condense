@@ -794,12 +794,16 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               }
               return (
                 <div className="chat-turn chat-assistant" key={turn.id}>
-                  {turn.streaming && turn.timeline.length === 0 && !turn.text && (
-                    <div className="tl-line tl-active">
-                      <span className="tl-icon">
-                        <SparkleGlyph />
-                      </span>
-                      <span className="tl-text">Thinking…</span>
+                  {turn.streaming && !turn.text && (
+                    // The inline answer-loading mark (D57 follow-up) — stands in at the exact
+                    // spot the answer text will land for as long as this turn is streaming with
+                    // no `answer_delta` yet, whether that's the pre-tool-call "thinking" gap or
+                    // while tool calls are actively running (the timeline below keeps rendering
+                    // its own "Searching: … · result" lines the whole time; this sits above them
+                    // rather than duplicating their wording). Vanishes the instant `turn.text`
+                    // starts accumulating — the streamed markdown itself then shows progress.
+                    <div className="chat-loader mark-busy" role="status" aria-label="Answering">
+                      <Logo />
                     </div>
                   )}
 
