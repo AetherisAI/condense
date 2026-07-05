@@ -73,6 +73,8 @@ services:
       TOOLS_SEARCH_MAX_K: ${TOOLS_SEARCH_MAX_K:-20}
       INGEST_TOKEN: ${INGEST_TOKEN:?set a shared bearer token in .env}
       AUTH_TOKENS: ${AUTH_TOKENS:-}
+      # CORS (D55) — allow-list for the Tauri desktop shell's webview; see .env.example.
+      CORS_ORIGINS: ${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,https://tauri.localhost}
       API_BIND: ${API_BIND:-0.0.0.0}
     ports:
       - "${API_PORT:-8000}:8000"

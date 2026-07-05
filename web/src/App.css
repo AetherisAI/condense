@@ -8,35 +8,96 @@
   pointer-events: none;
 }
 
-/* ---- Layout ---------------------------------------------------------------- */
-.app {
+/* ---- The workbench shell (D57/Task U1) ------------------------------------- */
+/* One 100svh grid: sticky topbar / the conversation stream (`Chat.tsx`'s `.chat-stream` — the
+   ONLY scrollable region) / a fixed composer. `body` never scrolls — see index.css's `#root`. */
+.workbench {
   position: relative;
   z-index: 1;
-  max-width: 780px;
-  margin: 0 auto;
-  padding: 56px 20px 80px;
+  height: 100svh;
   display: flex;
   flex-direction: column;
-  gap: 20px;
 }
 
-.app-header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.brand {
+.topbar {
+  flex-shrink: 0;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 11px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.topbar-word {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text-h);
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.topbar-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 980px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.topbar-btn:hover:not(:disabled) {
+  color: var(--text-h);
+  background: var(--page-bg);
+}
+
+.topbar-btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.topbar-btn[aria-expanded='true'] {
+  color: var(--text-h);
+  border-color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .brand-mark {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
+}
+
+/* Small in the topbar (the brand once the hero has collapsed) — see `.hero .brand-mark` below
+   for the larger empty-state size. */
+.topbar-brand .brand-mark {
+  width: 24px;
+  height: 24px;
 }
 
 /* --- Condense mark animation (locked design handoff): ring → core → emit, 4s loop --- */
@@ -156,21 +217,101 @@
   .brand-mark .glow {
     opacity: 0.18;
   }
+  .hero {
+    animation: none;
+  }
 }
 
-.app-header h1 {
-  font-size: 40px;
+/* --- The mark IS the status indicator (D57/Task U4) ------------------------- */
+/* `.mark-busy` toggles on whichever wrapper currently holds the visible mark — `.topbar-brand`
+   once the hero has collapsed, `.hero` itself while the conversation is still empty (`TopBar.tsx`
+   / `Chat.tsx`) — never on `.brand-mark` directly, so the mark's own locked markup/animation
+   (`Logo.tsx`) stays untouched. Busy is the SAME four keyframes as idle above, just sped up (no
+   new shape) plus a touch of glow — a class toggle, no JS animation loop. */
+.mark-busy .brand-mark .orb,
+.mark-busy .brand-mark .core,
+.mark-busy .brand-mark .glow,
+.mark-busy .brand-mark .out {
+  animation-duration: 1.1s;
+}
+.mark-busy .brand-mark {
+  filter: drop-shadow(0 0 4px var(--accent-border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No continuous spin even while busy — a subtle whole-mark opacity pulse instead, idle stays
+     exactly as static as the block above leaves it. */
+  .mark-busy .brand-mark {
+    filter: none;
+    animation: mark-pulse 1.1s ease-in-out infinite;
+  }
+}
+
+@keyframes mark-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ---- Empty-state hero (D57/Task U1) ---------------------------------------- */
+/* Shown only while the active conversation has no turns (`Chat.tsx`, inside `.chat-stream`) —
+   the big centered mark + wordmark + tagline, like today's landing feel. Once a turn exists the
+   hero is gone and the small `.topbar-brand` mark carries the brand instead; the fade-in keeps
+   the collapse smooth rather than an abrupt layout jump. */
+.hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 40px 20px;
+  animation: hero-in 0.3s ease;
+}
+
+.hero .brand-mark {
+  width: 64px;
+  height: 64px;
+}
+
+.hero-word {
+  font-size: 34px;
   letter-spacing: -1px;
-  margin: 0;
+  margin: 6px 0 0;
   background: linear-gradient(90deg, var(--text-h), var(--accent));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.tagline {
+.hero-tagline {
   color: var(--muted);
   font-size: 15px;
+  margin: 0;
+}
+
+/* Quiet second line under the tagline (D57/Task U2) — points at the two ways documents get in
+   (drag-drop, folder agent) without competing with the tagline above it. */
+.hero-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 2px 0 0;
+}
+
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---- Token field ----------------------------------------------------------- */
@@ -258,7 +399,7 @@ button {
   font-weight: 500;
   letter-spacing: 0.01em;
   color: #fff;
-  background: #7c5cff; /* blue-purple — matches the logo */
+  background: var(--accent-ui); /* blue-purple — matches the logo */
   border: none;
   border-radius: 980px; /* pill */
   padding: 11px 24px;
@@ -277,7 +418,7 @@ button {
    equal to (or lower than) any component-local `.foo:hover` rule, so the component always wins
    for buttons that were never meant to have this fill. */
 .btn-primary:hover:not(:disabled) {
-  background: #6a45f0;
+  background: var(--accent-ui-strong);
 }
 
 button:active:not(:disabled) {
@@ -285,7 +426,7 @@ button:active:not(:disabled) {
 }
 
 button:focus-visible {
-  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.22);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 button:disabled {
@@ -377,16 +518,16 @@ button:disabled {
 }
 
 .mode-switch input:checked + .switch-track {
-  background: #7c5cff; /* Human (checked, right) — blue-purple, matches the buttons/logo */
+  background: var(--accent-ui); /* Human (checked, right) — blue-purple, matches the buttons/logo */
 }
 
 .mode-switch input:checked + .switch-track .switch-thumb {
   transform: translateX(24px);
-  color: #7c5cff; /* glyph colour while Human — matches the buttons */
+  color: var(--accent-ui); /* glyph colour while Human — matches the buttons */
 }
 
 .mode-switch input:focus-visible + .switch-track {
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 .mode-glyph {
@@ -417,16 +558,16 @@ button:disabled {
 }
 
 .recap-switch input:checked + .switch-track {
-  background: #7c5cff; /* ON — blue-purple, matches the logo */
+  background: var(--accent-ui); /* ON — blue-purple, matches the logo */
 }
 
 .recap-switch input:checked + .switch-track .switch-thumb {
   transform: translateX(24px);
-  color: #7c5cff; /* glyph colour while ON */
+  color: var(--accent-ui); /* glyph colour while ON */
 }
 
 .recap-switch input:focus-visible + .switch-track {
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 .mode-switch .switch-label {
@@ -446,7 +587,7 @@ button:disabled {
 }
 .mode-info:hover,
 .mode-info:focus-visible {
-  color: #7c5cff;
+  color: var(--accent-ui);
 }
 
 .mode-tip {
@@ -892,6 +1033,14 @@ button:disabled {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  /* A calm static placeholder — no sweeping gradient — while content loads (D57/Task U7). */
+  .skeleton-line {
+    animation: none;
+    background: var(--border);
+  }
+}
+
 /* ---- Ingest results -------------------------------------------------------- */
 .ingest-results {
   list-style: none;
@@ -925,55 +1074,7 @@ button:disabled {
   color: var(--error);
 }
 
-/* ---- System status chip + popover ------------------------------------------ */
-.sys {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 10; /* just the chip — its drawer/backdrop render at root and layer above this */
-  font-size: 13px;
-}
-
-/* Same pill as the Library FAB (.library-fab), but white — the System counterpart. */
-.sys-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 120px; /* uniform width across the System / Agent / Library corner pills */
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: 980px;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  transition:
-    background 0.18s ease,
-    border-color 0.18s ease,
-    transform 0.06s ease;
-}
-.sys-chip:hover:not(:disabled) {
-  background: var(--page-bg);
-  border-color: var(--muted);
-}
-.sys-chip:active {
-  transform: scale(0.97);
-}
-
-/* Gear icon doubles as the health light: purple = ok, red = down, grey = unknown. */
-.sys-gear {
-  color: var(--muted);
-  transition: color 0.18s ease;
-}
-.sys-gear-up {
-  color: #7c5cff;
-}
-.sys-gear-down {
-  color: var(--error);
-}
-
+/* ---- System drawer (D57/Task U1: trigger now lives in the topbar, not a floating chip) ------ */
 .sys-dot {
   width: 8px;
   height: 8px;
@@ -983,8 +1084,8 @@ button:disabled {
 }
 /* Healthy = bluish-purple (matches the logo); down = red. No green. */
 .sys-dot-up {
-  background: #7c5cff;
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18);
+  background: var(--accent-ui);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 18%, transparent);
 }
 .sys-dot-down {
   background: var(--error);
@@ -1063,7 +1164,7 @@ button:disabled {
   margin-top: 4px;
   font-size: 13px;
   font-weight: 600;
-  color: #6a45f0; /* blue-purple, matches the buttons/logo */
+  color: var(--accent-ui-strong); /* blue-purple, matches the buttons/logo */
   text-decoration: none;
 }
 .sys-divider {
@@ -1076,16 +1177,7 @@ button:disabled {
   text-decoration: underline;
 }
 
-/* ---- Agent download chip + drawer ------------------------------------------ */
-/* Sits directly under the System chip (.sys is top:16px) — same pill (.sys-chip). */
-.agentbar {
-  position: fixed;
-  top: 64px;
-  right: 16px;
-  z-index: 10;
-  font-size: 13px;
-}
-
+/* ---- Agent download drawer (D57/Task U1: trigger now lives in the topbar) ------------------- */
 .agent-intro {
   margin: 0 0 4px;
   font-size: 13.5px;
@@ -1140,7 +1232,7 @@ button:disabled {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: #7c5cff;
+  background: var(--accent-ui);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   text-decoration: none;
@@ -1148,13 +1240,117 @@ button:disabled {
   transition: background 0.18s ease;
 }
 .agent-dl-btn:hover {
-  background: #6a45f0;
+  background: var(--accent-ui-strong);
 }
 .agent-dl-btn.is-soon {
   color: var(--muted);
   background: var(--page-bg);
   border-color: var(--border);
   pointer-events: none;
+}
+
+/* ---- Ingest turns (D57/Task U2) --------------------------------------------- */
+/* A client-side-only turn rendered inline in the chat stream for one in-chat upload batch
+   (`Composer.tsx`'s `IngestTurnCard`) — reuses `.doc-list`/`.doc-item`/`.doc-badge` below
+   (including the `.doc-failed` error tint, already built on the `--error*` vars) rather than a
+   parallel design system; only this small header line is new. */
+.ingest-turn-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ---- Find turns (D57/Task U3) ------------------------------------------------ */
+/* The retrieval-only sibling of an ingest turn (`FindTurn.tsx`'s `FindTurnCard`) — a ranked
+   result list rendered client-side, no LLM involved. Reuses `.source-head`/`.badge`/`.snippet`
+   (Search.tsx's own citation markup) for each row's head + quote; only the rank badge, the
+   clickable-row toggle, and the top-match tint are new. */
+.find-turn-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+}
+
+.find-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.find-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--page-bg);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.find-row:hover {
+  border-color: var(--border-strong);
+}
+
+.find-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* Top match — visually first-class but calm: the same accent family already used for query-term
+   hits/GK segments, not a new hue. */
+.find-row-top {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.find-rank {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+}
+
+.find-row-top .find-rank {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.find-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* A quiet chip for `modified_at` — same visual weight as `.badge-score`, not accent-tinted. */
+.badge-date {
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+}
+
+/* Overrides `.snippet-clamp`'s 3-line clamp down to 2 for Find rows (source order breaks the tie
+   — both are single-class selectors of equal specificity, and this rule is declared later). */
+.find-snippet-clamp {
+  -webkit-line-clamp: 2;
 }
 
 /* ---- Documents: drop zone + queued list ------------------------------------ */
@@ -1191,19 +1387,19 @@ button:disabled {
 }
 
 .dropzone:hover {
-  border-color: #7c5cff;
+  border-color: var(--accent-ui);
   color: var(--text-h);
 }
 
 .dropzone:focus-visible {
   outline: none;
-  border-color: #7c5cff;
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  border-color: var(--accent-ui);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
 }
 
 .dropzone.dragging {
-  border-color: #7c5cff;
-  background: rgba(124, 92, 255, 0.06);
+  border-color: var(--accent-ui);
+  background: color-mix(in srgb, var(--accent-ui) 6%, transparent);
   color: var(--text-h);
 }
 
@@ -1214,7 +1410,7 @@ button:disabled {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: #7c5cff;
+  background: var(--accent-ui);
   color: #fff;
   flex-shrink: 0;
 }
@@ -1333,7 +1529,7 @@ button:disabled {
   width: 13px;
   height: 13px;
   border: 2px solid var(--border-strong);
-  border-top-color: #7c5cff;
+  border-top-color: var(--accent-ui);
   border-radius: 50%;
   animation: doc-spin 0.7s linear infinite;
 }
@@ -1344,28 +1540,16 @@ button:disabled {
   }
 }
 
-/* ---- Library drawer (ingested documents) ----------------------------------- */
-/* A primary action (same solid pill + hover as Send/Search, via `.btn-primary`) — only the
-   fixed-position/shadow layout is its own. */
-.library-fab {
-  position: fixed;
-  right: 22px;
-  bottom: 22px;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 120px; /* match the System / Agent corner pills */
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: var(--shadow);
+@media (prefers-reduced-motion: reduce) {
+  /* A static ring, no continuous rotation — the adjacent status text already says "Uploading…"
+     (D57/Task U7). */
+  .doc-spinner {
+    animation: none;
+    border-top-color: var(--border-strong);
+  }
 }
 
-.library-fab:active {
-  transform: scale(0.97);
-}
-
+/* ---- Library drawer (ingested documents; D57/Task U1: trigger now lives in the topbar) ------ */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -1394,6 +1578,20 @@ button:disabled {
   transform: translateX(0);
 }
 
+/* Library is the one LEFT-hand drawer (D57/Task U5) — same panel, mirrored: hinges off the left
+   edge instead of the right, so the border/shadow-catching edge flips too. `--shadow` above has
+   no horizontal offset (pure downward blur), so it already reads correctly on either side without
+   a separate value. `.drawer.open` (two classes, higher specificity) still wins the transform
+   tie-break, so the open state is identical either side — only the closed-state slide direction
+   and which edge gets the border differ here. */
+.drawer-left {
+  left: 0;
+  right: auto;
+  border-left: none;
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+}
+
 .drawer-head {
   display: flex;
   align-items: center;
@@ -1411,7 +1609,7 @@ button:disabled {
   font-size: 12px;
   font-weight: 600;
   color: #fff;
-  background: #7c5cff;
+  background: var(--accent-ui);
   border-radius: 999px;
   padding: 1px 8px;
 }
@@ -1527,7 +1725,7 @@ button:disabled {
 }
 
 .history-item-active {
-  border-color: #7c5cff;
+  border-color: var(--accent-ui);
   background: var(--accent-bg);
 }
 
@@ -1538,7 +1736,7 @@ button:disabled {
 /* Editable settings (pencil-marked, inline-edited in the system popover) */
 .sys-pencil {
   margin-left: 6px;
-  color: #7c5cff;
+  color: var(--accent-ui);
   font-size: 11px;
 }
 .sys-edit {
@@ -1554,8 +1752,8 @@ button:disabled {
   outline: none;
 }
 .sys-edit:focus-visible {
-  border-color: #7c5cff;
-  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.2);
+  border-color: var(--accent-ui);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-ui) 20%, transparent);
   background: var(--bg);
 }
 
@@ -1583,8 +1781,8 @@ button:disabled {
 }
 
 .sys-token-input:focus-visible {
-  border-color: #7c5cff;
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  border-color: var(--accent-ui);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ui) 22%, transparent);
   background: var(--bg);
 }
 
@@ -1600,7 +1798,7 @@ button:disabled {
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #7c5cff;
+  color: var(--accent-ui);
   opacity: 0.85;
   margin-bottom: 4px;
 }
@@ -1627,7 +1825,7 @@ button:disabled {
 .sys-saved {
   font-size: 11px;
   font-weight: 600;
-  color: #7c5cff;
+  color: var(--accent-ui);
   animation: sys-saved-fade 1.5s ease forwards;
 }
 @keyframes sys-saved-fade {
@@ -1657,78 +1855,235 @@ button:disabled {
   font-weight: 400;
 }
 
-/* ---- Tabs (Search / Chat) ---------------------------------------------------- */
-.tabs {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 3px;
-  padding: 4px;
-  background: var(--page-bg);
-  border: 1px solid var(--border);
-  border-radius: 980px;
-}
-
-.tab-btn {
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  border-radius: 980px;
-  padding: 7px 18px;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease;
-}
-
-.tab-btn:hover:not(.active) {
+/* ---- System drawer, simple-first reorg (D57/Task U6) ------------------------ */
+/* Section title above each of Connection/Model/Folder agent — bigger + heavier than `.sys-label`
+   (which stays the smaller per-field caption it always was). */
+.sys-heading {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
   color: var(--text-h);
 }
 
-.tab-btn.active {
-  color: #fff;
-  background: #7c5cff;
-}
-
-.tab-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
-}
-
-/* ---- Chat -------------------------------------------------------------------- */
-.chat-head {
+/* Connection's condensed component-health row — same per-component data `.sys-comp` used to show
+   one-per-line, just wrapped into a tight row instead (D57/Task U6): nothing is hidden behind a
+   hover/tooltip, it's simply denser. */
+.sys-health-row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 0 4px;
+}
+.sys-health-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sys-health-name {
+  color: var(--text-h);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.sys-health-detail {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
-.chat-head-actions {
+/* Model section's local-only provider-detect preview (D57/Task U6) — `llm_api_key` is
+   restart-only (see `RESTART_REQUIRED` above), so this input never saves; it only feeds
+   `detectProvider` a live preview as the user types. */
+.sys-model-key {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+.sys-model-key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sys-model-key-row .sys-token-input {
+  flex: 1 1 auto;
+}
+.sys-model-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.sys-provider-badge {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--accent-ui-strong);
+  background: color-mix(in srgb, var(--accent-ui) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-ui) 28%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+/* Advanced accordion — the entire original raw settings table, unchanged, just demoted behind a
+   native <details>/<summary> (D57/Task U6). Own chevron replaces the default marker. */
+.sys-advanced {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 4px;
+}
+.sys-advanced-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.sys-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+.sys-advanced-chevron {
+  display: inline-flex;
+  color: var(--muted);
+  font-size: 12px;
+  transition: transform 0.16s ease;
+}
+.sys-advanced[open] .sys-advanced-chevron {
+  transform: rotate(90deg);
+}
+.sys-advanced-body {
+  padding-top: 6px;
+}
+
+/* ---- Empty-corpus nudge (D57/Task U6) ---------------------------------------- */
+/* One dismissable centered card in the empty-state hero, above the composer — shown only once
+   `/documents` has confirmed a 0-count corpus (never while loading/unknown, never with no
+   token), and never again once dismissed (`localStorage.agentNudgeDismissed`). */
+.agent-nudge {
+  margin-top: 18px;
+  max-width: 360px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  animation: hero-in 0.3s ease;
+}
+.agent-nudge-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.agent-nudge-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.agent-nudge-cta {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent-ui);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.agent-nudge-cta:hover {
+  background: var(--accent-ui-strong);
+}
+.agent-nudge-dismiss {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.agent-nudge-dismiss:hover {
+  color: var(--text-h);
+}
+
+/* ---- Chat workbench (D57/Task U1) ------------------------------------------- */
+/* Fills the `.workbench` grid's remaining row below the topbar; internally split into the
+   scrollable stream and the fixed composer via flexbox (`min-height: 0` on both is required for
+   `overflow-y: auto` to actually constrain `.chat-stream` instead of growing past the viewport). */
+.chat-workbench {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden; /* hard backstop (D47): rich content ONLY ever scrolls in its own box */
+  display: flex;
+  flex-direction: column;
+}
+
+/* The readable column — same width the old boxed chat card used — centered inside the
+   full-bleed `.chat-stream`/`.composer`. */
+.chat-inner {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 28px 20px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--page-bg);
+}
+
+.composer-inner {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 12px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer-pills {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.chat-new,
-.chat-history-btn {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  padding: 5px 12px;
-  border-radius: 980px;
-}
-
-.chat-new:hover:not(:disabled),
-.chat-history-btn:hover {
-  color: var(--text-h);
-  background: var(--page-bg);
-}
-
-/* ---- Grounding mode selector (D46) — a compact 3-way segmented pill, same visual language
-   as the Search/Chat tab bar (`.tabs`/`.tab-btn`), scaled down for a header control. ------- */
+/* ---- Segmented pill (D46; generic since D57/Task U3) — a compact segmented control, same
+   visual language as the Search/Chat tab bar (`.tabs`/`.tab-btn`), scaled down for a header
+   control. Originally the grounding mode selector; `Composer.tsx`'s Ask/Find `ModeToggle` reuses
+   these same two classes rather than duplicating the CSS, since the pattern itself was never
+   grounding-specific. ------------------------------------------------------------------------ */
 .grounding-select {
   display: inline-flex;
   gap: 2px;
@@ -1765,6 +2120,66 @@ button:disabled {
 
 .grounding-btn:focus-visible {
   box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* Dimmed, non-interactive state (D57/Task U3) — the grounding toggle only means something in Ask
+   mode; while Find is active it stays in place (layout stability) but reads as switched off. */
+.grounding-select.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ---- Composer attach button (D57/Task U2) ----------------------------------- */
+.attach-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--page-bg);
+  border: 1px solid var(--border-strong);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.attach-btn:hover:not(:disabled) {
+  color: var(--text-h);
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.attach-btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* ---- Whole-window drag-drop overlay (D57/Task U2) --------------------------- */
+/* Reuses `.drawer-backdrop`'s own dim scrim (same rule, no new hardcoded color) — this class only
+   adds the centering + raises the stack above drawers (z-index 40/50) so a drag started while a
+   drawer is open still reads clearly. `pointer-events: none` keeps the window-level drag/drop
+   listeners (not this element) in charge; the card underneath is purely informational. */
+.drop-overlay {
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-overlay-card {
+  padding: 22px 34px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1.5px dashed var(--accent);
+  color: var(--text-h);
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
 }
 
 /* ---- "From general knowledge" chip (D46) — a subtle trust-boundary flag on a message that
@@ -1820,20 +2235,6 @@ button:disabled {
   border-radius: 980px;
   padding: 1.5px 8px;
   margin-bottom: 5px;
-}
-
-.chat-thread {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  max-height: 560px;
-  overflow-y: auto;
-  overflow-x: hidden; /* hard backstop (D47): rich content ONLY ever scrolls in its own box */
-  padding-right: 2px;
-}
-
-.chat-empty {
-  padding: 20px 0;
 }
 
 .chat-turn {
@@ -1953,7 +2354,7 @@ button:disabled {
 }
 
 .tl-active .tl-icon {
-  color: #7c5cff;
+  color: var(--accent-ui);
 }
 
 .tl-active .tl-text {
@@ -1967,6 +2368,14 @@ button:disabled {
   }
   50% {
     opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No continuous opacity flicker — `.tl-active .tl-icon`'s colour change above already marks the
+     active line (D57/Task U7). */
+  .tl-active .tl-text {
+    animation: none;
   }
 }
 
@@ -1996,6 +2405,6 @@ button:disabled {
 }
 
 .tl-summary-more {
-  color: #7c5cff;
+  color: var(--accent-ui);
   font-weight: 600;
 }

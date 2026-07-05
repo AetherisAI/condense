@@ -1,22 +1,6 @@
 import { useEffect, useState } from 'react'
-
-/** One ingested document (mirrors api.schemas.DocumentSummary). */
-type DocumentSummary = {
-  path: string
-  source_hash: string
-  chunks: number
-  // D44: the source file's true last-modified time (or indexed_at fallback) — additive,
-  // not yet rendered in this panel.
-  modified_at?: string | null
-  indexed_at?: string | null
-}
-
-/** Response body of ``GET /documents`` (mirrors api.schemas.DocumentsResponse). */
-type DocumentsResponse = {
-  tenant: string
-  documents: DocumentSummary[]
-  supported: boolean
-}
+import { apiFetch } from './api'
+import { fetchDocuments, type DocumentSummary } from './documents'
 
 function fileName(path: string): string {
   const parts = path.split(/[/\\]/)
@@ -37,8 +21,8 @@ const TINTS: Record<string, string> = {
   xls: '#22a06b',
   xlsx: '#22a06b',
   csv: '#22a06b',
-  md: '#7c5cff',
-  markdown: '#7c5cff',
+  md: 'var(--accent-ui)',
+  markdown: 'var(--accent-ui)',
   json: '#8f1fe6',
   yaml: '#8f1fe6',
   yml: '#8f1fe6',
@@ -71,15 +55,40 @@ function TrashIcon() {
  * Library drawer: a slide-out panel listing every document indexed in the libSQL store, with a
  * per-document delete. Opens on demand and fetches ``GET /documents``; ``DELETE /documents/{hash}``
  * removes one. If the configured store doesn't support listing yet (``supported: false``) it says
- * so plainly rather than erroring — the engine gains those two methods and this lights up.
+ * so plainly rather than erroring — the engine gains those two methods and this lights up. Its
+ * own floating FAB trigger is gone (D57/Task U1) — `open` is controlled from the workbench
+ * topbar's "Library" button. Slides in from the LEFT (`.drawer-left`, D57/Task U5) — every other
+ * drawer opens from the right; open state persists across reloads (`App.tsx`, `libraryOpen` in
+ * localStorage). Closes on backdrop-click or Escape, same as System/Agent.
  */
-export default function Library({ token }: { token: string }) {
-  const [open, setOpen] = useState(false)
+export default function Library({
+  token,
+  open,
+  onOpenChange,
+}: {
+  token: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null)
   const [supported, setSupported] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+
+  // Dismiss on Escape while open — outside clicks are caught by the drawer backdrop. Mirrors
+  // System/Agent's exact pattern; unlike History (the one drawer that can share the screen with
+  // several others stacked behind it), Library — now the sole LEFT-hand drawer, structurally last
+  // in the DOM among the four — never has anything else painting in front of it, so it always
+  // closes unconditionally on Escape (see ChatHistory.tsx for the yield-to-others nuance).
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onOpenChange(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onOpenChange])
 
   useEffect(() => {
     if (!open) return
@@ -88,9 +97,7 @@ export default function Library({ token }: { token: string }) {
       setError(null)
       setLoading(true)
       try {
-        const resp = await fetch('/documents', { headers: { Authorization: `Bearer ${token}` } })
-        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
-        const data = (await resp.json()) as DocumentsResponse
+        const data = await fetchDocuments(token)
         if (cancelled) return
         setDocs(data.documents)
         setSupported(data.supported)
@@ -110,9 +117,8 @@ export default function Library({ token }: { token: string }) {
     setBusy(hash)
     setError(null)
     try {
-      const resp = await fetch(`/documents/${encodeURIComponent(hash)}`, {
+      const resp = await apiFetch(`/documents/${encodeURIComponent(hash)}`, token, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
       setDocs((prev) => (prev ? prev.filter((d) => d.source_hash !== hash) : prev))
@@ -127,34 +133,21 @@ export default function Library({ token }: { token: string }) {
 
   return (
     <>
-      <button
-        type="button"
-        className="library-fab btn-primary"
-        onClick={() => setOpen(true)}
-        title="Browse indexed documents"
+      {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
+
+      <aside
+        className={`drawer drawer-left${open ? ' open' : ''}`}
+        role="dialog"
+        aria-label="Library"
+        aria-hidden={!open}
       >
-        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-          <path
-            d="M2 4.5l2-2h3l1.5 1.5H14v8.5H2z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinejoin="round"
-          />
-        </svg>
-        Library
-      </button>
-
-      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
-
-      <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open}>
         <div className="drawer-head">
           <h2>Library</h2>
           {supported && count > 0 && <span className="drawer-count">{count}</span>}
           <button
             type="button"
             className="drawer-close"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Close library"
           >
             ✕
@@ -173,7 +166,7 @@ export default function Library({ token }: { token: string }) {
           )}
 
           {!loading && !error && supported && docs && docs.length === 0 && (
-            <p className="drawer-muted">No documents indexed yet. Drop files into the Documents panel.</p>
+            <p className="drawer-muted">No documents indexed yet. Drop files to add them.</p>
           )}
 
           {supported && docs && docs.length > 0 && (

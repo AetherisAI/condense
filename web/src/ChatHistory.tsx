@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { apiFetch } from './api'
 
 /** One row of ``GET /v1/conversations`` (mirrors api.schemas.ConversationSummary). */
 type ConversationSummary = {
@@ -50,21 +51,51 @@ function TrashIcon() {
  * demand (fetches ``GET /v1/conversations`` lazily, same pattern as ``Library.tsx``), highlights
  * whichever conversation is currently open in the Chat panel, and lets the user reopen (click a
  * row) or delete (trash icon, click-again-to-confirm — no native `confirm()` dialog) any of them.
+ * Its own trigger chip is gone (D57/Task U1) — `open` is controlled from the workbench topbar,
+ * which is the single button that shows/hides this drawer now. Closes on backdrop-click or
+ * Escape (D57/Task U5) — see the Escape effect below for the stacking rule it uses so a single
+ * Escape press never closes two drawers at once.
  */
 export default function ChatHistory({
   token,
   currentConversationId,
   onOpen,
+  open,
+  onOpenChange,
 }: {
   token: string
   currentConversationId: string | null
   onOpen: (conversationId: string) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
+  // Dismiss on Escape while open — outside clicks are caught by the drawer backdrop (same base
+  // pattern as System). History is the one drawer every other drawer can be stacked in front of
+  // (it's the earliest `.drawer` in document order — nested inside `Chat` — while Library/System
+  // both render after it from `App.tsx`, so at equal z-index they paint on top of it). If another
+  // drawer is open when Escape is pressed, this yields instead of closing alongside it, so one
+  // Escape press closes exactly one drawer rather than the whole stack. Library mirrors System's
+  // plain always-close pattern instead (see Library.tsx) since — now that it's the sole LEFT-hand,
+  // last-in-DOM drawer — nothing else is ever stacked in front of it. The standalone Agent drawer
+  // that used to make this a 4-drawer problem is retired (D57/Task U6 folded it into System), so
+  // this now guarantees History never double-closes with anything, Library+History resolves to
+  // exactly one close, and System closes alone whenever it's the only drawer open.
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      const openDrawers = document.querySelectorAll('.drawer.open')
+      if (openDrawers.length > 1) return // something else is open — let it close first
+      onOpenChange(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onOpenChange])
 
   useEffect(() => {
     if (!open) return
@@ -73,9 +104,7 @@ export default function ChatHistory({
       setError(null)
       setLoading(true)
       try {
-        const resp = await fetch('/v1/conversations', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const resp = await apiFetch('/v1/conversations', token)
         if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
         const data = (await resp.json()) as ConversationListResponse
         if (cancelled) return
@@ -102,9 +131,8 @@ export default function ChatHistory({
   async function remove(id: string) {
     setConfirmingId(null)
     try {
-      const resp = await fetch(`/v1/conversations/${encodeURIComponent(id)}`, {
+      const resp = await apiFetch(`/v1/conversations/${encodeURIComponent(id)}`, token, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
       setConversations((prev) => (prev ? prev.filter((c) => c.conversation_id !== id) : prev))
@@ -114,7 +142,7 @@ export default function ChatHistory({
   }
 
   function select(id: string) {
-    setOpen(false)
+    onOpenChange(false)
     onOpen(id)
   }
 
@@ -122,11 +150,7 @@ export default function ChatHistory({
 
   return (
     <>
-      <button type="button" className="chat-history-btn" onClick={() => setOpen(true)}>
-        History
-      </button>
-
-      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+      {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
       <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open}>
         <div className="drawer-head">
@@ -135,7 +159,7 @@ export default function ChatHistory({
           <button
             type="button"
             className="drawer-close"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Close history"
           >
             ✕

@@ -1,27 +1,38 @@
-import { useEffect, useState } from 'react'
-import Search from './Search'
-import Ingest from './Ingest'
+import { useEffect, useRef, useState } from 'react'
 import Library from './Library'
-import Chat from './Chat'
+import Chat, { type ChatHandle } from './Chat'
 import SlashField from './SlashField'
-import Logo from './Logo'
-import SystemMenu from './SystemMenu'
-import AgentMenu from './AgentMenu'
+import SystemMenu, { type SystemMenuHandle } from './SystemMenu'
+import TopBar from './TopBar'
 import './App.css'
 
-type Tab = 'search' | 'chat'
-
 /**
- * Top-level test UI. Holds the one shared bearer token — entered in the System menu and
- * persisted to localStorage so it survives refreshes — and hands it to every panel. Two tabs
- * share the same header/token: Search (+ Documents ingest) and Chat (the ``/v1/answer``
- * reference agent).
+ * Top-level shell — "the workbench" (D57/Task U1): a single 100svh grid (sticky topbar / the
+ * conversation stream, the ONLY scrollable region / a fixed composer, both inside `Chat`). Chat
+ * IS the page now — the old Search|Chat tab pill and boxed chat card are gone; `Search`/`Ingest`
+ * stay in the tree for U2/U3 to absorb but are not mounted here. Holds the one shared bearer
+ * token (entered in the System drawer, persisted to localStorage) plus which drawer (if any) is
+ * open — lifted up here so a single topbar button per drawer replaces the old floating chips,
+ * without touching the drawers' own markup/behavior. The standalone Agent drawer is retired
+ * (D57/Task U6) — its downloads now live inside `SystemMenu`'s own "Folder agent" section, opened
+ * (and scrolled to) via `openAgentSection` below when the empty-corpus nudge's "Get the agent"
+ * button is clicked.
  */
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('bearerToken') ?? '')
-  const [tab, setTab] = useState<Tab>(() =>
-    localStorage.getItem('activeTab') === 'chat' ? 'chat' : 'search',
-  )
+  const [hasTurns, setHasTurns] = useState(false)
+  // The living-logo status indicator (D57/Task U4) — combined Ask/Find/ingest in-flight flag,
+  // computed and reported up by `Chat` (`onBusyChange`); `TopBar` just renders it as a class
+  // toggle, it never needs to know WHICH flow is running.
+  const [isBusy, setIsBusy] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  // Library's open state persists across reloads (D57/Task U5) — History/System stay
+  // session-only (reopened via their topbar button same as before); Library is the one drawer
+  // worth keeping open across a refresh since browsing the corpus is often a standalone task.
+  const [libraryOpen, setLibraryOpen] = useState(() => localStorage.getItem('libraryOpen') === 'true')
+  const [systemOpen, setSystemOpen] = useState(false)
+  const chatRef = useRef<ChatHandle>(null)
+  const systemMenuRef = useRef<SystemMenuHandle>(null)
 
   // Persist the token so it doesn't have to be re-entered on every page refresh.
   useEffect(() => {
@@ -29,54 +40,55 @@ export default function App() {
   }, [token])
 
   useEffect(() => {
-    localStorage.setItem('activeTab', tab)
-  }, [tab])
+    localStorage.setItem('libraryOpen', String(libraryOpen))
+  }, [libraryOpen])
+
+  // Opens the System drawer already scrolled to its "Folder agent" section (D57/Task U6) — the
+  // empty-corpus nudge's "Get the agent" button drives this; the drawer is always mounted (just
+  // translated off-screen when closed), so the ref's `scrollIntoView` works whether or not it was
+  // already open. `requestAnimationFrame` gives the `open` class one paint to apply first, so the
+  // scroll lands inside a drawer that's actually laid out at its final size.
+  function openAgentSection() {
+    setSystemOpen(true)
+    requestAnimationFrame(() => systemMenuRef.current?.scrollToAgent())
+  }
 
   return (
     <>
       <SlashField />
-      <SystemMenu token={token} setToken={setToken} />
-      <AgentMenu />
-      <main className="app">
-      <header className="app-header">
-        <div className="brand">
-          <Logo />
-          <h1>Condense</h1>
-        </div>
-        <p className="tagline">Search across all your knowledge</p>
-      </header>
 
-        <div className="tabs" role="tablist" aria-label="Panel">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'search'}
-            className={`tab-btn${tab === 'search' ? ' active' : ''}`}
-            onClick={() => setTab('search')}
-          >
-            Search
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'chat'}
-            className={`tab-btn${tab === 'chat' ? ' active' : ''}`}
-            onClick={() => setTab('chat')}
-          >
-            Chat
-          </button>
-        </div>
+      <div className="workbench">
+        <TopBar
+          hasTurns={hasTurns}
+          busy={isBusy}
+          historyOpen={historyOpen}
+          onHistoryClick={() => setHistoryOpen(true)}
+          onNewChat={() => chatRef.current?.newChat()}
+          libraryOpen={libraryOpen}
+          onLibraryClick={() => setLibraryOpen(true)}
+          systemOpen={systemOpen}
+          onSystemClick={() => setSystemOpen(true)}
+        />
 
-        {tab === 'search' ? (
-          <>
-            <Search token={token} />
-            <Ingest token={token} />
-          </>
-        ) : (
-          <Chat token={token} />
-        )}
-      </main>
-      <Library token={token} />
+        <Chat
+          ref={chatRef}
+          token={token}
+          historyOpen={historyOpen}
+          onHistoryOpenChange={setHistoryOpen}
+          onTurnsChange={setHasTurns}
+          onBusyChange={setIsBusy}
+          onOpenAgent={openAgentSection}
+        />
+      </div>
+
+      <SystemMenu
+        ref={systemMenuRef}
+        token={token}
+        setToken={setToken}
+        open={systemOpen}
+        onOpenChange={setSystemOpen}
+      />
+      <Library token={token} open={libraryOpen} onOpenChange={setLibraryOpen} />
     </>
   )
 }
