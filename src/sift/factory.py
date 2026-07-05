@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from sift.adapters.conversation.fake import FakeConversationStore
 from sift.adapters.embedding.fake import FakeEmbedder
 from sift.adapters.embedding.openai_compat import OpenAICompatEmbedder
 from sift.adapters.llm.null import NullCompleter
@@ -24,11 +25,13 @@ from sift.adapters.rerank.crossencoder_http import CrossEncoderReranker
 from sift.adapters.rerank.llm_judge import LlmJudgeReranker
 from sift.adapters.rerank.null import NullReranker
 from sift.adapters.store.fake import FakeVectorStore
-from sift.config import Settings
+from sift.config import Settings, parse_auth_tokens
 from sift.core.hashing import content_hash
-from sift.core.ports import Completer, Embedder, Parser, Reranker, VectorStore
+from sift.core.ports import Completer, Embedder, Parser, Reranker, ToolCompleter, VectorStore
+from sift.pipelines.answer import AnswerPipeline, ConversationStore
 from sift.pipelines.ingest import IngestOutcome, IngestPipeline, SupportsIngest
 from sift.pipelines.search import SearchPipeline
+from sift.pipelines.tools import ToolRegistry, build_tool_registry
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -44,6 +47,19 @@ class Container:
     store: VectorStore
     ingest: SupportsIngest
     settings: Settings
+    # WP v0.2.0 T2 (D38): the toolbox's single source of truth, and the parsed per-consumer
+    # bearer tokens (``{token: consumer name}``) ``resolve_tenant`` checks alongside
+    # ``ingest_token`` — both built once here so nothing downstream parses config repeatedly.
+    tools: ToolRegistry
+    auth_tokens: dict[str, str]
+    # WP v0.2.0 T3 (D40): the `/v1/answer` reference agent. Wired from `tools` (never `store`/
+    # `search` directly — the boundary rule `pipelines/answer.py` is tested against) plus its
+    # own `ConversationStore`.
+    answer: AnswerPipeline
+    # WP v0.2.0 T6 (D42): the SAME `ConversationStore` instance `answer` uses, exposed directly
+    # for the `GET`/`DELETE /v1/conversations*` chat-session-management routes — deliberately
+    # NOT `ToolRegistry` tools (`api/v1.py`), mirroring how `store`/`ingest` sit beside `search`.
+    conversations: ConversationStore
 
 
 class _StubIngest:
@@ -59,6 +75,7 @@ class _StubIngest:
         files: Sequence[tuple[str, bytes]],
         tenant: str,
         modified_at: Mapping[str, str] | None = None,
+        metadata: Mapping[str, dict[str, str]] | None = None,
     ) -> list[IngestOutcome]:
         return [
             IngestOutcome(path=name, status="indexed", content_hash=content_hash(data), chunks=1)
@@ -74,9 +91,33 @@ def build_container(settings: Settings) -> Container:
     reranker = _build_reranker(settings, completer)
     search = SearchPipeline(embedder, store, reranker, completer, settings)
     ingest = _build_ingest(settings, embedder, store)
+    tools = build_tool_registry(embedder, store, settings)
+    auth_tokens = parse_auth_tokens(settings.auth_tokens)
+    # Both `OpenAICompatCompleter` and `NullCompleter` implement `ToolCompleter` too (D40) — one
+    # instance serves both the recap `Completer` port and the answer loop's `ToolCompleter` port,
+    # so this is a structural cast, not a second adapter. `_build_completer`'s return type stays
+    # `Completer` (its existing callers — the reranker, the recap — need nothing more).
+    tool_completer: ToolCompleter = completer  # pyright: ignore[reportAssignmentType]
+    conversations = _build_conversation_store(settings)
+    # `title_completer=completer` (T6, D42): the SAME `Completer` instance already wired for
+    # the recap — no cast needed (unlike `tool_completer` above), since `_build_completer`'s
+    # return type is already `Completer`. Reusing it means the auto-title call is budget-capped
+    # via the SAME `recap_max_tokens`/`recap_temperature` the recap uses, with no new knob.
+    answer = AnswerPipeline(
+        tool_completer, tools, conversations, settings, title_completer=completer
+    )
     # ``store`` is shared between search, ingest, and the manifest route so a real ingest is
     # immediately searchable and reflected in ``known_hashes``.
-    return Container(search=search, store=store, ingest=ingest, settings=settings)
+    return Container(
+        search=search,
+        store=store,
+        ingest=ingest,
+        settings=settings,
+        tools=tools,
+        auth_tokens=auth_tokens,
+        answer=answer,
+        conversations=conversations,
+    )
 
 
 def _build_embedder(settings: Settings) -> Embedder:
@@ -148,6 +189,7 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
                 chunk_size=settings.chunk_size,
                 chunk_overlap=settings.chunk_overlap,
                 tokenizer="bge-m3",
+                chunk_min_chars=settings.chunk_min_chars,
             ),
             embedder,
             store,
@@ -167,8 +209,24 @@ def _build_completer(settings: Settings) -> Completer:
             settings.llm_api_key,
             max_tokens=settings.recap_max_tokens,
             temperature=settings.recap_temperature,
+            tool_mode=settings.answer_tool_mode,
+            answer_max_tokens=settings.answer_max_tokens,
         )
     return NullCompleter()
+
+
+def _build_conversation_store(settings: Settings) -> ConversationStore:
+    """A libSQL-backed store when a Turso database is configured, else the in-memory fake —
+    the same config-driven branch `_build_store` already uses (WP v0.2.0 T3, D40)."""
+    if settings.store_backend == "libsql" and settings.turso_database_url:
+        from sift.adapters.conversation.libsql import (  # pyright: ignore[reportMissingImports]
+            LibSQLConversationStore,
+        )
+
+        return LibSQLConversationStore(
+            settings.turso_database_url, auth_token=settings.turso_auth_token or None
+        )
+    return FakeConversationStore()
 
 
 def _build_reranker(settings: Settings, completer: Completer) -> Reranker:

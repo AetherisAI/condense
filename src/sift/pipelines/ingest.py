@@ -39,6 +39,7 @@ class SupportsIngest(Protocol):
         files: Sequence[tuple[str, bytes]],
         tenant: str,
         modified_at: Mapping[str, str] | None = None,
+        metadata: Mapping[str, dict[str, str]] | None = None,
     ) -> list[IngestOutcome]: ...
 
 
@@ -67,10 +68,12 @@ class IngestPipeline:
         files: Sequence[tuple[str, bytes]],
         tenant: str,
         modified_at: Mapping[str, str] | None = None,
+        metadata: Mapping[str, dict[str, str]] | None = None,
     ) -> list[IngestOutcome]:
         await self._store.ensure_ready(self._model, self._dim, tenant)
         known = set(await self._store.known_hashes(tenant))
         mtimes = modified_at or {}
+        file_metadata = metadata or {}
         outcomes: list[IngestOutcome] = []
         for filename, data in files:
             try:
@@ -96,8 +99,9 @@ class IngestPipeline:
                     continue
                 vectors = await self._embedder.embed([c.text for c in chunks])
                 file_mtime = mtimes.get(filename)
+                file_meta = file_metadata.get(filename)
                 embedded: list[Chunk] = [
-                    replace(c, vector=v, modified_at=file_mtime)
+                    replace(c, vector=v, modified_at=file_mtime, metadata=file_meta)
                     for c, v in zip(chunks, vectors, strict=True)
                 ]
                 await self._store.upsert(embedded, tenant)

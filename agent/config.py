@@ -14,7 +14,12 @@ from dataclasses import asdict, dataclass, field, fields
 
 from platformdirs import user_config_dir
 
-from agent.sync import DEFAULT_EXCLUDE_DIRS, DEFAULT_INCLUDE, DEFAULT_MAX_FILE_SIZE_MB
+from agent.sync import (
+    DEFAULT_EXCLUDE_DIRS,
+    DEFAULT_EXCLUDE_FILES,
+    DEFAULT_INCLUDE,
+    DEFAULT_MAX_FILE_SIZE_MB,
+)
 
 _APP = "sift-agent"
 
@@ -45,6 +50,10 @@ class AgentConfig:
     # set (``.venv``, ``node_modules``, …); editable in the settings dialog to add project-
     # specific junk folders without losing the built-ins (the field starts pre-populated with them).
     exclude_dirs: list[str] = field(default_factory=lambda: sorted(DEFAULT_EXCLUDE_DIRS))
+    # Filename glob patterns pruned from every walk (D39) — defaults to the built-in junk-file
+    # set (``MEMORY.md``, ``CLAUDE.md``, ``*.tmp``, …); editable in the settings dialog to add
+    # project-specific junk filenames without losing the built-ins (same shape as exclude_dirs).
+    exclude_files: list[str] = field(default_factory=lambda: sorted(DEFAULT_EXCLUDE_FILES))
     # HTTP timeout (seconds) for every engine request. Raised from the old 300s default (D36) —
     # one real OCR-heavy batch took 5m6s server-side and the client abandoned it while the server
     # kept working. Editable in the settings dialog for a slower/heavier backend.

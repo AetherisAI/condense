@@ -8,10 +8,10 @@ database.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from sift.core.errors import ModelPinMismatch, SiftError
-from sift.core.types import Chunk, DocumentInfo, Hit, Vector
+from sift.core.types import Chunk, DocumentInfo, Hit, SearchFilters, Vector
 
 
 class FakeVectorStore:
@@ -59,13 +59,18 @@ class FakeVectorStore:
             self._seq += 1
             stamps[source_hash] = f"{self._seq:020d}"
 
-    async def search(self, vector: Vector, k: int, tenant: str) -> list[Hit]:
+    async def search(
+        self, vector: Vector, k: int, tenant: str, filters: SearchFilters | None = None
+    ) -> list[Hit]:
         rows = self._rows.get(tenant)
         if not rows:
             return []
+        candidates = rows.values()
+        if filters is not None:
+            candidates = [chunk for chunk in candidates if _matches_filters(chunk, filters)]
         scored = [
             (_cosine(vector, chunk.vector), chunk)
-            for chunk in rows.values()
+            for chunk in candidates
             if chunk.vector is not None
         ]
         scored.sort(key=lambda pair: pair[0], reverse=True)
@@ -81,6 +86,7 @@ class FakeVectorStore:
                 index=chunk.index,
                 modified_at=mtimes.get(chunk.source_hash),
                 indexed_at=stamps.get(chunk.source_hash),
+                metadata=chunk.metadata,
             )
             for score, chunk in scored[:k]
         ]
@@ -91,18 +97,32 @@ class FakeVectorStore:
             return set()
         return {chunk.source_hash for chunk in rows.values()}
 
-    async def list_documents(self, tenant: str) -> list[DocumentInfo]:
+    async def list_documents(
+        self, tenant: str, metadata: Mapping[str, str] | None = None
+    ) -> list[DocumentInfo]:
         rows = self._rows.get(tenant)
         if not rows:
             return []
         paths: dict[str, str] = {}
         counts: dict[str, int] = {}
+        matched: set[str] = set()
         for chunk in rows.values():
             paths.setdefault(chunk.source_hash, chunk.source_path)
             counts[chunk.source_hash] = counts.get(chunk.source_hash, 0) + 1
+            if metadata and _metadata_matches(chunk.metadata, metadata):
+                matched.add(chunk.source_hash)
+        hashes = matched if metadata else counts.keys()
+        stamps = self._indexed_at.get(tenant, {})
+        mtimes = self._modified_at.get(tenant, {})
         return [
-            DocumentInfo(source_path=paths[h], source_hash=h, chunks=counts[h])
-            for h in sorted(counts)
+            DocumentInfo(
+                source_path=paths[h],
+                source_hash=h,
+                chunks=counts[h],
+                modified_at=mtimes.get(h),
+                indexed_at=stamps.get(h),
+            )
+            for h in sorted(hashes)
         ]
 
     async def delete_document(self, source_hash: str, tenant: str) -> int:
@@ -113,6 +133,34 @@ class FakeVectorStore:
         for key in victims:
             del rows[key]
         return len(victims)
+
+    async def get_chunks(self, source_hash: str, tenant: str) -> list[Chunk]:
+        rows = self._rows.get(tenant)
+        if not rows:
+            return []
+        chunks = [chunk for chunk in rows.values() if chunk.source_hash == source_hash]
+        return sorted(chunks, key=lambda chunk: chunk.index)
+
+
+def _metadata_matches(actual: dict[str, str] | None, wanted: Mapping[str, str]) -> bool:
+    """True when ``actual`` has every ``wanted`` key with the exact given value."""
+    if actual is None:
+        return False
+    return all(actual.get(key) == value for key, value in wanted.items())
+
+
+def _matches_filters(chunk: Chunk, filters: SearchFilters) -> bool:
+    """Mirrors ``LibSQLStore``'s SQL-side filter semantics (raw ISO-8601 string comparison)."""
+    if filters.metadata and not _metadata_matches(chunk.metadata, filters.metadata):
+        return False
+    if filters.since is not None or filters.until is not None:
+        if chunk.modified_at is None:
+            return False
+        if filters.since is not None and chunk.modified_at < filters.since:
+            return False
+        if filters.until is not None and chunk.modified_at > filters.until:
+            return False
+    return True
 
 
 def _cosine(a: Vector, b: Vector) -> float:

@@ -269,7 +269,14 @@ button {
     box-shadow 0.18s ease;
 }
 
-button:hover:not(:disabled) {
+/* Solid-fill hover, scoped to primary actions (Send/Search/Library FAB) ONLY. A bare
+   `button:hover` selector used to carry this, but `button:hover:not(:disabled)`'s extra
+   element-type selector made it MORE specific (by CSS's element/class/id tiebreak) than a
+   plain `.some-pill:hover` component rule, so it silently outranked every ghost/pill button's
+   own subtle local hover with this solid purple fill. Scoping to a class keeps specificity
+   equal to (or lower than) any component-local `.foo:hover` rule, so the component always wins
+   for buttons that were never meant to have this fill. */
+.btn-primary:hover:not(:disabled) {
   background: #6a45f0;
 }
 
@@ -537,6 +544,8 @@ button:disabled {
   color: var(--text);
   font-size: 16px;
   line-height: 1.65;
+  min-width: 0;
+  overflow-wrap: anywhere; /* a long unbroken URL/token in prose wraps instead of forcing scroll */
 }
 
 .recap > :first-child {
@@ -576,6 +585,131 @@ button:disabled {
 
 .recap a {
   color: var(--accent-strong);
+}
+
+/* ---- Rendered markdown: GFM tables (D47) ----------------------------------- */
+/* The scroll boundary lives HERE, on the wrapper, not on `table` itself — a wide table scrolls
+   within its own box and never drags the chat column sideways (`min-width: 0` lets this box
+   shrink below its content's natural width inside the flex/column ancestry above it). */
+.md-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.md-table-wrap table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+}
+
+.md-table-wrap th,
+.md-table-wrap td {
+  padding: 7px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow-wrap: normal; /* cancel `.recap`'s inherited `overflow-wrap: anywhere` — see the
+    `.code-block-pre` comment below for why that combination breaks `nowrap` cells apart */
+}
+
+.md-table-wrap tr:last-child td {
+  border-bottom: none;
+}
+
+.md-table-wrap thead th {
+  background: var(--page-bg);
+  color: var(--text-h);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+/* ---- Rendered markdown: fenced code blocks (D47) --------------------------- */
+.code-block {
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden; /* clips the head's corners to match the rounded box */
+  max-width: 100%;
+  min-width: 0;
+}
+
+.code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--page-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-block-lang {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.code-block-pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  /* Defense-in-depth: `.recap`'s `overflow-wrap: anywhere` (a safety net for long inline prose
+     URLs) inherits down into this `<pre>` — cancel it so a long unbroken token never gets
+     force-broken inside a scrollable code block. */
+  overflow-wrap: normal;
+}
+
+/* `prism-react-renderer` names every highlighted span's base class literally "token" (e.g.
+   `class="token keyword"`) — which collides with this app's PRE-EXISTING `.token` class (the
+   bearer-token input row in the header, `display: flex`). Every single syntax-highlighted span
+   was inheriting `display: flex` from that unrelated rule, and a flex-formatted span is a
+   block-level box — so each token started its own visual row instead of flowing inline (the
+   "one token per line" bug). Scope `.token` back to inline layout inside a code block only;
+   the header's own `.token` rule is untouched everywhere else. */
+.code-block-pre .token {
+  display: inline;
+}
+
+.code-block-pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ---- Rendered markdown: lazy Mermaid diagrams (D47) ------------------------ */
+.mermaid-block {
+  margin: 10px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-loading {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+  text-align: left;
 }
 
 /* ---- Sources --------------------------------------------------------------- */
@@ -655,6 +789,56 @@ button:disabled {
   border-left: 3px solid var(--accent-border);
   padding-left: 12px;
   font-style: italic;
+}
+
+/* Query-term match within a snippet (D49) — same accent family as the badges/border, not a
+   generic yellow <mark>, so it reads as "this app noticed it", not a browser find-in-page. */
+.snippet-hit {
+  background: var(--accent-bg);
+  color: var(--accent-strong);
+  font-style: normal;
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* ---- Chat: collapsed sources pill + compact cards (P1) ---------------------- */
+/* `.chat-sources`/`.source-compact` reuse `.source`/`.badge`/`.snippet` (Search.tsx's own
+   citation markup) — never a parallel design system, just tighter spacing + a clamp. */
+.chat-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.source-compact {
+  width: 100%;
+  padding: 10px 12px;
+  gap: 6px;
+}
+
+.snippet-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.source-expand {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.source-expand:hover {
+  text-decoration: underline;
 }
 
 /* ---- States ---------------------------------------------------------------- */
@@ -1079,6 +1263,8 @@ button:disabled {
 }
 
 /* ---- Library drawer (ingested documents) ----------------------------------- */
+/* A primary action (same solid pill + hover as Send/Search, via `.btn-primary`) — only the
+   fixed-position/shadow layout is its own. */
 .library-fab {
   position: fixed;
   right: 22px;
@@ -1090,19 +1276,7 @@ button:disabled {
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
-  background: #7c5cff;
-  border: none;
-  border-radius: 980px;
   box-shadow: var(--shadow);
-  cursor: pointer;
-  transition:
-    background 0.18s ease,
-    transform 0.06s ease;
-}
-
-.library-fab:hover {
-  background: #6a45f0;
 }
 
 .library-fab:active {
@@ -1240,6 +1414,44 @@ button:disabled {
   cursor: default;
 }
 
+.drawer-del-confirm {
+  color: var(--error);
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+/* ---- History drawer rows (Chat panel, P2) — reuses the Library drawer's .drawer-item/
+   .doc-meta/.doc-name/.doc-sub, just with a click-to-open button instead of a static row. */
+.history-item {
+  padding: 0;
+}
+
+.history-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.history-open:hover {
+  background: var(--page-bg);
+}
+
+.history-item-active {
+  border-color: #7c5cff;
+  background: var(--accent-bg);
+}
+
+.history-item-active .history-open:hover {
+  background: transparent;
+}
+
 /* Editable settings (pencil-marked, inline-edited in the system popover) */
 .sys-pencil {
   margin-left: 6px;
@@ -1291,4 +1503,416 @@ button:disabled {
   border-color: #7c5cff;
   box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
   background: var(--bg);
+}
+
+/* ---- Settings groups (System popover) --------------------------------------- */
+.sys-group {
+  margin-top: 14px;
+}
+.sys-group:first-child {
+  margin-top: 4px;
+}
+.sys-group-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #7c5cff;
+  opacity: 0.85;
+  margin-bottom: 4px;
+}
+.sys-row-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sys-row-restart .sys-val {
+  color: var(--muted);
+}
+.sys-restart-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  cursor: help;
+}
+.sys-saved {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7c5cff;
+  animation: sys-saved-fade 1.5s ease forwards;
+}
+@keyframes sys-saved-fade {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Reuse the Search panel's info-tooltip pattern for each setting's one-line explanation. */
+.sys-info {
+  margin-left: 5px;
+  font-size: 11px;
+}
+.sys-tip {
+  left: auto;
+  right: -8px;
+  width: 210px;
+  font-weight: 400;
+}
+
+/* ---- Tabs (Search / Chat) ---------------------------------------------------- */
+.tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 3px;
+  padding: 4px;
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+  border-radius: 980px;
+}
+
+.tab-btn {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 980px;
+  padding: 7px 18px;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.tab-btn:hover:not(.active) {
+  color: var(--text-h);
+}
+
+.tab-btn.active {
+  color: #fff;
+  background: #7c5cff;
+}
+
+.tab-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+}
+
+/* ---- Chat -------------------------------------------------------------------- */
+.chat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-new,
+.chat-history-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  padding: 5px 12px;
+  border-radius: 980px;
+}
+
+.chat-new:hover:not(:disabled),
+.chat-history-btn:hover {
+  color: var(--text-h);
+  background: var(--page-bg);
+}
+
+/* ---- Grounding mode selector (D46) — a compact 3-way segmented pill, same visual language
+   as the Search/Chat tab bar (`.tabs`/`.tab-btn`), scaled down for a header control. ------- */
+.grounding-select {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  flex-shrink: 0;
+}
+
+.grounding-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 980px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.grounding-btn:hover:not(.active) {
+  color: var(--text-h);
+}
+
+.grounding-btn.active {
+  color: #fff;
+  background: var(--accent);
+}
+
+.grounding-btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* ---- "From general knowledge" chip (D46) — a subtle trust-boundary flag on a message that
+   contains content the pipeline detected as NOT sourced from the ingested documents. ------- */
+.gk-chip {
+  align-self: flex-start;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #8a5a00;
+  background: #fff3d6;
+  border: 1px solid #f0d189;
+  padding: 3px 10px;
+  border-radius: 980px;
+  white-space: normal;
+}
+
+/* ---- General-knowledge SEGMENTS (D48/BUG-2) — the blatant, line-level sibling of the chip
+   above: each ungrounded passage the pipeline split out (`grounding.segments`) renders in the
+   app's own purple accent, with its own small tag, so it's obvious at a glance which lines of
+   an otherwise-grounded answer came from the model's own training knowledge rather than the
+   ingested documents. Grounded segments render with zero extra styling (plain `.recap`). ---- */
+.chat-answer .gk-segment {
+  margin: 10px 0;
+  padding: 6px 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.chat-answer .gk-segment > :first-child {
+  margin-top: 0;
+}
+.chat-answer .gk-segment > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-answer .gk-segment,
+.chat-answer .gk-segment p,
+.chat-answer .gk-segment li,
+.chat-answer .gk-segment strong {
+  color: var(--accent-strong);
+}
+
+.gk-segment-tag {
+  display: block;
+  width: fit-content;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 980px;
+  padding: 1.5px 8px;
+  margin-bottom: 5px;
+}
+
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: 560px;
+  overflow-y: auto;
+  overflow-x: hidden; /* hard backstop (D47): rich content ONLY ever scrolls in its own box */
+  padding-right: 2px;
+}
+
+.chat-empty {
+  padding: 20px 0;
+}
+
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0; /* flex items default to min-width:auto, which would let a wide code/table
+                   block stretch this column instead of scrolling within itself */
+}
+
+.chat-user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 15px;
+  font-size: 15px;
+  color: var(--text-h);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-assistant {
+  align-self: stretch;
+  min-width: 0;
+}
+
+.chat-answer {
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.chat-truncated {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* ---- Activity timeline -------------------------------------------------------- */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tl-line {
+  display: flex;
+  flex-direction: column;
+}
+
+.tl-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  margin: 0 -6px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.tl-toggle:hover:not(:disabled) {
+  background: var(--page-bg);
+  color: var(--text-h);
+}
+
+.tl-toggle:disabled {
+  cursor: default;
+}
+
+.tl-chevron {
+  display: inline-block;
+  width: 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.tl-toggle[aria-expanded='true'] .tl-chevron {
+  transform: rotate(90deg);
+}
+
+.tl-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.tl-glyph {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.tl-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-result {
+  color: var(--muted);
+}
+
+.tl-active .tl-icon {
+  color: #7c5cff;
+}
+
+.tl-active .tl-text {
+  animation: tl-pulse 1.7s ease-in-out infinite;
+}
+
+@keyframes tl-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.tl-detail {
+  margin: 2px 0 4px 29px;
+  font-size: 12px;
+  max-height: 220px;
+}
+
+.tl-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.tl-summary:hover {
+  color: var(--text-h);
+}
+
+.tl-summary-more {
+  color: #7c5cff;
+  font-weight: 600;
 }

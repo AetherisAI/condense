@@ -188,6 +188,7 @@ class SearchPipeline:
                 score=hit.score,
                 snippet=_snippet(hit.text, settings.source_snippet_chars),
                 index=hit.index if hit.index >= 0 else None,
+                metadata=hit.metadata,
             )
             for hit in top
         ]

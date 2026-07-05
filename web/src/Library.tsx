@@ -5,6 +5,10 @@ type DocumentSummary = {
   path: string
   source_hash: string
   chunks: number
+  // D44: the source file's true last-modified time (or indexed_at fallback) — additive,
+  // not yet rendered in this panel.
+  modified_at?: string | null
+  indexed_at?: string | null
 }
 
 /** Response body of ``GET /documents`` (mirrors api.schemas.DocumentsResponse). */
@@ -125,7 +129,7 @@ export default function Library({ token }: { token: string }) {
     <>
       <button
         type="button"
-        className="library-fab"
+        className="library-fab btn-primary"
         onClick={() => setOpen(true)}
         title="Browse indexed documents"
       >

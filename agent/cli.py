@@ -29,6 +29,7 @@ from agent.client import PartialIngestError, SiftClient
 # imports ``from agent.cli import collect`` keep working).
 from agent.sync import (
     DEFAULT_EXCLUDE_DIRS,
+    DEFAULT_EXCLUDE_FILES,
     DEFAULT_INCLUDE,
     DEFAULT_MAX_FILE_SIZE_MB,
     collect,
@@ -80,6 +81,15 @@ def _build_parser() -> argparse.ArgumentParser:
             f"tooling exclusions ({', '.join(sorted(DEFAULT_EXCLUDE_DIRS))})"
         ),
     )
+    parser.add_argument(
+        "--exclude-file",
+        nargs="*",
+        default=[],
+        help=(
+            "extra filename glob patterns to skip, merged with the built-in junk-filename "
+            f"exclusions ({', '.join(sorted(DEFAULT_EXCLUDE_FILES))})"
+        ),
+    )
     return parser
 
 
@@ -89,6 +99,7 @@ def _watch(args: argparse.Namespace, client: SiftClient) -> int:
 
     includes = set(args.include)
     exclude_dirs = DEFAULT_EXCLUDE_DIRS | set(args.exclude_dir)
+    exclude_files = DEFAULT_EXCLUDE_FILES | set(args.exclude_file)
     managed: set[str] = set()  # paths seen on disk so far — scopes --delete-removed safely
 
     def run() -> None:
@@ -102,6 +113,7 @@ def _watch(args: argparse.Namespace, client: SiftClient) -> int:
             managed=managed,
             max_file_size_mb=args.max_file_size_mb,
             exclude_dirs=exclude_dirs,
+            exclude_files=exclude_files,
         )
         managed = set(summary.managed)
         print(f"[sync] {summary.line()}")
@@ -129,11 +141,16 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
 
     includes = set(args.include)
     exclude_dirs = DEFAULT_EXCLUDE_DIRS | set(args.exclude_dir)
+    exclude_files = DEFAULT_EXCLUDE_FILES | set(args.exclude_file)
     files = [
         f
         for path in args.paths
         for f in collect(
-            path, includes, max_file_size_mb=args.max_file_size_mb, exclude_dirs=exclude_dirs
+            path,
+            includes,
+            max_file_size_mb=args.max_file_size_mb,
+            exclude_dirs=exclude_dirs,
+            exclude_files=exclude_files,
         )
     ]
     known = client.manifest(args.tenant)

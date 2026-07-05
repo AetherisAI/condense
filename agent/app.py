@@ -388,6 +388,7 @@ class AgentApp:
                     managed=self._managed,
                     max_file_size_mb=cfg.max_file_size_mb,
                     exclude_dirs=set(cfg.exclude_dirs),
+                    exclude_files=set(cfg.exclude_files),
                 )
                 self._managed = set(summary.managed)
             self._ui(lambda s=summary: self._status.set(s.line()))

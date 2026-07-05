@@ -24,6 +24,13 @@
 # systemd unit in this repo (this script, test/ingest runs) follows the same rule: `MemoryMax` +
 # `MemorySwapMax=0` + `OOMScoreAdjust=1000` + `OOMPolicy=kill`, and NEVER `MemoryHigh`.
 #
+# WHY Restart=always, not on-failure (recurring incident): the engine has repeatedly received a
+# clean, direct SIGTERM from outside systemd (uvicorn logs "Shutting down", with no "Stopping
+# <unit>" line from systemd — i.e. NOT a `systemctl stop`) and exited cleanly, so
+# `Restart=on-failure` never fired and the unit just stayed down. `Restart=always` restarts the
+# unit on any exit — clean SIGTERM or OOM-kill — while `systemctl stop` remains the sanctioned way
+# to actually take the engine down (a manual stop masks Restart by design).
+#
 # Usage:
 #   scripts/run-engine.sh                 # start (or restart) the engine, capped at 2G
 #   ENGINE_MEM_MAX=3G scripts/run-engine.sh
@@ -48,8 +55,17 @@ systemd-run --user \
   -p MemorySwapMax=0 \
   -p OOMScoreAdjust=1000 \
   -p OOMPolicy=kill \
+  -p Restart=always \
+  -p RestartSec=2 \
   --collect \
   "$REPO/.venv/bin/python" -m uvicorn sift.api.main:app --host 127.0.0.1 --port "$PORT"
+# Restart=always/RestartSec=2 (DECISIONS.md D39, revised): engines have been killed by external
+# clean SIGTERMs (uvicorn logs "Shutting down", no systemd "Stopping <unit>" line — i.e. not a
+# `systemctl stop`, and the exit is clean so Restart=on-failure never fires). This is a recurring
+# incident, not a one-off: the unit dies with a normal exit code and just stays down. Restart=always
+# is the correct posture for a serving unit — it restarts on *any* exit, clean or not, OOM-kill
+# included (D29/D34) — and a deliberate manual stop is still `systemctl stop`, which masks Restart
+# by design, so operators retain a clean way to actually stop the engine.
 
 echo "sift-engine started — MemoryMax=$CAP (no MemoryHigh) MemorySwapMax=0 OOMScoreAdjust=1000 port=$PORT"
 echo "  the engine is now isolated: a runaway kills ONLY this unit, never VS Code / the session"

@@ -29,11 +29,13 @@ _TOKEN = "t"
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
 
 # Two source files with distinct hashes: cats.md (two chunks) and dogs.md (one) — "h_cats" sorts
-# before "h_dogs", so the listing order is deterministic.
-_SEED: tuple[tuple[str, str, int], ...] = (
-    ("cats.md", "h_cats", 0),
-    ("cats.md", "h_cats", 1),
-    ("dogs.md", "h_dogs", 0),
+# before "h_dogs", so the listing order is deterministic. cats.md carries a known modified_at
+# (D44) so the API-level round-trip can be asserted; dogs.md has none (modified_at stays null).
+_MODIFIED_AT = "2026-02-03T04:05:06+00:00"
+_SEED: tuple[tuple[str, str, int, str | None], ...] = (
+    ("cats.md", "h_cats", 0, _MODIFIED_AT),
+    ("cats.md", "h_cats", 1, _MODIFIED_AT),
+    ("dogs.md", "h_dogs", 0, None),
 )
 
 
@@ -46,13 +48,14 @@ def _seeded_container() -> Container:
 
     async def _seed() -> None:
         await store.ensure_ready(settings.embed_model, settings.embed_dim, "default")
-        for path, source_hash, index in _SEED:
+        for path, source_hash, index, modified_at in _SEED:
             chunk = Chunk(
                 text=f"{source_hash}:{index}",
                 source_path=path,
                 page=1,
                 source_hash=source_hash,
                 index=index,
+                modified_at=modified_at,
             )
             (vector,) = await embedder.embed([chunk.text])
             await store.upsert([replace(chunk, vector=vector)], "default")
@@ -118,6 +121,17 @@ def test_documents_lists_ingested_files_with_chunk_counts(client: TestClient) ->
     assert by_hash["h_cats"]["chunks"] == 2
     assert by_hash["h_dogs"]["path"] == "dogs.md"
     assert by_hash["h_dogs"]["chunks"] == 1
+
+
+def test_documents_listing_carries_modified_at(client: TestClient) -> None:
+    """D44: `GET /documents` must surface the file's true `modified_at` (or `null` when never
+    provided at ingest) — the temporal signal a consumer answers "when was this written" from."""
+    response = client.get("/documents", headers=_AUTH)
+
+    assert response.status_code == 200
+    by_hash = {d["source_hash"]: d for d in response.json()["documents"]}
+    assert by_hash["h_cats"]["modified_at"] == "2026-02-03T04:05:06+00:00"
+    assert by_hash["h_dogs"]["modified_at"] is None
 
 
 def test_delete_document_removes_chunks_then_unlisted(client: TestClient) -> None:

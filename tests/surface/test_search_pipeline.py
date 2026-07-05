@@ -157,6 +157,26 @@ async def test_recap_disabled_by_config_default() -> None:
     assert response.sources[0].path == "cats.md"
 
 
+async def test_search_surfaces_hit_metadata_on_source() -> None:
+    embedder = FakeEmbedder()
+    store = FakeVectorStore()
+    chunk = Chunk(
+        text="tagged passage about cats",
+        source_path="cats.md",
+        page=1,
+        source_hash="h1",
+        index=0,
+        metadata={"author": "quentin"},
+    )
+    await _seed(store, embedder, [chunk])
+    pipeline = SearchPipeline(embedder, store, NullReranker(), NullCompleter(), _settings())
+
+    response = await pipeline.search("tagged passage about cats")
+
+    (source,) = response.sources
+    assert source.metadata == {"author": "quentin"}
+
+
 async def test_empty_store_returns_no_results() -> None:
     pipeline = SearchPipeline(
         FakeEmbedder(), FakeVectorStore(), NullReranker(), NullCompleter(), _settings()

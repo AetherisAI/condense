@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 from collections.abc import Callable
-from pathlib import Path, PurePath
+from pathlib import Path
 
 import pytest
 
@@ -88,11 +88,6 @@ def _client(handler: Handler) -> SiftClient:
     return SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler))
 
 
-def _abs(base: Path, name: str) -> str:
-    """The absolute POSIX upload key the continuous sync assigns a file (see collect_roots)."""
-    return PurePath(str(base / name)).as_posix()
-
-
 # --------------------------------------------------------------------------- collect / reconcile
 
 
@@ -104,6 +99,64 @@ def test_collect_normalises_to_posix(tmp_path: Path) -> None:
     assert names == {"sub/c.txt"}  # forward slash regardless of OS
 
 
+def test_collect_roots_single_root_matches_collect_keys(tmp_path: Path) -> None:
+    """The core D45 contract: for exactly ONE watched root, :func:`collect_roots` must produce
+    the IDENTICAL set of upload keys as one-shot :func:`collect` — root-relative POSIX, no
+    prefix. This is what lets a ``--watch`` reconcile match a corpus ingested one-shot instead of
+    treating every file as new and re-uploading it (the live bug, see the ``sync()``-level repro
+    below).
+    """
+    (tmp_path / "top.md").write_bytes(b"top")
+    sub = tmp_path / "sub" / "deep"
+    sub.mkdir(parents=True)
+    (sub / "nested.md").write_bytes(b"nested")
+
+    one_shot_names = {name for name, _h, _d, _m in collect(str(tmp_path), {".md"})}
+    watch_names = {name for name, _h, _d, _m in collect_roots([str(tmp_path)], {".md"})}
+    assert watch_names == one_shot_names == {"top.md", "sub/deep/nested.md"}
+
+
+def test_collect_roots_multi_root_prefixes_with_basename(tmp_path: Path) -> None:
+    """With more than one root, each key is prefixed with its OWN root's basename."""
+    a = tmp_path / "Alpha"
+    b = tmp_path / "Beta"
+    a.mkdir()
+    b.mkdir()
+    (a / "x.md").write_bytes(b"a")
+    (b / "y.md").write_bytes(b"b")
+
+    names = {name for name, _h, _d, _m in collect_roots([str(a), str(b)], {".md"})}
+    assert names == {"Alpha/x.md", "Beta/y.md"}
+
+
+def test_collect_roots_disambiguates_basename_collisions_deterministically(tmp_path: Path) -> None:
+    """Two roots that happen to share a basename (e.g. two folders both literally named
+    ``Leitat``, nested under different parents) get deterministic ``-2``, ``-3``, … suffixes, in
+    the order the roots were given — never dependent on set/dict iteration order, so swapping the
+    root order flips *which* root gets the bare prefix but is still fully deterministic.
+    """
+    p1 = tmp_path / "parent1" / "Leitat"
+    p2 = tmp_path / "parent2" / "Leitat"
+    p1.mkdir(parents=True)
+    p2.mkdir(parents=True)
+    (p1 / "notes.md").write_bytes(b"one")
+    (p2 / "notes.md").write_bytes(b"two")
+
+    forward = {name: digest for name, digest, _l, _m in collect_roots([str(p1), str(p2)], {".md"})}
+    assert forward == {
+        "Leitat/notes.md": hashlib.sha256(b"one").hexdigest(),
+        "Leitat-2/notes.md": hashlib.sha256(b"two").hexdigest(),
+    }
+
+    reversed_ = {
+        name: digest for name, digest, _l, _m in collect_roots([str(p2), str(p1)], {".md"})
+    }
+    assert reversed_ == {
+        "Leitat/notes.md": hashlib.sha256(b"two").hexdigest(),  # p2 listed first now
+        "Leitat-2/notes.md": hashlib.sha256(b"one").hexdigest(),
+    }
+
+
 def test_collect_roots_orders_oldest_modified_first(tmp_path: Path) -> None:
     # Upload order must follow mtime so the server stamps the newest version with the latest
     # recency token (it wins version-collapse at search time). Create out of order on purpose.
@@ -113,9 +166,7 @@ def test_collect_roots_orders_oldest_modified_first(tmp_path: Path) -> None:
     os.utime(tmp_path / "v2.md", (2000, 2000))  # newer
 
     order = [name for name, _h, _d, _m in collect_roots([str(tmp_path)], {".md"})]
-    v1 = PurePath((tmp_path / "v1.md").resolve()).as_posix()
-    v2 = PurePath((tmp_path / "v2.md").resolve()).as_posix()
-    assert order.index(v1) < order.index(v2)
+    assert order.index("v1.md") < order.index("v2.md")
 
 
 def test_collect_roots_skips_oversized_file_and_warns(tmp_path: Path) -> None:
@@ -127,8 +178,8 @@ def test_collect_roots_skips_oversized_file_and_warns(tmp_path: Path) -> None:
         got = collect_roots([str(tmp_path)], {".md"}, max_file_size_mb=1)
 
     names = {name for name, _h, _d, _m in got}
-    assert PurePath((tmp_path / "small.md").resolve()).as_posix() in names
-    assert PurePath((tmp_path / "big.md").resolve()).as_posix() not in names
+    assert "small.md" in names
+    assert "big.md" not in names
 
 
 def test_collect_roots_prunes_vendored_directories_by_default(tmp_path: Path) -> None:
@@ -144,8 +195,53 @@ def test_collect_roots_prunes_vendored_directories_by_default(tmp_path: Path) ->
     got = collect_roots([str(tmp_path)], {".md"})
 
     names = {name for name, _h, _d, _m in got}
-    assert PurePath((tmp_path / "real.md").resolve()).as_posix() in names
+    assert "real.md" in names
     assert not any("site-packages" in n for n in names)
+
+
+# ------------------------------------------------------------- live repro (D45): one-shot manifest
+
+
+def test_reconcile_against_one_shot_manifest_skips_all_client_side(tmp_path: Path) -> None:
+    """The exact live repro (D45): a corpus previously ingested ONE-SHOT (root-relative keys, via
+    :func:`collect`) must be recognised as fully up to date by a ``--watch`` reconcile — 50 known
+    files, 0 uploads. Before D45, :func:`collect_roots` keyed by *absolute* path while the
+    server's remote map (built from a one-shot :func:`collect` ingest) was root-relative, so
+    ``remote.get(path)`` never matched and every file looked "new" — every restart re-uploaded
+    (almost) the whole corpus, caught pre-parse only by the server's own content-hash dedup.
+    """
+    n = 50
+    for i in range(n):
+        (tmp_path / f"doc-{i:02d}.md").write_bytes(f"content-{i}".encode())
+
+    one_shot = collect(str(tmp_path), {".md"})
+    remote = {name: digest for name, digest, _loader, _m in one_shot}
+    assert len(remote) == n
+
+    watch_files = collect_roots([str(tmp_path)], {".md"})
+    local = {name: digest for name, digest, _loader, _m in watch_files}
+
+    actions = reconcile(local, remote, delete_removed=False)
+    assert actions.ingest == []
+    assert len(actions.skip) == n
+
+
+def test_sync_against_one_shot_manifest_uploads_nothing(tmp_path: Path) -> None:
+    """Same repro, end-to-end through :func:`sync`: no ``POST /ingest`` at all, 50 skipped."""
+    n = 50
+    for i in range(n):
+        (tmp_path / f"doc-{i:02d}.md").write_bytes(f"content-{i}".encode())
+    one_shot = collect(str(tmp_path), {".md"})
+    docs = {name: digest for name, digest, _loader, _m in one_shot}
+    calls: list[tuple[str, str]] = []
+    client = _client(_server(docs, calls))
+    try:
+        summary = sync(client, [str(tmp_path)], {".md"})
+    finally:
+        client.close()
+    assert summary.skipped == n
+    assert summary.indexed == 0
+    assert not any(m == "POST" and p == "/ingest" for m, p in calls)
 
 
 def test_default_include_collects_images_for_ocr(tmp_path: Path) -> None:
@@ -187,13 +283,13 @@ def test_sync_ingests_new_files(tmp_path: Path) -> None:
     finally:
         client.close()
     assert summary.indexed == 1 and summary.replaced == 0 and summary.deleted == 0
-    assert docs == {_abs(tmp_path, "a.md"): hashlib.sha256(b"alpha").hexdigest()}
+    assert docs == {"a.md": hashlib.sha256(b"alpha").hexdigest()}
 
 
 def test_sync_skips_identical_without_upload(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_bytes(b"alpha")
     calls: list[tuple[str, str]] = []
-    docs = {_abs(tmp_path, "a.md"): hashlib.sha256(b"alpha").hexdigest()}
+    docs = {"a.md": hashlib.sha256(b"alpha").hexdigest()}
     client = _client(_server(docs, calls))
     try:
         summary = sync(client, [str(tmp_path)], {".md"})
@@ -207,7 +303,7 @@ def test_sync_replaces_changed_file_and_deletes_old_hash(tmp_path: Path) -> None
     (tmp_path / "a.md").write_bytes(b"v2")
     calls: list[tuple[str, str]] = []
     old_hash = hashlib.sha256(b"v1").hexdigest()
-    name = _abs(tmp_path, "a.md")
+    name = "a.md"
     docs = {name: old_hash}  # server still has the old version
     client = _client(_server(docs, calls))
     try:
@@ -259,8 +355,71 @@ def test_sync_delete_removed_never_touches_unmanaged_docs(tmp_path: Path) -> Non
     assert not any(m == "DELETE" for m, _ in calls)
 
 
+def test_sync_delete_removed_matches_new_relative_keys_across_two_passes(tmp_path: Path) -> None:
+    """Regression (D45): the ``managed`` set and reconcile's delete-pass keying must use the SAME
+    upload keys :func:`collect_roots` now produces (root-relative, not absolute) — otherwise a
+    file that vanishes from disk would never be recognised as "managed and gone" and
+    ``delete_removed`` would silently do nothing. The actual removal is still a hash-keyed DELETE
+    on the server side, independent of any local key scheme — asserted here explicitly so a
+    future keying change can't quietly break this without a test noticing.
+    """
+    (tmp_path / "keep.md").write_bytes(b"keep me")
+    (tmp_path / "gone.md").write_bytes(b"delete me")
+    calls: list[tuple[str, str]] = []
+    docs: dict[str, str] = {}
+    client = _client(_server(docs, calls))
+    try:
+        first = sync(client, [str(tmp_path)], {".md"}, delete_removed=True, managed=set())
+        assert first.indexed == 2
+        assert set(docs) == {"keep.md", "gone.md"}  # relative keys, matching one-shot collect()
+        gone_hash = docs["gone.md"]
+
+        os.remove(tmp_path / "gone.md")
+        calls.clear()
+        second = sync(
+            client, [str(tmp_path)], {".md"}, delete_removed=True, managed=set(first.managed)
+        )
+    finally:
+        client.close()
+
+    assert second.deleted == 1
+    assert docs == {"keep.md": hashlib.sha256(b"keep me").hexdigest()}
+    assert ("DELETE", f"/documents/{gone_hash}") in calls  # deleted by content hash, as always
+
+
+def test_sync_delete_removed_works_across_multiple_roots_with_prefixed_keys(tmp_path: Path) -> None:
+    """Same regression, exercised with the multi-root, basename-prefixed key scheme."""
+    a = tmp_path / "A"
+    b = tmp_path / "B"
+    a.mkdir()
+    b.mkdir()
+    (a / "x.md").write_bytes(b"from A")
+    (b / "x.md").write_bytes(b"from B")
+    calls: list[tuple[str, str]] = []
+    docs: dict[str, str] = {}
+    client = _client(_server(docs, calls))
+    try:
+        first = sync(client, [str(a), str(b)], {".md"}, delete_removed=True, managed=set())
+        assert first.indexed == 2
+        assert set(docs) == {"A/x.md", "B/x.md"}
+        b_hash = docs["B/x.md"]
+
+        os.remove(b / "x.md")
+        second = sync(
+            client, [str(a), str(b)], {".md"}, delete_removed=True, managed=set(first.managed)
+        )
+    finally:
+        client.close()
+
+    assert second.deleted == 1
+    assert docs == {"A/x.md": hashlib.sha256(b"from A").hexdigest()}
+    assert ("DELETE", f"/documents/{b_hash}") in calls
+
+
 def test_sync_multiple_folders_keep_same_name_distinct(tmp_path: Path) -> None:
-    """Two watched folders that each contain notes.md stay two documents (absolute keys)."""
+    """Two watched folders that each contain notes.md stay two documents (basename-prefixed keys,
+    D45 — no longer absolute paths, see :func:`agent.sync._root_prefixes`).
+    """
     a = tmp_path / "A"
     b = tmp_path / "B"
     a.mkdir()
@@ -275,7 +434,7 @@ def test_sync_multiple_folders_keep_same_name_distinct(tmp_path: Path) -> None:
     finally:
         client.close()
     assert summary.indexed == 2
-    assert set(docs) == {_abs(a, "notes.md"), _abs(b, "notes.md")}  # both kept, no clash
+    assert set(docs) == {"A/notes.md", "B/notes.md"}  # both kept, no clash
 
 
 def test_sync_add_only_when_documents_unsupported(tmp_path: Path) -> None:
@@ -305,7 +464,7 @@ def test_sync_keeps_old_hash_when_replace_reports_per_file_failed(tmp_path: Path
     (tmp_path / "a.md").write_bytes(b"v2")
     calls: list[tuple[str, str]] = []
     old_hash = hashlib.sha256(b"v1").hexdigest()
-    name = _abs(tmp_path, "a.md")
+    name = "a.md"
     docs = {name: old_hash}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -346,8 +505,8 @@ def test_sync_mid_batch_failure_keeps_earlier_counts_and_safe_deletes(tmp_path: 
     a_old = hashlib.sha256(b"old-a").hexdigest()
     b_old = hashlib.sha256(b"old-b").hexdigest()
     docs = {
-        _abs(tmp_path, "a.md"): a_old,
-        _abs(tmp_path, "b.md"): b_old,
+        "a.md": a_old,
+        "b.md": b_old,
     }  # c.md/d.md are brand new; a.md/b.md are replacements
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -360,7 +519,7 @@ def test_sync_mid_batch_failure_keeps_earlier_counts_and_safe_deletes(tmp_path: 
         if request.method == "POST" and path == "/ingest":
             names_data = _parse_multipart(request.content)
             names = {n for n, _ in names_data}
-            new_names = {_abs(tmp_path, "c.md"), _abs(tmp_path, "d.md")}
+            new_names = {"c.md", "d.md"}
             if names & new_names:  # batch 2 (mtime-sorted after a/b) fails outright
                 return httpx.Response(500, json={"detail": "boom"})
             results = []
@@ -389,8 +548,8 @@ def test_sync_mid_batch_failure_keeps_earlier_counts_and_safe_deletes(tmp_path: 
     assert summary.replaced == 2
     assert summary.error is not None  # batch 2's failure is surfaced, not swallowed
     assert summary.deleted == 2  # both confirmed replacements' stale hashes cleaned up
-    assert docs[_abs(tmp_path, "a.md")] == hashlib.sha256(b"new-a.md").hexdigest()
-    assert docs[_abs(tmp_path, "b.md")] == hashlib.sha256(b"new-b.md").hexdigest()
+    assert docs["a.md"] == hashlib.sha256(b"new-a.md").hexdigest()
+    assert docs["b.md"] == hashlib.sha256(b"new-b.md").hexdigest()
     assert a_old not in docs.values()
     assert b_old not in docs.values()
 
@@ -401,7 +560,7 @@ def test_sync_retry_after_full_batch_failure_is_dedup_safe(tmp_path: Path) -> No
     """
     (tmp_path / "a.md").write_bytes(b"v2")
     old_hash = hashlib.sha256(b"v1").hexdigest()
-    name = _abs(tmp_path, "a.md")
+    name = "a.md"
     docs = {name: old_hash}
     attempt = {"n": 0}
 
@@ -446,6 +605,83 @@ def test_sync_retry_after_full_batch_failure_is_dedup_safe(tmp_path: Path) -> No
         assert docs == {name: hashlib.sha256(b"v2").hexdigest()}
     finally:
         client.close()
+
+
+# ------------------------------------------------------------------- truthful counters (D45)
+
+
+def test_sync_tallies_server_side_skipped_dedup_into_summary(tmp_path: Path) -> None:
+    """A server-side ``skipped_dedup`` ingest result (the engine's own content-hash dedup
+    catching a file :func:`reconcile` thought was new/changed) must be tallied into
+    ``Summary.skipped`` — not silently dropped. Before D45 only the client-side
+    ``len(actions.skip)`` was counted, so a path-keying mismatch that forced every file through
+    the upload path still reported ``0 skipped``, hiding exactly the waste it should surface.
+    """
+    (tmp_path / "a.md").write_bytes(b"alpha")
+    (tmp_path / "b.md").write_bytes(b"beta")
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        calls.append((request.method, path))
+        if request.method == "GET" and path == "/documents":
+            return httpx.Response(
+                200, json={"tenant": "default", "documents": [], "supported": True}
+            )
+        if request.method == "POST" and path == "/ingest":
+            results = [
+                {"path": "a.md", "status": "indexed"},
+                {"path": "b.md", "status": "skipped_dedup"},
+            ]
+            return httpx.Response(200, json={"tenant": "default", "results": results})
+        return httpx.Response(404, json={"detail": "not found"})
+
+    client = _client(handler)
+    try:
+        summary = sync(client, [str(tmp_path)], {".md"})
+    finally:
+        client.close()
+
+    assert summary.indexed == 1
+    assert summary.skipped == 1  # b.md's skipped_dedup, tallied truthfully
+    assert summary.failed == 0
+
+
+def test_sync_tallies_skipped_dedup_within_partial_batch_failure(tmp_path: Path) -> None:
+    """``skipped_dedup`` accounting must also flow through a PARTIAL (mid-batch failure)
+    response, not just a fully successful ingest — PARTIAL reuses the exact same results list.
+    """
+    for i, name in enumerate(["a.md", "b.md", "c.md"]):
+        (tmp_path / name).write_bytes(f"data-{name}".encode())
+        os.utime(tmp_path / name, (1000 + i, 1000 + i))  # controls batch order (mtime-sorted)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path == "/documents":
+            return httpx.Response(
+                200, json={"tenant": "default", "documents": [], "supported": True}
+            )
+        if request.method == "POST" and path == "/ingest":
+            names_data = _parse_multipart(request.content)
+            names = {n for n, _ in names_data}
+            if "c.md" in names:  # batch 2 (mtime-sorted last) fails outright
+                return httpx.Response(500, json={"detail": "boom"})
+            results = [
+                {"path": "a.md", "status": "indexed"},
+                {"path": "b.md", "status": "skipped_dedup"},
+            ]
+            return httpx.Response(200, json={"tenant": "default", "results": results})
+        return httpx.Response(404, json={"detail": "not found"})
+
+    client = SiftClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler), batch_size=2)
+    try:
+        summary = sync(client, [str(tmp_path)], {".md"})
+    finally:
+        client.close()
+
+    assert summary.indexed == 1
+    assert summary.skipped == 1  # b.md's skipped_dedup, credited despite the later batch failure
+    assert summary.error is not None
 
 
 # --------------------------------------------------------------------------- client methods
