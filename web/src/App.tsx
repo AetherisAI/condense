@@ -6,6 +6,7 @@ import Chat from './Chat'
 import SlashField from './SlashField'
 import Logo from './Logo'
 import SystemMenu from './SystemMenu'
+import AgentMenu from './AgentMenu'
 import './App.css'
 
 type Tab = 'search' | 'chat'
@@ -35,6 +36,7 @@ export default function App() {
     <>
       <SlashField />
       <SystemMenu token={token} setToken={setToken} />
+      <AgentMenu />
       <main className="app">
       <header className="app-header">
         <div className="brand">

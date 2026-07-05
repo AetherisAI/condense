@@ -220,6 +220,20 @@ Found + fixed a real ingest bug while testing a folder of plain-text files end-t
 
 ---
 
+## 2026-07-02 — update 8: downloadable desktop agent + an "Agent" panel in the web UI — `feat/agent-download`
+
+Packaged the `agent/` Tkinter watcher into **self-contained downloads** (no Python/pip) and added a way to get them from the UI. Decision **A11**.
+
+**Packaging (`packaging/`, Dev A):** PyInstaller → macOS `.app` (zipped) + Linux **AppImage**, built by `packaging/build_macos.sh` (local) and `packaging/build_linux.sh` (in an `ubuntu:24.04` Docker container — PyInstaller can't cross-compile). Artifacts land in `web/public/downloads/` (gitignored) and are served **same-origin** (Vite dev / nginx prod) — public static, no auth, like `/favicon.svg`. **No engine/API/route/config change.** macOS `.app` built + smoke-tested (Tk window launches; 20 MB zip; `GET /downloads/sift-agent-macos.zip → 200`). **Arch note:** the Linux build defaults to the host's native arch; on my Apple-silicon Colima that's **arm64**, and emulated **x86_64** cross-build is unreliable there (no buildx; QEMU `dpkg` fails). So the committed script produces a matching-arch AppImage, and the **x86_64 desktop build belongs in CI** (a GH Actions ubuntu runner is native amd64) — a good follow-up; flagging so we don't ship an arm64-only "Ubuntu" link to x86_64 users.
+
+**⚠️ Touches your (`web/`) territory — please review.** New `web/src/AgentMenu.tsx` (mirrors `SystemMenu.tsx` 1:1 — same `.drawer`/`.drawer-head`/`.drawer-body`/`.drawer-backdrop`, Esc + backdrop close), an **Agent** chip using your `.sys-chip` fixed at `top:64px` (directly under System), and small additive CSS (`.agentbar`, `.agent-dl-row`, `.agent-dl-btn`) from your existing tokens. Wired into `App.tsx` next to `<SystemMenu/>`. Downloads are token-free, so the panel takes no props. `npm run build` green.
+
+**Unsigned macOS app:** panel shows the right-click→Open note (future: codesign + notarize). If you'd rather the UI half live under your ownership, say so and I'll hand off `AgentMenu.tsx`/CSS — otherwise it's in this PR for your review.
+
+**Update — Windows + CI builds now in this PR.** Added `.github/workflows/build-agent.yml`: runs the same `sift-agent.spec` natively on `windows-latest` / `macos-latest` / `ubuntu-latest` (import + best-effort launch smoke), uploads artifacts, and on a `v*` tag attaches them to a **GitHub Release**. This is how Windows ships (no local Windows env; PyInstaller can't cross-compile) and it also yields a real **x86_64** Linux AppImage (the local Colima build is arm64-only). The UI's Windows row now links to `releases/latest/download/sift-agent-windows.zip` — live once you push the first `v*` tag. GUI launch isn't click-tested (CI has no reliable desktop); real verification needs a human per-OS. — Arthur/Dev A
+
+---
+
 ## 2026-07-02 — update 9: `/ingest` RAM-spike fix — streams files one at a time (`fix/ingest-memory`)
 
 A colleague hit a big memory spike on ingest — confirmed and fixed. Decision **A12**. (update 8 is the parallel `feat/agent-download`.)

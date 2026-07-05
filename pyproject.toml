@@ -27,6 +27,7 @@ inference = ["httpx"]
 # The standalone ingestion agent: HTTP client + cross-platform file watching + per-user config.
 # The desktop app's UI is stdlib Tkinter (no pip dep; on Ubuntu install the `python3-tk` package).
 agent = ["httpx", "watchdog", "platformdirs"]
+packaging = ["pyinstaller"]  # build the desktop agent into self-contained downloads (see packaging/)
 
 [project.scripts]
 sift-agent = "agent.app:main"     # the small always-on desktop watcher (Tkinter)
