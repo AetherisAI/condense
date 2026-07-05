@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { apiFetch, apiUrl, getApiBase, setApiBase } from './api'
 
 /** One dependency's reachability (mirrors api.schemas.ComponentHealth). */
 type ComponentHealth = {
@@ -200,6 +201,7 @@ export default function SystemMenu({
   setToken: (t: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [apiBase, setApiBaseInput] = useState(() => getApiBase())
   const [health, setHealth] = useState<Health>('unknown')
   const [data, setData] = useState<StatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -210,7 +212,7 @@ export default function SystemMenu({
   // At-a-glance health: ping the open /healthz once on mount.
   useEffect(() => {
     let alive = true
-    fetch('/healthz')
+    apiFetch('/healthz', '')
       .then((r) => alive && setHealth(r.ok ? 'up' : 'down'))
       .catch(() => alive && setHealth('down'))
     return () => {
@@ -238,7 +240,7 @@ export default function SystemMenu({
     setLoading(true)
     setError(null)
     try {
-      const resp = await fetch('/status', { headers: { Authorization: `Bearer ${token}` } })
+      const resp = await apiFetch('/status', token)
       if (!resp.ok) {
         throw new Error(resp.status === 401 ? 'Enter a valid token to view settings' : `Status ${resp.status}`)
       }
@@ -260,9 +262,9 @@ export default function SystemMenu({
     }
     setError(null)
     try {
-      const resp = await fetch('/settings', {
+      const resp = await apiFetch('/settings', token, {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [key]: value }),
       })
       if (!resp.ok) throw new Error(`Update failed: ${resp.status}`)
@@ -344,7 +346,26 @@ export default function SystemMenu({
             />
           </div>
 
-          <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
+          <div className="sys-section sys-token">
+            <label className="sys-label" htmlFor="api-base-url">
+              API base URL
+            </label>
+            <input
+              id="api-base-url"
+              className="sys-token-input"
+              type="text"
+              value={apiBase}
+              placeholder="same origin (default)"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => {
+                setApiBaseInput(e.target.value)
+                setApiBase(e.target.value)
+              }}
+            />
+          </div>
+
+          <a className="sys-docs" href={apiUrl('/docs')} target="_blank" rel="noreferrer">
             API documentation
             <span aria-hidden="true">↗</span>
           </a>

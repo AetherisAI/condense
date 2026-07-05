@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import ChatHistory from './ChatHistory'
 import ChatMarkdown from './markdown/ChatMarkdown'
 import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
+import { apiFetch } from './api'
 
 /** Grounding mode (D46) — the trust boundary between the corpus and the model's own general
  * knowledge. Mirrors ``api.schemas.AnswerRequest.grounding``/``Settings.answer_grounding_
@@ -426,9 +427,7 @@ export default function Chat({ token }: { token: string }) {
   const pinnedToBottomRef = useRef(true)
 
   async function fetchConversation(id: string): Promise<ConversationDetail | null> {
-    const resp = await fetch(`/v1/conversations/${encodeURIComponent(id)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const resp = await apiFetch(`/v1/conversations/${encodeURIComponent(id)}`, token)
     if (!resp.ok) return null
     return (await resp.json()) as ConversationDetail
   }
@@ -547,9 +546,9 @@ export default function Chat({ token }: { token: string }) {
     setBusy(true)
 
     try {
-      const resp = await fetch('/v1/answer', {
+      const resp = await apiFetch('/v1/answer', token, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
           conversation_id: conversationId,

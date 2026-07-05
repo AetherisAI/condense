@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
+import { apiFetch } from './api'
 
 /** One citation as returned by ``GET /search`` (mirrors api.schemas.Source). */
 type Source = {
@@ -124,9 +125,7 @@ export default function Search({ token }: { token: string }) {
     setQueriedText(query)
     try {
       // The AI-recap toggle drives the engine's recap flag (off → no LLM summary, just sources).
-      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&recap=${recapEnabled}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const resp = await apiFetch(`/search?q=${encodeURIComponent(query)}&recap=${recapEnabled}`, token)
       if (!resp.ok) {
         throw new Error(`Search failed: ${resp.status} ${resp.statusText}`)
       }
