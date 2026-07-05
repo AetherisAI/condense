@@ -1561,6 +1561,20 @@ button:disabled {
   transform: translateX(0);
 }
 
+/* Library is the one LEFT-hand drawer (D57/Task U5) — same panel, mirrored: hinges off the left
+   edge instead of the right, so the border/shadow-catching edge flips too. `--shadow` above has
+   no horizontal offset (pure downward blur), so it already reads correctly on either side without
+   a separate value. `.drawer.open` (two classes, higher specificity) still wins the transform
+   tie-break, so the open state is identical either side — only the closed-state slide direction
+   and which edge gets the border differ here. */
+.drawer-left {
+  left: 0;
+  right: auto;
+  border-left: none;
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+}
+
 .drawer-head {
   display: flex;
   align-items: center;
