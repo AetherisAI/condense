@@ -5,6 +5,7 @@ import Logo from './Logo'
 import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
 import { apiFetch } from './api'
 import Composer, { IngestTurnCard, type IngestFileEntry, type IngestTurn } from './Composer'
+import { FindTurnCard, type FindHit, type FindTurn } from './FindTurn'
 import { loadStoredGrounding, type ComposerGroundingMode } from './grounding'
 
 /** Grounding mode (D46) — the trust boundary between the corpus and the model's own general
@@ -89,12 +90,13 @@ type AssistantTurn = {
   groundingSegments: GroundingSegment[]
 }
 
-// `IngestTurn` (D57/Task U2) is client-side only — never sent to `/v1/answer`, never persisted —
-// but folded into the SAME `Turn` union (discriminated by `role`, like the two turns above) so an
-// in-chat upload batch renders inline, in its correct chronological position, among the answer
-// turns it's a sibling of. `turnsFromDetail` below (which rebuilds `turns` from server history)
-// never produces one, so History reload/reopen naturally drops any ingest turns — by design.
-type Turn = UserTurn | AssistantTurn | IngestTurn
+// `IngestTurn` (D57/Task U2) and `FindTurn` (D57/Task U3) are both client-side only — never sent
+// to `/v1/answer`, never persisted — but folded into the SAME `Turn` union (discriminated by
+// `role`, like the two turns above) so an in-chat upload batch or a Find result list renders
+// inline, in its correct chronological position, among the answer turns it's a sibling of.
+// `turnsFromDetail` below (which rebuilds `turns` from server history) never produces either, so
+// History reload/reopen naturally drops both — by design.
+type Turn = UserTurn | AssistantTurn | IngestTurn | FindTurn
 
 /** One turn as returned by ``GET /v1/conversations/{id}`` (mirrors
  * ``api.schemas.ConversationTurnOut``). ``grounding_used``/``from_general_knowledge``/
@@ -501,6 +503,19 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     setTurns((prev) => prev.map((t) => (t.role === 'ingest' && t.id === id ? { ...t, files } : t)))
   }
 
+  // Find turns (D57/Task U3) — client-side only, driven entirely by `Composer.tsx`'s own
+  // retrieval-only flow (`POST /v1/tools/search`); same append-then-patch shape as the ingest
+  // turn pair above.
+  function addFindTurn(turn: FindTurn) {
+    setTurns((prev) => [...prev, turn])
+  }
+
+  function updateFindTurn(id: string, hits: FindHit[], error: string | null) {
+    setTurns((prev) =>
+      prev.map((t) => (t.role === 'find' && t.id === id ? { ...t, hits, error } : t)),
+    )
+  }
+
   function newChat() {
     setTurns([])
     setConversationId(null)
@@ -653,6 +668,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               if (turn.role === 'ingest') {
                 return <IngestTurnCard turn={turn} key={turn.id} />
               }
+              if (turn.role === 'find') {
+                return <FindTurnCard turn={turn} key={turn.id} />
+              }
               return (
                 <div className="chat-turn chat-assistant" key={turn.id}>
                   {turn.streaming && turn.timeline.length === 0 && !turn.text && (
@@ -743,6 +761,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         onGroundingChange={setGrounding}
         onIngestStart={addIngestTurn}
         onIngestUpdate={updateIngestTurn}
+        onFindStart={addFindTurn}
+        onFindUpdate={updateFindTurn}
       />
 
       <ChatHistory
