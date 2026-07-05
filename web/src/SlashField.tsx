@@ -4,7 +4,9 @@ import { useEffect, useRef } from 'react'
  * Interactive background: a viewport-filling grid of faint "/" slash marks that rotate to
  * point at the mouse and brighten as the cursor nears them. Native canvas, no deps, no React
  * re-renders (mouse position lives in a ref; drawing is a rAF loop). Sits behind the content
- * with `pointer-events: none`, so it never blocks the UI. Respects prefers-reduced-motion.
+ * with `pointer-events: none`, so it never blocks the UI. Respects prefers-reduced-motion: a calm
+ * static 45° field with no cursor reaction, no rAF loop running (D57/Task U7: a `change` listener
+ * on the media query flips between the two live, without needing a reload).
  */
 
 // --- tunables (top of file for quick iteration) ---
@@ -26,7 +28,8 @@ export default function SlashField() {
     if (!maybeCtx) return
     const ctx: CanvasRenderingContext2D = maybeCtx
 
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let reduced = motionQuery.matches
 
     let width = 0
     let height = 0
@@ -95,13 +98,27 @@ export default function SlashField() {
       scheduleDraw()
     }
 
+    // Toggling the OS setting mid-session flips straight to (or back from) the calm static field —
+    // no reload needed, and no reaction lingers once reduced motion turns on.
+    function onMotionChange(e: MediaQueryListEvent) {
+      reduced = e.matches
+      if (reduced) {
+        window.removeEventListener('mousemove', onMove)
+      } else {
+        window.addEventListener('mousemove', onMove, { passive: true })
+      }
+      draw()
+    }
+
     resize()
     window.addEventListener('resize', resize)
     if (!reduced) window.addEventListener('mousemove', onMove, { passive: true })
+    motionQuery.addEventListener('change', onMotionChange)
 
     return () => {
       window.removeEventListener('resize', resize)
       window.removeEventListener('mousemove', onMove)
+      motionQuery.removeEventListener('change', onMotionChange)
       cancelAnimationFrame(frame)
     }
   }, [])

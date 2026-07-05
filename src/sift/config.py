@@ -172,6 +172,15 @@ class Settings(BaseSettings):
     # overrides this per-request; omitted/`None` falls back to this setting.
     answer_grounding_default: Literal["strict", "hybrid", "open"] = "strict"
 
+    # CORS (D55): the Tauri desktop shell's webview has no same-origin server to talk to — it
+    # calls an absolute, user-configured base URL, which the browser enforces CORS against. The
+    # web UI is always same-origin (relative paths through the Vite proxy / nginx) so it never
+    # sends a cross-origin request regardless of this setting — zero behavior change there.
+    # Comma-separated allow-list; default covers the three origin forms a Tauri v2 webview
+    # actually sends (``tauri://localhost`` on macOS/Linux, ``http(s)://tauri.localhost`` on
+    # Windows). Empty string disables CORS handling entirely.
+    cors_origins: str = "tauri://localhost,http://tauri.localhost,https://tauri.localhost"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

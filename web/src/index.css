@@ -14,6 +14,16 @@
   --accent-bg: rgba(170, 59, 255, 0.08);
   --accent-border: rgba(170, 59, 255, 0.32);
 
+  /* Interactive-control purple (D57/Task U7) — the buttons/toggles/focus-ring hue, distinct from
+     `--accent` above (brand/emphasis: wordmark, top-match highlight, GK marking). Same hue
+     family, kept as two tokens because the two roles are meant to stay independently tunable.
+     Alpha variants use `color-mix(in srgb, var(--accent-ui) N%, transparent)` at each call site
+     rather than more fixed `-bg`/`-border` tokens: mixing against `transparent` is alpha-
+     premultiplied, so `N%` reproduces the exact same channel math as `rgba(124, 92, 255, N/100)` —
+     six distinct alphas were in use, too many to each deserve a named token. */
+  --accent-ui: #7c5cff;
+  --accent-ui-strong: #6a45f0;
+
   --error: #b3261e;
   --error-bg: #fdecea;
   --error-border: #f4c7c2;
@@ -39,15 +49,24 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 #root {
   width: 100%;
-  min-height: 100svh;
+  height: 100svh;
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
   background: var(--page-bg);
+  /* The workbench (`App.tsx`'s `.workbench`) is the only page and fills exactly 100svh — its own
+     conversation stream (`.chat-stream`) is the ONLY scrollable region, so the page itself never
+     scrolls (D57/Task U1). */
+  overflow: hidden;
 }
 
 h1,

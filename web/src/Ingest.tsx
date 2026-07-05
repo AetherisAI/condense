@@ -1,20 +1,6 @@
 import { useRef, useState } from 'react'
 import { makeThumbnail } from './thumbnail'
-
-/** Per-file outcome from ``POST /ingest`` (mirrors api.schemas.IngestFileResult). */
-type IngestFileResult = {
-  path: string
-  status: string
-  content_hash?: string | null
-  chunks?: number | null
-  detail?: string | null
-}
-
-/** Response body of ``POST /ingest`` (mirrors api.schemas.IngestResponse). */
-type IngestResponse = {
-  tenant: string
-  results: IngestFileResult[]
-}
+import { postIngest, fmtSize, type IngestResponse } from './ingestClient'
 
 /** A file's lifecycle in the panel: queued+uploading → its engine outcome (or a client error). */
 type ItemStatus = 'uploading' | 'indexed' | 'skipped_dedup' | 'failed'
@@ -39,8 +25,8 @@ const FILE_TINTS: Record<string, string> = {
   xls: '#22a06b',
   xlsx: '#22a06b',
   csv: '#22a06b',
-  md: '#7c5cff',
-  markdown: '#7c5cff',
+  md: 'var(--accent-ui)',
+  markdown: 'var(--accent-ui)',
   json: '#8f1fe6',
   yaml: '#8f1fe6',
   yml: '#8f1fe6',
@@ -57,13 +43,6 @@ function extOf(name: string): string {
 
 function tintFor(name: string): string {
   return FILE_TINTS[extOf(name)] ?? '#6b6770'
-}
-
-/** Short, human file size (the queued list shows it under the name). */
-function fmtSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /** The right-hand status line for an item. */
@@ -119,17 +98,7 @@ export default function Ingest({ token }: { token: string }) {
     })
 
     try {
-      const form = new FormData()
-      for (const f of picked) form.append('files', f)
-      const resp = await fetch('/ingest', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      })
-      if (!resp.ok) {
-        throw new Error(`${resp.status} ${resp.statusText}`)
-      }
-      const data = (await resp.json()) as IngestResponse
+      const data: IngestResponse = await postIngest(token, picked)
       // The route returns one result per input file, in order — map batch[i] → results[i].
       setItems((prev) =>
         prev.map((it) => {

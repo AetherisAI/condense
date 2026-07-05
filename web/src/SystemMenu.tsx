@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { apiFetch, apiUrl, getApiBase, setApiBase } from './api'
+import { detectProvider } from './provider'
 
 /** One dependency's reachability (mirrors api.schemas.ComponentHealth). */
 type ComponentHealth = {
@@ -46,7 +48,9 @@ const EDITABLE = new Set([
 
 /** Model pins / base URLs / store backend / tokens — baked into the container at startup, so
  * changing one has no effect until the engine restarts. Shown read-only + greyed with a hint,
- * never inline-editable (distinct from the smaller `EDITABLE` whitelist above). */
+ * never inline-editable (distinct from the smaller `EDITABLE` whitelist above). `llm_api_key`
+ * living here (confirmed against `SettingsPatch`/`_SECRET_KEYS` on the backend, D57/Task U6) is
+ * exactly why the Model section's key field below is local-preview-only, never PATCHed. */
 const RESTART_REQUIRED = new Set([
   'store_backend',
   'turso_database_url',
@@ -187,30 +191,106 @@ function coerce(key: string, raw: string): unknown {
   return Number(raw)
 }
 
+/** One downloadable build of the desktop ingestion agent (absorbed from the retired
+ * `AgentMenu.tsx`, D57/Task U6 — its own topbar chip/drawer are gone, these rows now live in the
+ * System drawer's "Folder agent" section, styling untouched). */
+type Build = {
+  os: string
+  hint: string
+  href?: string // absent → "coming soon"
+  note?: string // extra line under the row (e.g. the unsigned-app caveat)
+  icon: React.ReactNode
+}
+
+const APPLE = (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+    <path d="M16.365 12.9c.02 2.16 1.9 2.88 1.92 2.89-.015.05-.3 1.03-.99 2.04-.6.88-1.22 1.75-2.2 1.77-.96.02-1.27-.57-2.37-.57-1.1 0-1.45.55-2.36.59-.95.03-1.67-.95-2.27-1.83-1.24-1.8-2.18-5.08-.91-7.3.63-1.1 1.76-1.8 2.98-1.82.93-.02 1.81.63 2.38.63.57 0 1.64-.78 2.76-.66.47.02 1.79.19 2.63 1.43-.07.04-1.57.92-1.55 2.73M14.6 6.3c.5-.6.84-1.45.75-2.3-.72.03-1.6.48-2.12 1.08-.47.53-.88 1.4-.77 2.22.8.06 1.63-.41 2.14-1"/>
+  </svg>
+)
+
+const UBUNTU = (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+    <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m0 3.2a6.8 6.8 0 0 1 6.06 3.72 2.02 2.02 0 0 0-.4 3.03 6.8 6.8 0 0 1 0 .1 2.02 2.02 0 0 0 .4 3.03 6.8 6.8 0 0 1-11.03 1.9 2.02 2.02 0 0 0-2.5-1.72A6.8 6.8 0 0 1 4 12a6.8 6.8 0 0 1 .53-2.65 2.02 2.02 0 0 0 2.5-1.72A6.77 6.77 0 0 1 12 5.2m0 3.1a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4"/>
+  </svg>
+)
+
+const WINDOWS = (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+    <path d="M3 5.4 10.5 4.3v7.2H3zM11.5 4.15 21 2.8v8.7h-9.5zM3 12.5h7.5v7.2L3 18.6zM11.5 12.5H21v8.7l-9.5-1.35z"/>
+  </svg>
+)
+
+const BUILDS: Build[] = [
+  {
+    os: 'macOS',
+    hint: 'Apple silicon & Intel · unzip and open',
+    href: '/downloads/sift-agent-macos.zip',
+    note: 'Unsigned build — first launch: right-click the app → Open.',
+    icon: APPLE,
+  },
+  {
+    os: 'Ubuntu / Linux',
+    hint: 'AppImage · chmod +x, then run — no install',
+    href: '/downloads/sift-agent-ubuntu.AppImage',
+    icon: UBUNTU,
+  },
+  {
+    os: 'Windows',
+    hint: 'unzip and run',
+    href: 'https://github.com/AetherisAI/condense/releases/latest/download/sift-agent-windows.zip',
+    note: 'Published to the latest GitHub release (built by the build-agent workflow).',
+    icon: WINDOWS,
+  },
+]
+
+/** Imperative surface exposed to the workbench shell (`App.tsx`, D57/Task U6) — the empty-corpus
+ * nudge's "Get the agent" button lives in `Chat.tsx`, outside this drawer's own tree, so it opens
+ * the drawer AND scrolls to the Folder agent section through a ref, the same pattern `ChatHandle`
+ * already uses for the topbar's "New chat" button. */
+export type SystemMenuHandle = { scrollToAgent: () => void }
+
 /**
- * A subtle top-right status chip with a live health dot (pings the open /healthz). Click to
- * open a clean popover showing API health + the effective config (from the auth'd /status,
- * secrets already redacted server-side), rendered like a .env file. Closes on outside-click/Esc.
+ * A drawer showing API health + the effective config (from the auth'd /status, secrets already
+ * redacted server-side), simple-first (D57/Task U6): Connection (token/base URL/compact health),
+ * Model (LLM summary + a local-only provider-detect preview), Folder agent (the desktop ingestion
+ * agent downloads, absorbed from the retired `AgentMenu.tsx`), then the entire original raw
+ * settings table demoted into a collapsed "Advanced" accordion, unchanged. Its own top-right
+ * status chip trigger is gone (D57/Task U1) — `open` is controlled from the workbench topbar's
+ * "System" button. Closes on backdrop-click/Esc.
  */
-export default function SystemMenu({
-  token,
-  setToken,
-}: {
-  token: string
-  setToken: (t: string) => void
-}) {
-  const [open, setOpen] = useState(false)
+const SystemMenu = forwardRef<
+  SystemMenuHandle,
+  {
+    token: string
+    setToken: (t: string) => void
+    open: boolean
+    onOpenChange: (open: boolean) => void
+  }
+>(function SystemMenu({ token, setToken, open, onOpenChange }, ref) {
+  const [apiBase, setApiBaseInput] = useState(() => getApiBase())
   const [health, setHealth] = useState<Health>('unknown')
   const [data, setData] = useState<StatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   // Keys with a just-saved PATCH — a "Saved ✓" fades in for a beat as optimistic feedback.
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set())
+  // Model section's LLM API key preview (D57/Task U6) — LOCAL-ONLY, never sent anywhere: typed
+  // purely so `detectProvider` can render a live provider badge. `llm_api_key` is restart-only
+  // (see `RESTART_REQUIRED`/backend `_SECRET_KEYS`+`SettingsPatch`, confirmed not PATCHable), so
+  // there is no save path here to fake — the copy under the field says so plainly.
+  const [llmKeyDraft, setLlmKeyDraft] = useState('')
+  const agentSectionRef = useRef<HTMLDivElement>(null)
+
+  useImperativeHandle(ref, () => ({
+    scrollToAgent: () => {
+      agentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+  }))
 
   // At-a-glance health: ping the open /healthz once on mount.
   useEffect(() => {
     let alive = true
-    fetch('/healthz')
+    apiFetch('/healthz', '')
       .then((r) => alive && setHealth(r.ok ? 'up' : 'down'))
       .catch(() => alive && setHealth('down'))
     return () => {
@@ -222,35 +302,47 @@ export default function SystemMenu({
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') onOpenChange(false)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [open, onOpenChange])
 
-  // (Re)load status when the panel opens or the token changes — so entering the token right
-  // here immediately populates components + settings.
+  // (Re)load status when the panel opens or the token changes — so entering the token right here
+  // immediately populates components + settings. `cancelled` guards against a stale response
+  // winning a race against a fresher one: typing a token character-by-character re-fires this on
+  // every keystroke, and an earlier (now-stale) 401 rejection landing AFTER a later, valid
+  // request's success used to leave "Enter a valid token…" stuck on screen even though the good
+  // data had already loaded (the bug this fixes). Folding `load` into the effect itself (rather
+  // than a function declared outside it) also resolves the effect's own exhaustive-deps warning —
+  // `token`/`open` are its only real dependencies now.
   useEffect(() => {
-    if (open) void load()
-  }, [open, token])
-
-  async function load() {
-    setLoading(true)
-    setError(null)
-    try {
-      const resp = await fetch('/status', { headers: { Authorization: `Bearer ${token}` } })
-      if (!resp.ok) {
-        throw new Error(resp.status === 401 ? 'Enter a valid token to view settings' : `Status ${resp.status}`)
+    if (!open) return
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setError(null)
+      try {
+        const resp = await apiFetch('/status', token)
+        if (cancelled) return
+        if (!resp.ok) {
+          throw new Error(resp.status === 401 ? 'Enter a valid token to view settings' : `Status ${resp.status}`)
+        }
+        const json = (await resp.json()) as StatusResponse
+        if (cancelled) return
+        setData(json)
+        setHealth('up')
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-      const json = (await resp.json()) as StatusResponse
-      setData(json)
-      setHealth('up')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
     }
-  }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [open, token])
 
   async function patchSetting(key: string, raw: string) {
     const value = coerce(key, raw)
@@ -260,9 +352,9 @@ export default function SystemMenu({
     }
     setError(null)
     try {
-      const resp = await fetch('/settings', {
+      const resp = await apiFetch('/settings', token, {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [key]: value }),
       })
       if (!resp.ok) throw new Error(`Update failed: ${resp.status}`)
@@ -280,34 +372,11 @@ export default function SystemMenu({
     }
   }
 
-  function toggle() {
-    setOpen((o) => !o)
-  }
+  const detectedProvider = detectProvider(llmKeyDraft)
 
   return (
     <>
-      <div className="sys">
-        <button type="button" className="sys-chip" onClick={toggle} aria-expanded={open}>
-          <svg
-            className={`sys-gear sys-gear-${health}`}
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-          System
-        </button>
-      </div>
-
-      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+      {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
       <aside
         className={`drawer${open ? ' open' : ''}`}
@@ -317,10 +386,15 @@ export default function SystemMenu({
       >
         <div className="drawer-head">
           <h2>System</h2>
+          <span
+            className={`sys-dot ${dotFor(health === 'up' ? 'ok' : health === 'down' ? 'down' : '')}`}
+            title={`API ${health}`}
+            aria-hidden="true"
+          />
           <button
             type="button"
             className="drawer-close"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Close system panel"
           >
             ✕
@@ -328,144 +402,275 @@ export default function SystemMenu({
         </div>
 
         <div className="drawer-body">
-          <div className="sys-section sys-token">
-            <label className="sys-label" htmlFor="bearer-token">
-              Bearer token
-            </label>
-            <input
-              id="bearer-token"
-              className="sys-token-input"
-              type="password"
-              value={token}
-              placeholder="paste your token"
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setToken(e.target.value)}
-            />
+          {/* ---- Connection: token + base URL + condensed health ------------------------- */}
+          <div className="sys-section">
+            <h3 className="sys-heading">Connection</h3>
+
+            <div className="sys-token">
+              <label className="sys-label" htmlFor="bearer-token">
+                Bearer token
+              </label>
+              <input
+                id="bearer-token"
+                className="sys-token-input"
+                type="password"
+                value={token}
+                placeholder="paste your token"
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setToken(e.target.value)}
+              />
+            </div>
+
+            <div className="sys-token">
+              <label className="sys-label" htmlFor="api-base-url">
+                API base URL
+              </label>
+              <input
+                id="api-base-url"
+                className="sys-token-input"
+                type="text"
+                value={apiBase}
+                placeholder="same origin (default)"
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => {
+                  setApiBaseInput(e.target.value)
+                  setApiBase(e.target.value)
+                }}
+              />
+            </div>
+
+            {error && <p className="sys-error">{error}</p>}
+            {loading && <p className="sys-muted">Loading…</p>}
+
+            {data && (
+              <div className="sys-health-row">
+                {Object.entries(data.components).map(([name, c]) => (
+                  <span className="sys-health-chip" key={name}>
+                    <span className={`sys-dot ${dotFor(c.status)}`} aria-hidden="true" />
+                    <span className="sys-health-name">{name}</span>
+                    <span className="sys-health-detail">
+                      {c.status === 'not_configured' ? 'off' : (c.model ?? c.detail ?? 'ok')}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <a className="sys-docs" href={apiUrl('/docs')} target="_blank" rel="noreferrer">
+              API documentation
+              <span aria-hidden="true">↗</span>
+            </a>
           </div>
 
-          <a className="sys-docs" href="/docs" target="_blank" rel="noreferrer">
-            API documentation
-            <span aria-hidden="true">↗</span>
-          </a>
+          {/* ---- Model: LLM summary + provider auto-detect preview ------------------------ */}
+          <div className="sys-section">
+            <h3 className="sys-heading">Model</h3>
 
-          {error && <p className="sys-error">{error}</p>}
-          {loading && <p className="sys-muted">Loading…</p>}
-
-          {data && (
-            <div className="sys-section">
-              <div className="sys-label">Components</div>
-              {Object.entries(data.components).map(([name, c]) => (
-                <div className="sys-comp" key={name}>
-                  <span className={`sys-dot ${dotFor(c.status)}`} />
-                  <span className="sys-comp-name">{name}</span>
-                  <span className="sys-comp-detail">
-                    {c.status === 'not_configured' ? 'off' : (c.model ?? c.detail ?? 'ok')}
+            {data ? (
+              <>
+                <div className="sys-row">
+                  <span className="sys-key">LLM_MODEL</span>
+                  <span className={`sys-val${data.settings.llm_model == null ? ' sys-null' : ''}`}>
+                    {fmt(data.settings.llm_model)}
                   </span>
                 </div>
-              ))}
-            </div>
-          )}
 
+                <div className="sys-row sys-row-restart">
+                  <span className="sys-key">
+                    LLM_API_KEY
+                    <span
+                      className="mode-info sys-info"
+                      tabIndex={0}
+                      role="note"
+                      aria-label="Baked in at container startup — restart-only, never editable here."
+                    >
+                      ⓘ
+                      <span className="mode-tip sys-tip" role="tooltip">
+                        Baked in at container startup — restart-only, never editable here.
+                      </span>
+                    </span>
+                  </span>
+                  <span className="sys-row-right">
+                    <span className="sys-restart-badge" title="Requires an engine restart to change">
+                      restart
+                    </span>
+                    <span className={`sys-val${data.settings.llm_api_key == null ? ' sys-null' : ''}`}>
+                      {fmt(data.settings.llm_api_key)}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="sys-model-key">
+                  <label className="sys-label" htmlFor="llm-api-key-preview">
+                    LLM API key
+                  </label>
+                  <div className="sys-model-key-row">
+                    <input
+                      id="llm-api-key-preview"
+                      className="sys-token-input"
+                      type="password"
+                      value={llmKeyDraft}
+                      placeholder="paste to preview the provider — never saved"
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(e) => setLlmKeyDraft(e.target.value)}
+                    />
+                    {detectedProvider && <span className="sys-provider-badge">{detectedProvider}</span>}
+                  </div>
+                  <p className="sys-model-hint">
+                    Applies after backend restart — set LLM_API_KEY in .env.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p className="sys-muted">Loading…</p>
+            )}
+          </div>
+
+          {/* ---- Folder agent: absorbed from the retired AgentMenu.tsx (D57/Task U6) ------ */}
+          <div className="sys-section" ref={agentSectionRef}>
+            <h3 className="sys-heading">Folder agent</h3>
+            <p className="agent-intro">
+              Run the ingestion agent on your machine — point it at folders and it keeps them
+              indexed in Condense, automatically.
+            </p>
+
+            {BUILDS.map((b) => (
+              <div className="agent-dl-row" key={b.os}>
+                <span className="agent-dl-icon">{b.icon}</span>
+                <span className="agent-dl-meta">
+                  <span className="agent-dl-os">{b.os}</span>
+                  <span className="agent-dl-hint">{b.hint}</span>
+                  {b.note && <span className="agent-note">{b.note}</span>}
+                </span>
+                {b.href ? (
+                  <a className="agent-dl-btn" href={b.href} download>
+                    Download
+                  </a>
+                ) : (
+                  <span className="agent-dl-btn is-soon" aria-disabled="true">
+                    Soon
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* ---- Advanced: the ENTIRE original raw settings table, unchanged, just demoted -- */}
           {data &&
             (() => {
               const grouped = new Set(GROUPS.flatMap((g) => g.keys))
               const leftover = Object.keys(data.settings).filter((k) => !grouped.has(k))
               return (
-                <div className="sys-section">
-                  <div className="sys-label">Settings</div>
-                  {GROUPS.map((group) => {
-                    const keys = group.keys.filter((k) => k in data.settings)
-                    if (keys.length === 0) return null
-                    return (
-                      <div className="sys-group" key={group.label}>
-                        <div className="sys-group-label">{group.label}</div>
-                        {keys.map((k) => {
-                          const v = data.settings[k]
-                          const editable = EDITABLE.has(k)
-                          const restart = RESTART_REQUIRED.has(k)
-                          const explanation = EXPLANATIONS[k]
-                          return (
-                            <div className={`sys-row${restart ? ' sys-row-restart' : ''}`} key={k}>
-                              <span className="sys-key">
-                                {k.toUpperCase()}
-                                {editable && (
-                                  <span
-                                    className="sys-pencil"
-                                    title="Editable — change and press Enter"
-                                  >
-                                    ✎
-                                  </span>
-                                )}
-                                {explanation && (
-                                  <span
-                                    className="mode-info sys-info"
-                                    tabIndex={0}
-                                    role="note"
-                                    aria-label={explanation}
-                                  >
-                                    ⓘ
-                                    <span className="mode-tip sys-tip" role="tooltip">
-                                      {explanation}
+                <details className="sys-advanced">
+                  <summary className="sys-advanced-summary">
+                    <span className="sys-advanced-chevron" aria-hidden="true">
+                      ▸
+                    </span>
+                    Advanced
+                  </summary>
+                  <div className="sys-advanced-body">
+                    <div className="sys-label">Settings</div>
+                    {GROUPS.map((group) => {
+                      const keys = group.keys.filter((k) => k in data.settings)
+                      if (keys.length === 0) return null
+                      return (
+                        <div className="sys-group" key={group.label}>
+                          <div className="sys-group-label">{group.label}</div>
+                          {keys.map((k) => {
+                            const v = data.settings[k]
+                            const editable = EDITABLE.has(k)
+                            const restart = RESTART_REQUIRED.has(k)
+                            const explanation = EXPLANATIONS[k]
+                            return (
+                              <div className={`sys-row${restart ? ' sys-row-restart' : ''}`} key={k}>
+                                <span className="sys-key">
+                                  {k.toUpperCase()}
+                                  {editable && (
+                                    <span
+                                      className="sys-pencil"
+                                      title="Editable — change and press Enter"
+                                    >
+                                      ✎
                                     </span>
-                                  </span>
-                                )}
-                              </span>
-                              <span className="sys-row-right">
-                                {editable ? (
-                                  <>
-                                    {savedKeys.has(k) && <span className="sys-saved">Saved ✓</span>}
-                                    <input
-                                      className="sys-edit"
-                                      defaultValue={fmt(v)}
-                                      spellCheck={false}
-                                      aria-label={`Edit ${k}`}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                                      }}
-                                      onBlur={(e) => {
-                                        if (e.target.value !== fmt(v)) patchSetting(k, e.target.value)
-                                      }}
-                                    />
-                                  </>
-                                ) : (
-                                  <>
-                                    {restart && (
-                                      <span className="sys-restart-badge" title="Requires an engine restart to change">
-                                        restart
+                                  )}
+                                  {explanation && (
+                                    <span
+                                      className="mode-info sys-info"
+                                      tabIndex={0}
+                                      role="note"
+                                      aria-label={explanation}
+                                    >
+                                      ⓘ
+                                      <span className="mode-tip sys-tip" role="tooltip">
+                                        {explanation}
                                       </span>
-                                    )}
-                                    <span className={`sys-val${v === null ? ' sys-null' : ''}`}>
-                                      {fmt(v)}
                                     </span>
-                                  </>
-                                )}
-                              </span>
+                                  )}
+                                </span>
+                                <span className="sys-row-right">
+                                  {editable ? (
+                                    <>
+                                      {savedKeys.has(k) && <span className="sys-saved">Saved ✓</span>}
+                                      <input
+                                        className="sys-edit"
+                                        defaultValue={fmt(v)}
+                                        spellCheck={false}
+                                        aria-label={`Edit ${k}`}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                                        }}
+                                        onBlur={(e) => {
+                                          if (e.target.value !== fmt(v)) patchSetting(k, e.target.value)
+                                        }}
+                                      />
+                                    </>
+                                  ) : (
+                                    <>
+                                      {restart && (
+                                        <span
+                                          className="sys-restart-badge"
+                                          title="Requires an engine restart to change"
+                                        >
+                                          restart
+                                        </span>
+                                      )}
+                                      <span className={`sys-val${v === null ? ' sys-null' : ''}`}>
+                                        {fmt(v)}
+                                      </span>
+                                    </>
+                                  )}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                    {leftover.length > 0 && (
+                      <div className="sys-group">
+                        <div className="sys-group-label">Other</div>
+                        {leftover.map((k) => {
+                          const v = data.settings[k]
+                          return (
+                            <div className="sys-row" key={k}>
+                              <span className="sys-key">{k.toUpperCase()}</span>
+                              <span className={`sys-val${v === null ? ' sys-null' : ''}`}>{fmt(v)}</span>
                             </div>
                           )
                         })}
                       </div>
-                    )
-                  })}
-                  {leftover.length > 0 && (
-                    <div className="sys-group">
-                      <div className="sys-group-label">Other</div>
-                      {leftover.map((k) => {
-                        const v = data.settings[k]
-                        return (
-                          <div className="sys-row" key={k}>
-                            <span className="sys-key">{k.toUpperCase()}</span>
-                            <span className={`sys-val${v === null ? ' sys-null' : ''}`}>{fmt(v)}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                </details>
               )
             })()}
         </div>
       </aside>
     </>
   )
-}
+})
+
+export default SystemMenu

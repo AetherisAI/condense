@@ -12,6 +12,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from sift.api.routes import router
 from sift.api.v1 import router as v1_router
@@ -36,9 +38,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+class _SettingsDrivenCORSMiddleware:
+    """Applies :class:`CORSMiddleware` per ``Settings.cors_origins`` (D55), resolved fresh on
+    every request rather than once at app-construction time.
+
+    Deciding the allowed origins normally means reading ``Settings`` when the middleware is
+    *registered* — but that happens at import time for the module-level ``app`` singleton below,
+    before ``INGEST_TOKEN`` (a required field with no default — "fails fast at startup" by
+    design, see ``config.py``) is necessarily available: real startup and every test both supply
+    it later, via the environment or a fixture, not before import. Resolving ``get_settings()``
+    per request instead defers that read to first use (same lazy pattern ``lifespan`` already
+    uses) and, as a bonus, lets tests flip ``CORS_ORIGINS`` per-test like every other setting.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
+        if not origins:
+            await self._app(scope, receive, send)
+            return
+        cors = CORSMiddleware(
+            self._app, allow_origins=origins, allow_methods=["*"], allow_headers=["*"]
+        )
+        await cors(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     """Assemble the FastAPI app: the lifespan-built container plus the routes."""
     app = FastAPI(title="Condense", lifespan=lifespan)
+    app.add_middleware(_SettingsDrivenCORSMiddleware)
     app.include_router(router)
     app.include_router(v1_router)
     return app
