@@ -109,7 +109,16 @@ pub async fn backend_start(
             .expect("config mutex poisoned")
             .clone()
     };
-    if cfg.mode.as_deref() != Some("local") {
+    // Reject only an explicit "client" mode — NOT `None`. The first-run wizard's "starting"
+    // step (`SetupWizard.tsx`) deliberately calls `backend_start` BEFORE persisting
+    // `mode: 'local'` via `app_config_set`: it only commits that choice (and lets the wizard
+    // overlay hand off to the workbench) once the backend is confirmed healthy, so a failed
+    // first attempt never leaves the user stranded in a half-configured "local" mode with no
+    // running backend and no wizard left to retry from. Requiring `mode == Some("local")`
+    // already here made every real first run fail this guard before it could ever succeed
+    // (only caught by real end-to-end QA — T2's mocked-Tauri Chrome QA never calls into this
+    // command at all, so it couldn't have caught it).
+    if cfg.mode.as_deref() == Some("client") {
         return Err("backend is managed only in local mode".to_string());
     }
 
