@@ -2436,6 +2436,11 @@ button:disabled {
    states (never a spinner), pill buttons, `prefers-reduced-motion` respected via the shared
    `.mark-busy` rule already defined above — nothing here introduces a new motion primitive. */
 
+/* Opaque page background + its OWN `SlashField` instance mounted inside (`SetupWizard.tsx`) —
+   the overlay covers the workbench (and the app-level SlashField behind it), so the wizard
+   brings the signature slash-mark canvas along rather than sitting on a flat sheet. Inside this
+   stacking context the canvas (`.slash-field`, fixed/z-0/pointer-events-none) paints above the
+   overlay background; the card and loading mark get z-index 1 to stay above the canvas. */
 .wizard-overlay {
   position: fixed;
   inset: 0;
@@ -2449,6 +2454,8 @@ button:disabled {
 }
 
 .wizard-loading {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2472,6 +2479,8 @@ button:disabled {
 }
 
 .wizard-card {
+  position: relative;
+  z-index: 1; /* above the overlay's own SlashField canvas (see .wizard-overlay) */
   width: min(560px, 100%);
   display: flex;
   flex-direction: column;
@@ -2550,6 +2559,15 @@ button:disabled {
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
+/* No press-scale on the choice cards — the global `button:active` scale(0.97) shrinks this
+   ~200px-wide card between mousedown and mouseup, so a real-timing click near the card's edge
+   releases OUTSIDE the shrunk element and `click` never fires (reproduced with a down-hold-up
+   at the corner: the card just kept focus — the QA "two clicks" bug). Buttons this large must
+   not move under a pressed cursor. Specificity intentionally beats `button:active:not(:disabled)`. */
+.wizard-choice:active:not(:disabled) {
+  transform: none;
+}
+
 .wizard-choice-badge {
   font-size: 10px;
   font-weight: 700;
@@ -2571,6 +2589,15 @@ button:disabled {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--muted);
+}
+
+/* Native checkboxes on the new desktop surfaces take the control purple instead of the
+   browser's default blue — `accent-color` restyles the native glyph without replacing it
+   (keyboard/a11y behavior untouched). Scoped to the two new call sites rather than a global
+   `input[type='checkbox']` rule so nothing outside the Tauri-gated UI shifts. */
+.wizard-component-row input[type='checkbox'],
+.agent-delete-removed input[type='checkbox'] {
+  accent-color: var(--accent-ui);
 }
 
 /* ---- Component checklist (local setup) -------------------------------------- */
@@ -2810,6 +2837,18 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
+}
+
+/* One-line value with ellipsis (the manifest URL would otherwise wrap over several lines) —
+   the full string stays available via the row's `title` tooltip. `min-width: 0` lets the flex
+   item actually shrink; `word-break: normal` undoes `.sys-val`'s break-all so the ellipsis
+   applies instead of a mid-token wrap. */
+.sys-val-trunc {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
 }
 
 /* ---- Folder agent live controls (SystemMenu, Tauri-only) --------------------- */

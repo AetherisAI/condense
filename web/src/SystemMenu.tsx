@@ -761,10 +761,18 @@ const SystemMenu = forwardRef<
                     ))}
                   </div>
 
-                  <div className="sys-row">
-                    <span className="sys-key">Manifest URL</span>
-                    <span className="sys-val">{provisioning?.manifest_url ?? desktopConfig.manifest_url ?? 'default'}</span>
-                  </div>
+                  {(() => {
+                    const manifestUrl =
+                      provisioning?.manifest_url ?? desktopConfig.manifest_url ?? 'default'
+                    return (
+                      <div className="sys-row">
+                        <span className="sys-key">Manifest URL</span>
+                        <span className="sys-val sys-val-trunc" title={manifestUrl}>
+                          {manifestUrl}
+                        </span>
+                      </div>
+                    )
+                  })()}
 
                   {desktopError && <p className="sys-error">{desktopError}</p>}
                 </>

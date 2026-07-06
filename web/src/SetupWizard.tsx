@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Logo from './Logo'
+import SlashField from './SlashField'
 import { setApiBase } from './api'
 import { detectProvider, type DetectedProvider } from './provider'
 import { fmtSize } from './ingestClient'
@@ -284,6 +285,9 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
   if (loading || !config) {
     return (
       <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Loading Condense">
+        {/* The overlay covers the app-level SlashField, so it mounts its own — the signature
+            slash-mark canvas stays part of the first-run scene (see .wizard-overlay in App.css). */}
+        <SlashField />
         <div className="wizard-loading mark-busy">
           <Logo />
         </div>
@@ -297,6 +301,7 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
 
   return (
     <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Condense setup">
+      <SlashField />
       <div className="wizard-card">
         <div className="wizard-head">
           <div className="wizard-head-mark">
