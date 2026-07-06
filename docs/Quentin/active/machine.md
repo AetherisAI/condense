@@ -132,6 +132,8 @@ llama.cpp + HF URLs are real today; engine URLs point at our release naming (`co
 | Date | Commit | Change |
 |------|--------|--------|
 | 2026-07-06 02:26 | — | `feat/desktop-standalone` branched from main b8331c9; scouts A (llama/GGUF) + B (docker builder) dispatched |
+| 2026-07-06 ~03:30 | 542e779/424a419/a7fd361/756d374 | T3 CI + T1 engine bundle (250MB onedir, 128MB tar.gz, smoke 4/4) + T2 wizard UI (QA'd in Chrome, 3 design fixes) + T4 scaffold/icon/manifest/Linux bundle (deb 14.8MB, AppImage 89MB, xvfb boot-smoke OK) |
+| 2026-07-06 | 8a4f973 | T5 Rust provisioning + backend/agent supervision (this entry) |
 
 ## Decisions
 - D60–D64 (this WP) — see `docs/Quentin/DECISIONS.md`.

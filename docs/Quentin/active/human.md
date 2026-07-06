@@ -26,8 +26,8 @@ Condense becomes an **LM-Studio-like standalone desktop app**: a small Tauri ins
 - RAM: 15G host, ~2.2G free with production up — heavy phases staggered; production restored + verified before morning.
 
 ## Status / next action
-- Done: branch from main b8331c9; llama/GGUF validation (D61 proven); docker builder image in flight.
-- Now: T1 engine bundle · T2 wizard UI · T3 CI (parallel) → T4 shell+icon → T5 Rust provisioning/supervision → T6 integrate → T7 E2E + user-level install → T8 close-out.
+- Done: branch from main b8331c9; llama/GGUF validation (D61 proven); docker builder image; T1 engine bundle · T2 wizard UI · T3 CI · T4 shell+icon+Linux bundle · T5 Rust provisioning + backend/agent supervision (full command contract implemented, gates + tauri build green).
+- Now: T6 integrate → T7 E2E + user-level install → T8 close-out.
 - **No merge to main** — Quentin's word required (morning review).
 
 ## Pointer
