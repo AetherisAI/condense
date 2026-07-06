@@ -45,6 +45,8 @@ _ENV_KEYS = (
     "ANSWER_HISTORY_MAX_TURNS",
     "ANSWER_HISTORY_TTL_DAYS",
     "ANSWER_GROUNDING_DEFAULT",
+    "API_BIND",
+    "API_PORT",
 )
 
 
@@ -102,6 +104,13 @@ def test_defaults_populate() -> None:
     assert settings.answer_history_ttl_days == 30
     # Grounding mode (D46): defaults to the safest, corpus-only trust boundary.
     assert settings.answer_grounding_default == "strict"
+    # Frozen-engine entry point (packaging/sift_engine_entry.py, D62): the same bind/port the
+    # engine has always used (docker-compose's API_BIND/API_PORT host-mapping vars, previously
+    # compose-only — see the now-narrowed `_NON_SETTINGS_KEYS` in test_config_env_parity.py),
+    # now a real typed field so a frozen binary can call `uvicorn.run(app, host=..., port=...)`
+    # directly instead of the string-based `"sift.api.main:app"` import a frozen app can't do.
+    assert settings.api_bind == "0.0.0.0"
+    assert settings.api_port == 8000
 
 
 def test_missing_ingest_token_raises() -> None:
@@ -235,6 +244,29 @@ def test_answer_history_ttl_days_below_one_raises_validation_error(
     monkeypatch.setenv("ANSWER_HISTORY_TTL_DAYS", "0")
     with pytest.raises(ValidationError):
         Settings(ingest_token="t")
+
+
+# --- frozen-engine entry point bind/port (packaging/sift_engine_entry.py, D62) ---------
+
+
+def test_api_port_zero_raises_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("API_PORT", "0")
+    with pytest.raises(ValidationError):
+        Settings(ingest_token="t")
+
+
+def test_api_port_above_65535_raises_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("API_PORT", "65536")
+    with pytest.raises(ValidationError):
+        Settings(ingest_token="t")
+
+
+def test_api_bind_and_port_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("API_BIND", "127.0.0.1")
+    monkeypatch.setenv("API_PORT", "18801")
+    settings = Settings(ingest_token="t")
+    assert settings.api_bind == "127.0.0.1"
+    assert settings.api_port == 18801
 
 
 # --- parse_auth_tokens (WP v0.2.0 T2, D38) ---------------------------------------------

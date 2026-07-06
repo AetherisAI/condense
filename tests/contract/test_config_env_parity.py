@@ -20,8 +20,12 @@ from sift.config import Settings
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Env keys that are legitimately compose/env-file-only (never a `Settings` field): compose's own
-# host-port/bind knobs and the HF model-id passthrough for the optional `tei` profile service.
-_NON_SETTINGS_KEYS = frozenset({"API_BIND", "API_PORT", "WEB_PORT", "TEI_PORT", "RERANK_HF_MODEL"})
+# host-port knobs and the HF model-id passthrough for the optional `tei` profile service.
+# `API_BIND`/`API_PORT` used to live here too (compose-only, never read by the app itself — the
+# Dockerfile CMD hardcoded `0.0.0.0:8000`) but became real `Settings` fields for the
+# frozen-engine entry point (`packaging/sift_engine_entry.py`, D62), so they're covered by
+# `_settings_env_keys()` now instead of this allow-list.
+_NON_SETTINGS_KEYS = frozenset({"WEB_PORT", "TEI_PORT", "RERANK_HF_MODEL"})
 
 
 def _settings_env_keys() -> set[str]:
