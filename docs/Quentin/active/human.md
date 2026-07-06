@@ -2,33 +2,31 @@
 
 > **≤500 words. Decision-first.** Fast-read companion to `machine.md`.
 
-**Status:** in-progress (autonomous overnight run, 2026-07-06) · **Branch:** `feat/desktop-standalone` · **Updated:** 2026-07-06 02:30
+**Status:** in-progress (autonomous overnight run, 2026-07-06) · **Branch:** `feat/desktop-standalone` · **Updated:** 2026-07-06 05:05
 
 ## What & why
-Condense becomes an **LM-Studio-like standalone desktop app**: a small Tauri installer that on first run **downloads and runs its own backend** — PyInstaller engine bundle + `llama-server` with a local bge-m3 GGUF — takes an LLM API key (Mistral/OpenAI/Anthropic auto-detected), and lands in the chat. A settings mode-switch keeps the app usable as a **pure client** against any Condense server. Ubuntu/macOS/Windows. Per Arthur's landing-page ask, the backend is a **separable "API only" download** (engine + agent CLI, no UI).
+Condense becomes an **LM-Studio-like standalone desktop app**: a small Tauri installer that on first run **downloads and runs its own backend** — PyInstaller engine bundle + `llama-server` with a local bge-m3 GGUF — takes an LLM API key (auto-detected), and lands in the chat. A settings mode-switch keeps the app usable as a **pure client** against any Condense server. Ubuntu/macOS/Windows. The backend is also a **separable "API only" download** for Arthur's landing page (engine + agent CLI, no UI).
 
 ## Key decisions
-- **D60** — dual-mode launcher (local = app provisions + supervises backend; client = v0.3.0 connect behavior). Supersedes D53 connect-first. New branch `feat/desktop-standalone`; old `feat/tauri-shell` plan archived on origin.
-- **D61** — local embeddings via **llama-server sidecar + bge-m3 GGUF** (OpenAI-compat). **Verified tonight:** cosine vs production TEI > 0.999 on all probes — the two runtimes are interchangeable; engine adapter works unchanged (`EMBED_BASE_URL=http://127.0.0.1:8802/v1`). ~342MB RSS, 605MB download.
-- **D62** — backend is **downloaded at first run** from a sha256-verified, config-driven manifest (installer stays small); data in the OS app-data dir (`file:` libsql DB); local ports 8801/8802; app config JSON holds mode/key/token (plaintext v1, keyring deferred).
+- **D60** — dual-mode launcher (local = app provisions + supervises backend; client = v0.3.0 connect behavior). Supersedes D53. New branch `feat/desktop-standalone`; old `feat/tauri-shell` archived.
+- **D61** — local embeddings via **llama-server sidecar + bge-m3 GGUF**. Verified: cosine vs production TEI > 0.999 — interchangeable, engine adapter unchanged.
+- **D62** — backend **downloaded at first run** from a sha256-verified, config-driven manifest; data in the OS app-data dir (`file:` libsql DB); local ports 8801/8802; config JSON plaintext v1 (keyring deferred).
 - **D63** — CI publishes `condense-server-<os>` as its own release asset = Arthur's "API only" download button.
-- **D64** — local builds happen **in Docker** (host lacks webkit dev headers; no sudo overnight); tonight's install = **AppImage + user-level .desktop + icon** (no sudo needed); a `.deb` is also produced.
+- **D64** — local builds **in Docker** (no webkit dev headers/sudo overnight); install = **AppImage + user-level .desktop + icon**; `.deb` also produced.
+- **D65** — T7 real E2E found + fixed a shipping-blocker, and found + flagged an unfixed exit-cleanup gap (below).
 
 ## Ports / interfaces touched
-- No `core/` changes. Engine untouched except possibly `Settings.api_port` (+ env parity).
-- `packaging/` (Arthur's): new `sift-engine.spec` + entry — channel-flagged (update 30).
-- New seam: the Tauri command contract (config/provision/backend/agent) pinned in `machine.md` — both the Rust and React tracks build against it.
+- No `core/` changes. `packaging/` (Arthur's) touches channel-flagged (update 30). New seam: the Tauri command contract (config/provision/backend/agent) pinned in `machine.md`.
 
 ## Risks / open questions
-- Engine PyInstaller freeze (markitdown/tokenizers/libsql hidden imports) — riskiest packaging item; smoke-tested tonight.
-- macOS/Windows legs are CI-built but **not hardware-QA'd tonight** (marked honestly).
-- Chunker tokenizer downloads from HF on first ingest (needs internet once; `HF_HOME` in app data). Pre-fetch = later polish.
-- RAM: 15G host, ~2.2G free with production up — heavy phases staggered; production restored + verified before morning.
+- macOS/Windows legs are CI-built but **not hardware-QA'd tonight**. Chunker tokenizer needs one HF download on first ingest.
+- **New (D65): quitting the app doesn't kill its children.** Neither window-close nor `SIGTERM` runs the Rust cleanup hook — `engine`/`llama-server` left orphaned (reproduced twice each). Window-close also hit a likely-Xvfb-only fatal GDK error; `SIGTERM` bypassing cleanup is platform-independent and likely reproduces on real desktops too. Not fixed tonight — recommend a 10s real-desktop check + a `tokio::signal` follow-up.
 
 ## Status / next action
-- Done: branch from main b8331c9; llama/GGUF validation (D61 proven); docker builder image; T1 engine bundle · T2 wizard UI · T3 CI · T4 shell+icon+Linux bundle · T5 Rust provisioning + backend/agent supervision (full command contract implemented, gates + tauri build green).
-- Now: T6 integrate → T7 E2E + user-level install → T8 close-out.
-- **No merge to main** — Quentin's word required (morning review).
+- Done: T1–T6, and now **T7 real E2E + install, PASS** — real AppImage under Xvfb, real xdotool-driven wizard, provisioned + started the backend from a local manifest, ran a full ingest→search→answer loop for real (1 Mistral call, correctly cited). Auto-start-on-relaunch (T7's Rust addition) and full data persistence across relaunch both verified.
+- **T7 also found + fixed a shipping-blocker** (D65): the first-run wizard was broken for every real user — `backend_start`'s guard rejected the wizard's own deliberate call order. Fixed, rebuilt, verified; never caught by T2's mocked-Tauri Chrome QA.
+- AppImage installed user-level (`~/.local/bin` + `.desktop` + icon, GNOME app grid). Host app dirs left absent — pristine first-run for Quentin.
+- Now: T8 close-out, pending Quentin's read of D65's flagged orphan-cleanup gap. **No merge to main** — Quentin's word required.
 
 ## Pointer
 - Full design, contract, tasks, log: [`./machine.md`](./machine.md)
