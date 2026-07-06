@@ -76,11 +76,10 @@ jobs:
           fi
 
           # Static server-bundle files (README/run scripts/env template) — owned by the engine
-          # track (packaging/server-bundle/), just copied verbatim here.
-          cp packaging/server-bundle/README.md packaging/server-bundle/env.example "$bundle/"
-          [ -f packaging/server-bundle/run.sh ] && cp packaging/server-bundle/run.sh "$bundle/"
-          [ -f packaging/server-bundle/run.bat ] && cp packaging/server-bundle/run.bat "$bundle/"
-          [ "${{ runner.os }}" != "Windows" ] && [ -f "$bundle/run.sh" ] && chmod +x "$bundle/run.sh"
+          # track (packaging/server-bundle/); both run.sh and run.bat ship unconditionally as of
+          # T1, so no existence guards are needed here.
+          cp packaging/server-bundle/README.md packaging/server-bundle/env.example packaging/server-bundle/run.sh packaging/server-bundle/run.bat "$bundle/"
+          [ "${{ runner.os }}" != "Windows" ] && chmod +x "$bundle/run.sh"
           true
 
       - name: Archive (tar.gz — Linux/macOS)
