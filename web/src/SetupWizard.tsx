@@ -129,16 +129,31 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
   }, [provisioning])
 
   // Provisioning step: subscribe to progress/error events, then kick off the download. Advances to
-  // 'starting' on success; surfaces the error inline (with a Retry that bumps `provisionAttempt`,
-  // which is in this effect's deps) on failure.
+  // 'starting' only once every requested id has actually reached a terminal state; surfaces the
+  // error inline (with a Retry that bumps `provisionAttempt`, which is in this effect's deps) on
+  // failure.
   useEffect(() => {
     if (step !== 'provisioning') return
     let disposed = false
     const disposers: Unlisten[] = []
+    let resolveSettled: (() => void) | null = null
     setStepError(null)
     async function run() {
+      const settled = new Set<ComponentId>()
+      const errored = new Set<ComponentId>()
+      const settledPromise = new Promise<void>((resolve) => {
+        resolveSettled = resolve
+      })
+      function checkSettled() {
+        if (provisionIds.every((id) => settled.has(id))) resolveSettled?.()
+      }
+
       const unProgress = await listenEvent<ProvisionProgressEvent>('provision-progress', (e) => {
         setProgress((prev) => ({ ...prev, [e.id]: e }))
+        if (e.phase === 'done') {
+          settled.add(e.id)
+          checkSettled()
+        }
       })
       if (disposed) {
         unProgress()
@@ -148,6 +163,9 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
 
       const unError = await listenEvent<ProvisionErrorEvent>('provision-error', (e) => {
         setProvisionErrors((prev) => ({ ...prev, [e.id]: e.error }))
+        settled.add(e.id)
+        errored.add(e.id)
+        checkSettled()
       })
       if (disposed) {
         unError()
@@ -162,15 +180,30 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
           if (!disposed) setStepError(describeError(err))
           return
         }
+        // `provision_start` only kicks the download off in a background Tokio task (`provisioning.rs`
+        // spawns and returns `Ok(())` immediately) — the invoke above resolves long before any
+        // component is actually fetched. Without waiting here, `backend_start` in the 'starting'
+        // step below fires right away and can find the embedder/model archive still
+        // downloading/unpacking, failing with a spurious "binary not found — provision it first"
+        // (a real network download, even a fast one, is never as instant as the promise makes it
+        // look — unlike a small file:// copy, which is why this never surfaced against an
+        // all-file:// manifest). Wait for every requested id to reach a terminal state (a "done"
+        // progress phase or a `provision-error` event) before treating provisioning as finished.
+        await settledPromise
       }
-      if (!disposed) {
-        setBackendStates({ engine: 'stopped', embedder: 'stopped' })
-        setStep('starting')
+      if (disposed) return
+      if (errored.size > 0) {
+        // Stay on this step — the per-component error + Retry button already rendered from
+        // `provisionErrors` is the way forward, not a `backend_start` doomed to fail.
+        return
       }
+      setBackendStates({ engine: 'stopped', embedder: 'stopped' })
+      setStep('starting')
     }
     void run()
     return () => {
       disposed = true
+      resolveSettled?.()
       disposers.forEach((fn) => fn())
     }
   }, [step, provisionIds, provisionAttempt])
