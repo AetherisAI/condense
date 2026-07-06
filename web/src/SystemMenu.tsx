@@ -1,6 +1,37 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { apiFetch, apiUrl, getApiBase, setApiBase } from './api'
 import { detectProvider } from './provider'
+import { isTauri } from './platform'
+import {
+  agentStart,
+  agentStatus,
+  agentStop,
+  appConfigGet,
+  appConfigSet,
+  backendStart,
+  backendStateError,
+  backendStateKind,
+  backendStatus,
+  backendStop,
+  listenEvent,
+  parseAgentLine,
+  pickFolders,
+  provisionStart,
+  provisioningStatus,
+  type AgentEventPayload,
+  type AgentLine,
+  type AgentStatus,
+  type AgentTerminatedEvent,
+  type AppConfig,
+  type BackendStateEvent,
+  type BackendStatus,
+  type ComponentId,
+  type ProvisioningStatus,
+  type Unlisten,
+} from './tauri'
+
+/** The `sync` variant of `AgentLine` — narrowed via its `event` discriminant below. */
+type AgentSyncLine = Extract<AgentLine, { event: 'sync' }>
 
 /** One dependency's reachability (mirrors api.schemas.ComponentHealth). */
 type ComponentHealth = {
@@ -281,6 +312,24 @@ const SystemMenu = forwardRef<
   const [llmKeyDraft, setLlmKeyDraft] = useState('')
   const agentSectionRef = useRef<HTMLDivElement>(null)
 
+  // ---- Desktop (Tauri-only, D60/T2): mode switch + backend supervision + component checks ----
+  const [desktopConfig, setDesktopConfig] = useState<AppConfig | null>(null)
+  const [backend, setBackend] = useState<BackendStatus | null>(null)
+  const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null)
+  const [desktopError, setDesktopError] = useState<string | null>(null)
+  const [modeSwitching, setModeSwitching] = useState(false)
+  const [backendBusy, setBackendBusy] = useState(false)
+
+  // ---- Folder agent live controls (Tauri-only) -----------------------------------------------
+  const [agentPaths, setAgentPaths] = useState<string[]>([])
+  const [agentDeleteRemoved, setAgentDeleteRemoved] = useState(false)
+  const [agentStatusState, setAgentStatusState] = useState<AgentStatus | null>(null)
+  const [agentLastSync, setAgentLastSync] = useState<AgentSyncLine | null>(null)
+  const [agentLog, setAgentLog] = useState<string[]>([])
+  const [agentBusy, setAgentBusy] = useState(false)
+  const [agentError, setAgentError] = useState<string | null>(null)
+  const agentSeededRef = useRef(false)
+
   useImperativeHandle(ref, () => ({
     scrollToAgent: () => {
       agentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -344,6 +393,218 @@ const SystemMenu = forwardRef<
     }
   }, [open, token])
 
+  // Desktop section: config + backend status + provisioning, loaded once per drawer-open, kept
+  // live via `backend-state` events for as long as the drawer stays open.
+  useEffect(() => {
+    if (!isTauri || !open) return
+    let cancelled = false
+    async function load() {
+      try {
+        const [cfg, status, prov] = await Promise.all([appConfigGet(), backendStatus(), provisioningStatus()])
+        if (cancelled) return
+        setDesktopConfig(cfg)
+        setBackend(status)
+        setProvisioning(prov)
+      } catch (err) {
+        if (!cancelled) setDesktopError(err instanceof Error ? err.message : String(err))
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!isTauri || !open) return
+    let disposed = false
+    const disposers: Unlisten[] = []
+    async function subscribe() {
+      const un = await listenEvent<BackendStateEvent>('backend-state', (e) => {
+        setBackend((prev) =>
+          prev ? { ...prev, [e.component]: { ...prev[e.component], state: e.state } } : prev,
+        )
+      })
+      if (disposed) {
+        un()
+        return
+      }
+      disposers.push(un)
+    }
+    void subscribe()
+    return () => {
+      disposed = true
+      disposers.forEach((fn) => fn())
+    }
+  }, [open])
+
+  // Seed the folder-agent editor from the loaded config exactly once per drawer-open session, so
+  // a later config refresh (e.g. after a mode switch) never clobbers in-progress edits.
+  useEffect(() => {
+    if (!open) agentSeededRef.current = false
+  }, [open])
+
+  useEffect(() => {
+    if (!desktopConfig || agentSeededRef.current) return
+    setAgentPaths(desktopConfig.agent.paths)
+    setAgentDeleteRemoved(desktopConfig.agent.delete_removed)
+    agentSeededRef.current = true
+  }, [desktopConfig])
+
+  // Folder agent: status once, then live NDJSON lines + termination notices for as long as the
+  // drawer stays open.
+  useEffect(() => {
+    if (!isTauri || !open) return
+    let disposed = false
+    const disposers: Unlisten[] = []
+    async function subscribe() {
+      try {
+        setAgentStatusState(await agentStatus())
+      } catch {
+        // best-effort — the live event stream below is the real source of truth
+      }
+      const unEvent = await listenEvent<AgentEventPayload>('agent-event', (e) => {
+        setAgentLog((prev) => [...prev.slice(-199), e.line])
+        const parsed = parseAgentLine(e.line)
+        if (parsed && parsed.event === 'sync') setAgentLastSync(parsed)
+      })
+      if (disposed) {
+        unEvent()
+        return
+      }
+      disposers.push(unEvent)
+      const unTerm = await listenEvent<AgentTerminatedEvent>('agent-terminated', () => {
+        void agentStatus()
+          .then(setAgentStatusState)
+          .catch(() => {})
+      })
+      if (disposed) {
+        unTerm()
+        return
+      }
+      disposers.push(unTerm)
+    }
+    void subscribe()
+    return () => {
+      disposed = true
+      disposers.forEach((fn) => fn())
+    }
+  }, [open])
+
+  async function handleModeSwitch(mode: 'local' | 'client') {
+    if (!desktopConfig || desktopConfig.mode === mode || modeSwitching) return
+    setModeSwitching(true)
+    setDesktopError(null)
+    try {
+      const saved = await appConfigSet({ ...desktopConfig, mode })
+      setDesktopConfig(saved)
+    } catch (err) {
+      setDesktopError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setModeSwitching(false)
+    }
+  }
+
+  async function handleBackendStart() {
+    setBackendBusy(true)
+    setDesktopError(null)
+    try {
+      await backendStart()
+      setBackend(await backendStatus())
+    } catch (err) {
+      setDesktopError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBackendBusy(false)
+    }
+  }
+
+  async function handleBackendStop() {
+    setBackendBusy(true)
+    setDesktopError(null)
+    try {
+      await backendStop()
+      setBackend(await backendStatus())
+    } catch (err) {
+      setDesktopError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBackendBusy(false)
+    }
+  }
+
+  async function handleCheckDownloads() {
+    setDesktopError(null)
+    try {
+      setProvisioning(await provisioningStatus())
+    } catch (err) {
+      setDesktopError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleDownloadComponent(id: ComponentId) {
+    setDesktopError(null)
+    try {
+      await provisionStart([id])
+      setProvisioning(await provisioningStatus())
+    } catch (err) {
+      setDesktopError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function persistAgentConfig(paths: string[], deleteRemoved: boolean) {
+    if (!desktopConfig) return
+    try {
+      const saved = await appConfigSet({ ...desktopConfig, agent: { paths, delete_removed: deleteRemoved } })
+      setDesktopConfig(saved)
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleAddFolder() {
+    const picked = await pickFolders()
+    if (picked.length === 0) return
+    const next = [...new Set([...agentPaths, ...picked])]
+    setAgentPaths(next)
+    void persistAgentConfig(next, agentDeleteRemoved)
+  }
+
+  function handleRemoveFolder(path: string) {
+    const next = agentPaths.filter((p) => p !== path)
+    setAgentPaths(next)
+    void persistAgentConfig(next, agentDeleteRemoved)
+  }
+
+  function handleDeleteRemovedChange(checked: boolean) {
+    setAgentDeleteRemoved(checked)
+    void persistAgentConfig(agentPaths, checked)
+  }
+
+  async function handleAgentStart() {
+    setAgentBusy(true)
+    setAgentError(null)
+    try {
+      await agentStart({ paths: agentPaths, delete_removed: agentDeleteRemoved })
+      setAgentStatusState(await agentStatus())
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAgentBusy(false)
+    }
+  }
+
+  async function handleAgentStop() {
+    setAgentBusy(true)
+    setAgentError(null)
+    try {
+      await agentStop()
+      setAgentStatusState(await agentStatus())
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAgentBusy(false)
+    }
+  }
+
   async function patchSetting(key: string, raw: string) {
     const value = coerce(key, raw)
     if (typeof value === 'number' && Number.isNaN(value)) {
@@ -402,44 +663,172 @@ const SystemMenu = forwardRef<
         </div>
 
         <div className="drawer-body">
+          {/* ---- Desktop (Tauri-only, D60/T2): mode switch + backend + component checks --- */}
+          {isTauri && (
+            <div className="sys-section">
+              <h3 className="sys-heading">Desktop</h3>
+
+              {!desktopConfig ? (
+                <p className="sys-muted">Loading…</p>
+              ) : (
+                <>
+                  <div className="sys-mode-row">
+                    <span className="sys-label">Mode</span>
+                    <div className="grounding-select">
+                      <button
+                        type="button"
+                        className={`grounding-btn${desktopConfig.mode === 'local' ? ' active' : ''}`}
+                        onClick={() => handleModeSwitch('local')}
+                        disabled={modeSwitching}
+                      >
+                        Local
+                      </button>
+                      <button
+                        type="button"
+                        className={`grounding-btn${desktopConfig.mode === 'client' ? ' active' : ''}`}
+                        onClick={() => handleModeSwitch('client')}
+                        disabled={modeSwitching}
+                      >
+                        Client
+                      </button>
+                    </div>
+                  </div>
+
+                  {desktopConfig.mode === 'local' && backend && (
+                    <div className="sys-backend-rows">
+                      {(['embedder', 'engine'] as const).map((component) => {
+                        const status = backend[component]
+                        const kind = backendStateKind(status.state)
+                        return (
+                          <div className="sys-row" key={component}>
+                            <span className="sys-key">
+                              {component === 'embedder' ? 'Embedding server' : 'Engine'}
+                            </span>
+                            <span className="sys-row-right">
+                              <span className={`wizard-state-badge is-${kind}`}>
+                                {kind === 'error' ? `error: ${backendStateError(status.state)}` : kind}
+                              </span>
+                              <span className="sys-val">:{status.port}</span>
+                            </span>
+                          </div>
+                        )
+                      })}
+                      <div className="wizard-actions">
+                        <button
+                          type="button"
+                          className="wizard-secondary-btn"
+                          onClick={() => void handleBackendStart()}
+                          disabled={backendBusy}
+                        >
+                          Start
+                        </button>
+                        <button
+                          type="button"
+                          className="wizard-secondary-btn"
+                          onClick={() => void handleBackendStop()}
+                          disabled={backendBusy}
+                        >
+                          Stop
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="sys-provisioning">
+                    <div className="sys-provisioning-head">
+                      <span className="sys-label">Components</span>
+                      <button type="button" className="wizard-skip-link" onClick={() => void handleCheckDownloads()}>
+                        Check downloads
+                      </button>
+                    </div>
+                    {provisioning?.components.map((c) => (
+                      <div className="sys-row" key={c.id}>
+                        <span className="sys-key">{c.name}</span>
+                        <span className="sys-row-right">
+                          {c.installed ? (
+                            <span className="sys-val">{c.version ?? 'installed'}</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="wizard-retry"
+                              onClick={() => void handleDownloadComponent(c.id)}
+                            >
+                              Download
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {(() => {
+                    const manifestUrl =
+                      provisioning?.manifest_url ?? desktopConfig.manifest_url ?? 'default'
+                    return (
+                      <div className="sys-row">
+                        <span className="sys-key">Manifest URL</span>
+                        <span className="sys-val sys-val-trunc" title={manifestUrl}>
+                          {manifestUrl}
+                        </span>
+                      </div>
+                    )
+                  })()}
+
+                  {desktopError && <p className="sys-error">{desktopError}</p>}
+                </>
+              )}
+            </div>
+          )}
+
           {/* ---- Connection: token + base URL + condensed health ------------------------- */}
           <div className="sys-section">
             <h3 className="sys-heading">Connection</h3>
 
-            <div className="sys-token">
-              <label className="sys-label" htmlFor="bearer-token">
-                Bearer token
-              </label>
-              <input
-                id="bearer-token"
-                className="sys-token-input"
-                type="password"
-                value={token}
-                placeholder="paste your token"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => setToken(e.target.value)}
-              />
-            </div>
+            {(!isTauri || desktopConfig?.mode !== 'local') && (
+              <>
+                <div className="sys-token">
+                  <label className="sys-label" htmlFor="bearer-token">
+                    Bearer token
+                  </label>
+                  <input
+                    id="bearer-token"
+                    className="sys-token-input"
+                    type="password"
+                    value={token}
+                    placeholder="paste your token"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(e) => setToken(e.target.value)}
+                  />
+                </div>
 
-            <div className="sys-token">
-              <label className="sys-label" htmlFor="api-base-url">
-                API base URL
-              </label>
-              <input
-                id="api-base-url"
-                className="sys-token-input"
-                type="text"
-                value={apiBase}
-                placeholder="same origin (default)"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => {
-                  setApiBaseInput(e.target.value)
-                  setApiBase(e.target.value)
-                }}
-              />
-            </div>
+                <div className="sys-token">
+                  <label className="sys-label" htmlFor="api-base-url">
+                    API base URL
+                  </label>
+                  <input
+                    id="api-base-url"
+                    className="sys-token-input"
+                    type="text"
+                    value={apiBase}
+                    placeholder="same origin (default)"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(e) => {
+                      setApiBaseInput(e.target.value)
+                      setApiBase(e.target.value)
+                    }}
+                  />
+                </div>
+              </>
+            )}
+
+            {isTauri && desktopConfig?.mode === 'local' && (
+              <p className="sys-muted">
+                Connected automatically to the local backend on 127.0.0.1:{desktopConfig.engine_port}. Switch
+                to Client mode above to enter a base URL/token by hand.
+              </p>
+            )}
 
             {error && <p className="sys-error">{error}</p>}
             {loading && <p className="sys-muted">Loading…</p>}
@@ -529,33 +918,151 @@ const SystemMenu = forwardRef<
             )}
           </div>
 
-          {/* ---- Folder agent: absorbed from the retired AgentMenu.tsx (D57/Task U6) ------ */}
+          {/* ---- Folder agent: absorbed from the retired AgentMenu.tsx (D57/Task U6); live
+                 controls replace the download links in Tauri (D60/T2) ----------------------- */}
           <div className="sys-section" ref={agentSectionRef}>
             <h3 className="sys-heading">Folder agent</h3>
-            <p className="agent-intro">
-              Run the ingestion agent on your machine — point it at folders and it keeps them
-              indexed in Condense, automatically.
-            </p>
 
-            {BUILDS.map((b) => (
-              <div className="agent-dl-row" key={b.os}>
-                <span className="agent-dl-icon">{b.icon}</span>
-                <span className="agent-dl-meta">
-                  <span className="agent-dl-os">{b.os}</span>
-                  <span className="agent-dl-hint">{b.hint}</span>
-                  {b.note && <span className="agent-note">{b.note}</span>}
-                </span>
-                {b.href ? (
-                  <a className="agent-dl-btn" href={b.href} download>
-                    Download
-                  </a>
-                ) : (
-                  <span className="agent-dl-btn is-soon" aria-disabled="true">
-                    Soon
-                  </span>
+            {isTauri ? (
+              <>
+                <p className="agent-intro">
+                  Point the agent at folders on this machine — it keeps them indexed in Condense,
+                  automatically.
+                </p>
+
+                <ul className="agent-folder-list">
+                  {agentPaths.length === 0 && <li className="sys-muted">No folders yet.</li>}
+                  {agentPaths.map((path) => (
+                    <li className="agent-folder-row" key={path}>
+                      <span className="agent-folder-path">{path}</span>
+                      <button
+                        type="button"
+                        className="drawer-del"
+                        onClick={() => handleRemoveFolder(path)}
+                        aria-label={`Remove ${path}`}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+
+                <button type="button" className="wizard-secondary-btn" onClick={() => void handleAddFolder()}>
+                  Add folder…
+                </button>
+
+                <label className="agent-delete-removed">
+                  <input
+                    type="checkbox"
+                    checked={agentDeleteRemoved}
+                    onChange={(e) => handleDeleteRemovedChange(e.target.checked)}
+                  />
+                  Delete documents whose files leave disk
+                </label>
+                <p className="agent-note">
+                  When on, removing a watched file also removes it from the index — off keeps it
+                  searchable even after the file itself is gone.
+                </p>
+
+                <div className="wizard-actions">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => void handleAgentStart()}
+                    disabled={agentBusy || agentPaths.length === 0 || (agentStatusState?.running ?? false)}
+                  >
+                    Start
+                  </button>
+                  <button
+                    type="button"
+                    className="wizard-secondary-btn"
+                    onClick={() => void handleAgentStop()}
+                    disabled={agentBusy || !(agentStatusState?.running ?? false)}
+                  >
+                    Stop
+                  </button>
+                </div>
+
+                {agentStatusState && (
+                  <p className="agent-status-line">
+                    {agentStatusState.running ? 'Running' : 'Stopped'}
+                    {agentStatusState.restarts > 0 &&
+                      ` · ${agentStatusState.restarts} restart${agentStatusState.restarts === 1 ? '' : 's'}`}
+                  </p>
                 )}
-              </div>
-            ))}
+
+                {agentLastSync && (
+                  <div className="agent-sync-summary">
+                    <span>{agentLastSync.indexed} indexed</span>
+                    <span>{agentLastSync.replaced} replaced</span>
+                    <span>{agentLastSync.deleted} deleted</span>
+                    <span>{agentLastSync.skipped} skipped</span>
+                    <span className={agentLastSync.failed > 0 ? 'agent-sync-failed' : ''}>
+                      {agentLastSync.failed} failed
+                    </span>
+                  </div>
+                )}
+
+                {agentLastSync && agentLastSync.failures.length > 0 && (
+                  <ul className="doc-list agent-failures">
+                    {agentLastSync.failures.map((f, i) => (
+                      <li className="doc-item doc-failed" key={`${f.path}-${i}`}>
+                        <span className="doc-badge">!</span>
+                        <span className="doc-meta">
+                          <span className="doc-name">{f.path}</span>
+                          <span className="doc-sub">{f.error}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {agentError && <p className="sys-error">{agentError}</p>}
+
+                <details className="sys-advanced">
+                  <summary className="sys-advanced-summary">
+                    <span className="sys-advanced-chevron" aria-hidden="true">
+                      ▸
+                    </span>
+                    Log ({agentLog.length})
+                  </summary>
+                  <div className="sys-advanced-body agent-log-tail">
+                    {agentLog.length === 0 ? (
+                      <p className="sys-muted">No log lines yet.</p>
+                    ) : (
+                      <pre className="agent-log-pre">{agentLog.join('\n')}</pre>
+                    )}
+                  </div>
+                </details>
+              </>
+            ) : (
+              <>
+                <p className="agent-intro">
+                  Run the ingestion agent on your machine — point it at folders and it keeps them
+                  indexed in Condense, automatically.
+                </p>
+
+                {BUILDS.map((b) => (
+                  <div className="agent-dl-row" key={b.os}>
+                    <span className="agent-dl-icon">{b.icon}</span>
+                    <span className="agent-dl-meta">
+                      <span className="agent-dl-os">{b.os}</span>
+                      <span className="agent-dl-hint">{b.hint}</span>
+                      {b.note && <span className="agent-note">{b.note}</span>}
+                    </span>
+                    {b.href ? (
+                      <a className="agent-dl-btn" href={b.href} download>
+                        Download
+                      </a>
+                    ) : (
+                      <span className="agent-dl-btn is-soon" aria-disabled="true">
+                        Soon
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
 
           {/* ---- Advanced: the ENTIRE original raw settings table, unchanged, just demoted -- */}

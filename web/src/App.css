@@ -2430,3 +2430,500 @@ button:disabled {
   color: var(--accent-ui);
   font-weight: 600;
 }
+
+/* ---- Desktop shell (Tauri-only, D60/T2): SetupWizard overlay + Desktop/agent live controls --- */
+/* Same design language throughout: existing tokens only, the animated Logo mark for busy/progress
+   states (never a spinner), pill buttons, `prefers-reduced-motion` respected via the shared
+   `.mark-busy` rule already defined above — nothing here introduces a new motion primitive. */
+
+/* Opaque page background + its OWN `SlashField` instance mounted inside (`SetupWizard.tsx`) —
+   the overlay covers the workbench (and the app-level SlashField behind it), so the wizard
+   brings the signature slash-mark canvas along rather than sitting on a flat sheet. Inside this
+   stacking context the canvas (`.slash-field`, fixed/z-0/pointer-events-none) paints above the
+   overlay background; the card and loading mark get z-index 1 to stay above the canvas. */
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 40px 20px;
+  background: var(--page-bg);
+}
+
+.wizard-loading {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wizard-loading .brand-mark {
+  width: 64px;
+  height: 64px;
+}
+
+.wizard-loading-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0 4px;
+}
+
+.wizard-loading-inline .brand-mark {
+  width: 40px;
+  height: 40px;
+}
+
+.wizard-card {
+  position: relative;
+  z-index: 1; /* above the overlay's own SlashField canvas (see .wizard-overlay) */
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 32px;
+  animation: hero-in 0.3s ease;
+}
+
+.wizard-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wizard-head-mark .brand-mark {
+  width: 40px;
+  height: 40px;
+}
+
+.wizard-eyebrow {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ui);
+}
+
+.wizard-title {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.2px;
+}
+
+.wizard-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---- Step 1: local vs client choice cards ----------------------------------- */
+.wizard-choices {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.wizard-choice {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  color: var(--text);
+  background: var(--page-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 18px;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.wizard-choice:hover {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.wizard-choice:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* No press-scale on the choice cards — the global `button:active` scale(0.97) shrinks this
+   ~200px-wide card between mousedown and mouseup, so a real-timing click near the card's edge
+   releases OUTSIDE the shrunk element and `click` never fires (reproduced with a down-hold-up
+   at the corner: the card just kept focus — the QA "two clicks" bug). Buttons this large must
+   not move under a pressed cursor. Specificity intentionally beats `button:active:not(:disabled)`. */
+.wizard-choice:active:not(:disabled) {
+  transform: none;
+}
+
+.wizard-choice-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 980px;
+  padding: 2px 9px;
+}
+
+.wizard-choice-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.wizard-choice-desc {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Native checkboxes on the new desktop surfaces take the control purple instead of the
+   browser's default blue — `accent-color` restyles the native glyph without replacing it
+   (keyboard/a11y behavior untouched). Scoped to the two new call sites rather than a global
+   `input[type='checkbox']` rule so nothing outside the Tauri-gated UI shifts. */
+.wizard-component-row input[type='checkbox'],
+.agent-delete-removed input[type='checkbox'] {
+  accent-color: var(--accent-ui);
+}
+
+/* ---- Component checklist (local setup) -------------------------------------- */
+.wizard-component-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wizard-component-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+.wizard-component-row:first-child {
+  border-top: none;
+}
+
+.wizard-component-meta {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.wizard-component-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.wizard-component-size {
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.wizard-component-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-ui-strong);
+}
+
+/* ---- LLM key field (reuses .sys-model-key-row/.sys-token-input/.sys-provider-badge) --------- */
+.wizard-llm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wizard-skip-link {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wizard-skip-link:hover {
+  color: var(--text-h);
+}
+
+/* ---- Buttons: secondary (Back/Cancel/Test) + inline Retry ------------------- */
+.wizard-secondary-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 980px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.wizard-secondary-btn:hover:not(:disabled) {
+  color: var(--text-h);
+  background: var(--page-bg);
+}
+
+.wizard-back {
+  align-self: flex-start;
+}
+
+.wizard-retry {
+  font: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--accent-ui-strong);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wizard-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ---- Provisioning progress bars ---------------------------------------------- */
+.wizard-progress-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wizard-progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wizard-progress-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.wizard-progress-track {
+  height: 6px;
+  border-radius: 980px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.wizard-progress-fill {
+  height: 100%;
+  border-radius: 980px;
+  background: var(--accent-ui);
+  transition: width 0.2s ease;
+}
+
+/* ---- Backend-starting status rows (wizard + Desktop section share these) ---- */
+.wizard-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13.5px;
+  color: var(--text-h);
+}
+
+.wizard-state-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.wizard-state-badge.is-stopped {
+  color: var(--muted);
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+}
+
+.wizard-state-badge.is-starting {
+  color: var(--accent-ui-strong);
+  background: color-mix(in srgb, var(--accent-ui) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-ui) 28%, transparent);
+}
+
+.wizard-state-badge.is-running {
+  color: var(--accent-ui-strong);
+  background: color-mix(in srgb, var(--accent-ui) 18%, transparent);
+  border: 1px solid var(--accent-ui);
+}
+
+.wizard-state-badge.is-error {
+  color: var(--error);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.wizard-test-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ---- Desktop section (SystemMenu, Tauri-only) -------------------------------- */
+.sys-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.sys-backend-rows {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.sys-provisioning {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.sys-provisioning-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+/* One-line value with ellipsis (the manifest URL would otherwise wrap over several lines) —
+   the full string stays available via the row's `title` tooltip. `min-width: 0` lets the flex
+   item actually shrink; `word-break: normal` undoes `.sys-val`'s break-all so the ellipsis
+   applies instead of a mid-token wrap. */
+.sys-val-trunc {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+/* ---- Folder agent live controls (SystemMenu, Tauri-only) --------------------- */
+.agent-folder-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.agent-folder-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-family: var(--mono);
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+
+.agent-delete-removed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.agent-status-line {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.agent-sync-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agent-sync-failed {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.agent-failures {
+  margin-top: 8px;
+}
+
+.agent-log-tail {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.agent-log-pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre;
+}
