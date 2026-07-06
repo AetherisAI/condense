@@ -1,3 +1,5 @@
+> Original architecture spec (project inception). Kept verbatim for the § references used across docs/. For current product docs see the root README.
+
 # Knowledge Ingestion & Retrieval Service — Solution Plan (v6)
 
 > Codename TBD (placeholder: **Sift**). A minimal, self-contained "RAG as a Lego block": point an agent at a path, every file gets embedded into a vector base, and a single search returns the **single best result** (reranked) with a recap and its source path. Not chat-first — a layer other apps and agents plug into.
