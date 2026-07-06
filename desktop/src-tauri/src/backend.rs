@@ -288,6 +288,35 @@ fn open_log(path: &Path) -> Result<std::fs::File, String> {
         .map_err(|e| format!("opening log {}: {e}", path.display()))
 }
 
+/// Belt-and-braces child reaping (T7/D65): on Linux, ask the kernel to SIGTERM this child the
+/// moment its parent dies — for ANY reason, including SIGKILL or a hard crash, which no
+/// in-process cleanup (`RunEvent` handler, signal handler) can ever cover. Both llama-server
+/// and the engine (uvicorn) exit cleanly on SIGTERM.
+///
+/// Platform notes: `PR_SET_PDEATHSIG` is Linux-only — macOS (kqueue `NOTE_EXIT`) and Windows
+/// (Job objects) equivalents are a later WP; on those platforms the cleanup handlers remain the
+/// only mechanism, so this compiles to a no-op there. Kernel gotcha, deliberate: the signal
+/// fires on the death of the spawning *thread*, not the process — safe here because tokio's
+/// core worker threads (where `Command::spawn` runs) live until runtime shutdown, i.e. app
+/// exit, which is exactly the event we want to propagate.
+fn set_parent_death_signal(cmd: &mut Command) {
+    #[cfg(target_os = "linux")]
+    // SAFETY: the pre_exec closure runs post-fork/pre-exec in the child and calls only the
+    // async-signal-safe prctl(2) — no allocation, no locks.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = cmd;
+    }
+}
+
 async fn wait_for_health(
     child: &mut Child,
     port: u16,
@@ -383,6 +412,7 @@ async fn start_embedder(
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .kill_on_drop(true);
+    set_parent_death_signal(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| format!("spawning embedder: {e}"))?;
 
     wait_for_health(
@@ -459,6 +489,7 @@ async fn start_engine(
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .kill_on_drop(true);
+    set_parent_death_signal(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| format!("spawning engine: {e}"))?;
 
     wait_for_health(

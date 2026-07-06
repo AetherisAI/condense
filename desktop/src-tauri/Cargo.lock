@@ -436,6 +436,7 @@ name = "condense"
 version = "0.4.0"
 dependencies = [
  "flate2",
+ "libc",
  "rand 0.8.6",
  "reqwest",
  "serde",

@@ -27,6 +27,46 @@ pub fn run() {
             let mode = initial_config.mode.clone();
             app.manage(config::ConfigState(std::sync::Mutex::new(initial_config)));
 
+            // SIGTERM/SIGINT → the same cleanup as a normal quit, then exit (T7/D65). tao/Tauri
+            // installs no signal handlers of its own, so without this a terminal `kill`, a
+            // session-logout script, or any supervisor's stop would terminate the app with the
+            // OS default action — no RunEvent, no destructors — orphaning the engine/embedder/
+            // agent children (found by T7's real lifecycle QA). `app_handle.exit(0)` fires
+            // `RunEvent::Exit`, whose handler below runs `kill_backend`/`kill_agent` again —
+            // both are idempotent, so the double call is harmless (same reasoning as handling
+            // both `ExitRequested` and `Exit` there). PR_SET_PDEATHSIG on the spawned children
+            // (backend.rs) remains the last-resort backstop for SIGKILL/crashes, which no
+            // in-process handler can ever observe.
+            #[cfg(unix)]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    let mut sigterm = match signal(SignalKind::terminate()) {
+                        Ok(stream) => stream,
+                        Err(e) => {
+                            eprintln!("signal handler: installing SIGTERM listener failed: {e}");
+                            return;
+                        }
+                    };
+                    let mut sigint = match signal(SignalKind::interrupt()) {
+                        Ok(stream) => stream,
+                        Err(e) => {
+                            eprintln!("signal handler: installing SIGINT listener failed: {e}");
+                            return;
+                        }
+                    };
+                    tokio::select! {
+                        _ = sigterm.recv() => {}
+                        _ = sigint.recv() => {}
+                    }
+                    let backend_state = app_handle.state::<backend::BackendState>();
+                    backend::kill_backend(&app_handle, &backend_state).await;
+                    agent::kill_agent(&app_handle).await;
+                    app_handle.exit(0);
+                });
+            }
+
             // Auto-start the local backend on launch when this install is already provisioned —
             // so returning to "local" mode lands straight in a working workbench instead of
             // requiring the user to re-click through the wizard/settings every time. Only

@@ -25,10 +25,19 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # T5 (provisioning + backend/agent supervision) additions:
-tokio = { version = "1", features = ["process", "fs", "io-util", "macros", "rt-multi-thread", "time", "sync"] }
+# "signal" (T7/D65): SIGTERM/SIGINT handler in lib.rs — terminal/systemd kills must run the
+# same child-process cleanup as a normal window close (tao installs no signal handlers itself).
+tokio = { version = "1", features = ["process", "fs", "io-util", "macros", "rt-multi-thread", "time", "sync", "signal"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 tar = "0.4"
 flate2 = "1"
 zip = "2"
 sha2 = "0.10"
 rand = "0.8"
+
+# T7/D65: PR_SET_PDEATHSIG on spawned engine/embedder children (backend.rs) — the kernel
+# SIGTERMs them if this process dies for ANY reason (incl. SIGKILL/crash, which no in-process
+# cleanup path can ever cover). Linux-only; macOS (kqueue NOTE_EXIT) and Windows (Job objects)
+# equivalents are a later WP.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
