@@ -24,7 +24,52 @@ pub fn run() {
         .manage(provisioning::ProvisionState::default())
         .setup(|app| {
             let initial_config = config::load_or_init(&app.handle())?;
+            let mode = initial_config.mode.clone();
             app.manage(config::ConfigState(std::sync::Mutex::new(initial_config)));
+
+            // Auto-start the local backend on launch when this install is already provisioned —
+            // so returning to "local" mode lands straight in a working workbench instead of
+            // requiring the user to re-click through the wizard/settings every time. Only
+            // applies when `mode == "local"` (client mode has no backend to manage) and only
+            // when engine+embedder+model are all installed already; otherwise this silently
+            // does nothing and the wizard/settings Start button remains the only way in.
+            // `backend_start`'s own already-starting/running guard (backend.rs) is a no-op, so
+            // this can never race a subsequent explicit `backend_start` call into a double-spawn.
+            if mode.as_deref() == Some("local") {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let cfg = app_handle
+                        .state::<config::ConfigState>()
+                        .0
+                        .lock()
+                        .expect("config mutex poisoned")
+                        .clone();
+                    match provisioning::all_installed(&app_handle, &cfg).await {
+                        Ok(true) => {
+                            let config_state = app_handle.state::<config::ConfigState>();
+                            let backend_state = app_handle.state::<backend::BackendState>();
+                            if let Err(e) = backend::backend_start(
+                                app_handle.clone(),
+                                config_state,
+                                backend_state,
+                            )
+                            .await
+                            {
+                                eprintln!("auto-start: backend_start failed: {e}");
+                            }
+                        }
+                        Ok(false) => {
+                            eprintln!(
+                                "auto-start: skipping — components not fully provisioned yet"
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("auto-start: checking installed components failed: {e}");
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

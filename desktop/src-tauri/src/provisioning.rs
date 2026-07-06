@@ -137,6 +137,47 @@ fn read_marker_version(dir: &Path) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Installed checks — shared by `provisioning_status` (per-component detail for the wizard) and
+// `all_installed` (the aggregate gate `lib.rs`'s auto-start-on-launch setup hook uses).
+// ---------------------------------------------------------------------------------------------
+
+struct InstalledFlags {
+    engine: bool,
+    embedder: bool,
+    model: bool,
+}
+
+fn installed_flags(app: &AppHandle, manifest: &Manifest) -> Result<InstalledFlags, String> {
+    let engine_dir = paths::runtime_engine_dir(app)?;
+    let embedder_dir = paths::runtime_embedder_dir(app)?;
+    let model_path = paths::models_dir(app)?.join(&manifest.model.file);
+
+    let engine = engine_dir.join(".installed.json").exists();
+    let embedder = embedder_dir.join(".installed.json").exists();
+    let model = model_path.exists()
+        && match manifest.model.size {
+            Some(expected) => std::fs::metadata(&model_path)
+                .map(|m| m.len() == expected)
+                .unwrap_or(false),
+            None => true,
+        };
+    Ok(InstalledFlags {
+        engine,
+        embedder,
+        model,
+    })
+}
+
+/// Whether engine, embedder, and model are all fully installed for `cfg`'s resolved manifest.
+/// Used by `lib.rs`'s `.setup()` to decide whether it's safe to auto-start the backend
+/// unattended on launch, without re-provisioning or prompting.
+pub async fn all_installed(app: &AppHandle, cfg: &AppConfig) -> Result<bool, String> {
+    let manifest = resolve_manifest(cfg).await?;
+    let flags = installed_flags(app, &manifest)?;
+    Ok(flags.engine && flags.embedder && flags.model)
+}
+
+// ---------------------------------------------------------------------------------------------
 // provisioning_status
 // ---------------------------------------------------------------------------------------------
 
@@ -174,27 +215,18 @@ pub async fn provisioning_status(
 
     let engine_dir = paths::runtime_engine_dir(&app)?;
     let embedder_dir = paths::runtime_embedder_dir(&app)?;
-    let model_path = paths::models_dir(&app)?.join(&manifest.model.file);
 
     let engine_target = manifest.engine.targets.get(paths::TARGET_TRIPLE);
     let embedder_target = manifest.embedder.targets.get(paths::TARGET_TRIPLE);
 
-    let engine_installed = engine_dir.join(".installed.json").exists();
-    let embedder_installed = embedder_dir.join(".installed.json").exists();
-    let model_installed = model_path.exists()
-        && match manifest.model.size {
-            Some(expected) => std::fs::metadata(&model_path)
-                .map(|m| m.len() == expected)
-                .unwrap_or(false),
-            None => true,
-        };
+    let flags = installed_flags(&app, &manifest)?;
 
     let components = vec![
         ComponentStatus {
             id: "engine".to_string(),
             name: "Condense Engine".to_string(),
-            installed: engine_installed,
-            version: if engine_installed {
+            installed: flags.engine,
+            version: if flags.engine {
                 read_marker_version(&engine_dir)
             } else {
                 Some(manifest.engine.version.clone())
@@ -204,8 +236,8 @@ pub async fn provisioning_status(
         ComponentStatus {
             id: "embedder".to_string(),
             name: manifest.embedder.name.clone(),
-            installed: embedder_installed,
-            version: if embedder_installed {
+            installed: flags.embedder,
+            version: if flags.embedder {
                 read_marker_version(&embedder_dir)
             } else {
                 Some(manifest.embedder.build.clone())
@@ -215,7 +247,7 @@ pub async fn provisioning_status(
         ComponentStatus {
             id: "model".to_string(),
             name: manifest.model.name.clone(),
-            installed: model_installed,
+            installed: flags.model,
             version: None,
             size_bytes: manifest.model.size,
         },

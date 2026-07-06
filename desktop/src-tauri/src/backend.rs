@@ -118,7 +118,11 @@ pub async fn backend_start(
         if matches!(inner.engine.state.as_str(), "starting" | "running")
             || matches!(inner.embedder.state.as_str(), "starting" | "running")
         {
-            return Err("backend already starting or running".to_string());
+            // No-op, not an error: both the wizard's explicit `backend_start` call and the
+            // setup-time auto-start (`lib.rs`, when `mode == "local"` and everything is already
+            // provisioned) can reach here in either order — whichever wins the race starts the
+            // backend, the other just finds it already starting/running and does nothing.
+            return Ok(());
         }
     }
 
