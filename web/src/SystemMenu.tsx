@@ -18,6 +18,7 @@ import {
   pickFolders,
   provisionStart,
   provisioningStatus,
+  type AgentConfig,
   type AgentEventPayload,
   type AgentLine,
   type AgentStatus,
@@ -583,7 +584,18 @@ const SystemMenu = forwardRef<
     setAgentBusy(true)
     setAgentError(null)
     try {
-      await agentStart({ paths: agentPaths, delete_removed: agentDeleteRemoved })
+      // Always pass server/token explicitly (T6) — local mode points the sidecar at the
+      // supervised engine with the app's generated ingest token; client mode points it at
+      // whatever server/bearer token this drawer is currently connected with.
+      const cfg: AgentConfig = { paths: agentPaths, delete_removed: agentDeleteRemoved }
+      if (desktopConfig?.mode === 'local') {
+        cfg.server = `http://127.0.0.1:${desktopConfig.engine_port}`
+        cfg.token = desktopConfig.ingest_token
+      } else {
+        cfg.server = getApiBase()
+        cfg.token = token
+      }
+      await agentStart(cfg)
       setAgentStatusState(await agentStatus())
     } catch (err) {
       setAgentError(err instanceof Error ? err.message : String(err))

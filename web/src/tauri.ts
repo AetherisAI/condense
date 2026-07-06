@@ -59,6 +59,17 @@ export type BackendStatus = {
 
 export type AgentStatus = { running: boolean; user_stopped: boolean; restarts: number }
 
+/** Mirrors the Rust `AgentConfig` (desktop/src-tauri/src/agent.rs) — `server`/`token` are optional
+ * there (the Rust side falls back to local-mode values when absent), but every caller in this
+ * codebase passes them explicitly per-mode (T6) so the sidecar is never accidentally pointed at
+ * the wrong backend. */
+export type AgentConfig = {
+  paths: string[]
+  delete_removed: boolean
+  server?: string
+  token?: string
+}
+
 // ---- Event payloads -----------------------------------------------------------------------
 
 export type ProvisionProgressEvent = {
@@ -308,7 +319,7 @@ export async function backendStatus(): Promise<BackendStatus> {
 
 // ---- agent_start / agent_stop / agent_status -----------------------------------------------
 
-export async function agentStart(cfg: { paths: string[]; delete_removed: boolean }): Promise<void> {
+export async function agentStart(cfg: AgentConfig): Promise<void> {
   if (isRealTauri) {
     await invoke('agent_start', { cfg })
     return
@@ -317,7 +328,7 @@ export async function agentStart(cfg: { paths: string[]; delete_removed: boolean
   void mockAgentRun(cfg)
 }
 
-async function mockAgentRun(cfg: { paths: string[]; delete_removed: boolean }): Promise<void> {
+async function mockAgentRun(cfg: AgentConfig): Promise<void> {
   await sleep(400)
   if (!mockAgentStatus.running) return
   mockEmit<AgentEventPayload>('agent-event', {
