@@ -2,7 +2,7 @@
 
 > Full design + plan + implementation record. Paired with `human.md` (never one without the other).
 
-**Status:** T7 done (real E2E + install PASS, one bug found+fixed, one flagged unfixed — D65); T8 close-out remaining · **Branch:** `feat/desktop-standalone` (from main @ b8331c9; supersedes the archived `feat/tauri-shell` plan @ ab5978b) · **Updated:** 2026-07-06 05:10
+**Status:** COMPLETE — T1–T8 all done, awaiting Quentin's review + merge word · **Branch:** `feat/desktop-standalone` @ 8e4577d (from main @ b8331c9; supersedes the archived `feat/tauri-shell` plan @ ab5978b) · **Updated:** 2026-07-06 05:25
 
 **Goal:** Ship Condense as an LM-Studio-like standalone desktop app: a small Tauri 2 installer that, on first run, **downloads and supervises its own backend** (PyInstaller engine bundle + `llama-server` + bge-m3 GGUF), takes an LLM API key (Mistral/OpenAI/Anthropic auto-detect), and lands the user in the chat — while remaining fully usable as a **pure client** (base URL + token) via a settings mode switch. Cross-OS (Ubuntu/macOS/Windows). The backend bundle is a **separable, individually downloadable artifact** so Arthur's landing page can offer "API only" installs.
 

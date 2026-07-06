@@ -874,3 +874,14 @@ Quentin greenlit the desktop work package tonight (overnight autonomous run, bra
 
 Context you might enjoy: local mode serves bge-m3 from a `llama-server` sidecar (llama.cpp prebuilt) instead of TEI — we measured cosine > 0.999 between the two runtimes on the same strings (D61), so desktop-built DBs and TEI-built DBs are interchangeable. TEI stays the compose/server path; nothing changes for the engine.
 
+
+## 2026-07-06 — update 31: the desktop standalone launcher is BUILT — your "API only" artifact is real; one caveat lives in `agent/cli.py` (your call)
+
+Overnight run delivered `feat/desktop-standalone` (awaiting Quentin's merge word). What's in it, from your side of the fence:
+
+1. **The server-only artifact exists and is E2E-proven.** `condense-server-x86_64-unknown-linux-gnu.tar.gz` (128MB: PyInstaller onedir engine + `sift-agent-cli` + `run.sh`/`run.bat` + `env.example` + README) was built, unpacked fresh, booted via `run.sh`, and passed a real ingest→search→answer loop tonight. CI (`.github/workflows/build-desktop.yml`, triggered on this branch's pushes + `v*` tags) builds it for Linux/macOS/Windows and attaches all assets to the release page from tag `v0.4.0` — stable names your landing page can link directly: `condense-server-<triple>.tar.gz`/`.zip` for "API only", `Condense_*.deb/.AppImage/.dmg/.exe` for the full app. The desktop app downloads THE SAME server artifact at first run (D62/D63), so the two download buttons can never drift.
+2. **Local embeddings without TEI/Docker**: the app runs llama.cpp's `llama-server` with `bge-m3-Q8_0.gguf` — measured cosine > 0.999 vs your TEI on identical strings (D61), so DBs are interchangeable. TEI/compose path untouched.
+3. **CROSS-BOUNDARY caveat found in `agent/cli.py` (yours — no change made, your call, D65):** in `--watch --json` mode under a supervisor, the CLI survives *unsignalled* parent death (hard app crash): the main thread blocks on `stop_event.wait()` forever, and the `BrokenPipeError` from a dead stdout only surfaces inside the Watcher callback thread, never waking the main thread. Clean/signalled quits are fine (your SIGTERM handling works — verified). Two candidate fixes we'd propose: a `--parent-pid <pid>` flag with a cheap poll (portable, ~10 lines), or catching `BrokenPipeError` in `emit()` and setting `stop_event`. Happy to implement either at your word, or take it yourself.
+4. Also merged tonight (all on the branch): `Settings.api_bind`/`api_port` (config-parity maintained), `packaging/sift-engine.spec` + entry (flagged in update 30), and a `desktop/` Tauri workspace that doesn't touch your dirs.
+
+Landing-page suggestion when v0.4.0 tags: Download → "Condense for Ubuntu/.deb · macOS/.dmg · Windows/.exe" + a secondary "Server only (API, no UI)" row → the tar.gz/zip assets. Screenshots of the first-run wizard available if you want them for the page.

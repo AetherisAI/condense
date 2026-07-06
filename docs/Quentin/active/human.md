@@ -2,7 +2,7 @@
 
 > **≤500 words. Decision-first.** Fast-read companion to `machine.md`.
 
-**Status:** in-progress (autonomous overnight run, 2026-07-06) · **Branch:** `feat/desktop-standalone` · **Updated:** 2026-07-06 05:05
+**Status:** COMPLETE — awaiting Quentin's review + merge word · **Branch:** `feat/desktop-standalone` @ 8e4577d · **Updated:** 2026-07-06 05:25
 
 ## What & why
 Condense becomes an **LM-Studio-like standalone desktop app**: a small Tauri installer that on first run **downloads and runs its own backend** — PyInstaller engine bundle + `llama-server` with a local bge-m3 GGUF — takes an LLM API key (auto-detected), and lands in the chat. A settings mode-switch keeps the app usable as a **pure client** against any Condense server. Ubuntu/macOS/Windows. The backend is also a **separable "API only" download** for Arthur's landing page (engine + agent CLI, no UI).
@@ -26,7 +26,8 @@ Condense becomes an **LM-Studio-like standalone desktop app**: a small Tauri ins
 - Done: T1–T6, and now **T7 real E2E + install, PASS** — real AppImage under Xvfb, real xdotool-driven wizard, provisioned + started the backend from a local manifest, ran a full ingest→search→answer loop for real (1 Mistral call, correctly cited). Auto-start-on-relaunch (T7's Rust addition) and full data persistence across relaunch both verified.
 - **T7 also found + fixed a shipping-blocker** (D65): the first-run wizard was broken for every real user — `backend_start`'s guard rejected the wizard's own deliberate call order. Fixed, rebuilt, verified; never caught by T2's mocked-Tauri Chrome QA.
 - AppImage installed user-level (`~/.local/bin` + `.desktop` + icon, GNOME app grid). Host app dirs left absent — pristine first-run for Quentin.
-- Now: T8 close-out. **No merge to main** — Quentin's word required.
+- T8 close-out done (channel update 31 to Arthur; CI matrix triggered on push — check the Actions tab for the mac/win legs). **No merge to main** — Quentin's word required.
+- Morning checklist for Quentin: (1) open **Condense** from the GNOME app grid → first-run wizard → Run locally (real downloads this time — or Connect to `http://127.0.0.1:8000` + `condense-dev`); (2) after quitting, run `pgrep -f 'sift-engine|llama-server'` once to confirm the D65 real-desktop close path; (3) `sudo dpkg -i` the `.deb` later if preferred over the AppImage.
 
 ## Pointer
 - Full design, contract, tasks, log: [`./machine.md`](./machine.md)
