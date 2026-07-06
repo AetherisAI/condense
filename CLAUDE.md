@@ -3,7 +3,7 @@
 > Loaded every session. This is the durable context: what we're building, the rules we obey, how we work, and where the live plan lives. If you're starting fresh, read this top to bottom, then `docs/Quentin/ROADMAP.md` and `docs/Quentin/active/human.md`.
 
 ## 1. What this is
-**Condense** (codename *Sift*) — a self-contained "LM Studio for documents": point an agent at a folder → every file is parsed, chunked, embedded into a **Turso/libSQL** vector store → a search bar returns the **single best result** (two-stage: retrieve wide → rerank → top-1) with a recap + source path. Full plan: [`README.md`](./README.md). Strict **ports & adapters**, **config-driven**, all ML inference external over HTTP (no torch in the app).
+**Condense** (codename *Sift*) — a self-contained "LM Studio for documents": point an agent at a folder → every file is parsed, chunked, embedded into a **Turso/libSQL** vector store → a search bar returns the **single best result** (two-stage: retrieve wide → rerank → top-1) with a recap + source path. Full plan: [`docs/SPEC.md`](./docs/SPEC.md). Strict **ports & adapters**, **config-driven**, all ML inference external over HTTP (no torch in the app).
 
 ## 2. Our role — Dev B ("the surface")
 Quentin builds **retrieve + rank + recap + serve + UI**. Arthur builds **the engine** (ingest + storage). We code against **ports** and test with **fakes** — never blocked on Arthur. (See `DECISIONS.md` D3.)
@@ -76,7 +76,7 @@ docker-compose.yml (api · web · tei profile)
 
 ## 10. Pointers & shared source of truth
 Our planning lives under **`docs/Quentin/`**; Arthur's under **`docs/Arthur/`** — both on `main`, side by side, so we can see the two halves stay aligned (D14).
-- Full product/architecture plan: `README.md` (§-referenced throughout).
+- Full product/architecture plan: `docs/SPEC.md` (§-referenced throughout).
 - Master roadmap + work-package order: `docs/Quentin/ROADMAP.md`.
 - Current work package: `docs/Quentin/active/human.md` (fast) → `docs/Quentin/active/machine.md` (full).
 - Decisions & rationale: `docs/Quentin/DECISIONS.md`.
