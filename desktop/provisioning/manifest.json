@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "engine": {
+    "version": "0.4.0",
+    "targets": {
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/AetherisAI/condense/releases/download/v0.4.0/condense-server-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": null,
+        "size": null
+      },
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/AetherisAI/condense/releases/download/v0.4.0/condense-server-aarch64-apple-darwin.tar.gz",
+        "sha256": null,
+        "size": null
+      },
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/AetherisAI/condense/releases/download/v0.4.0/condense-server-x86_64-pc-windows-msvc.zip",
+        "sha256": null,
+        "size": null
+      }
+    }
+  },
+  "embedder": {
+    "name": "llama-server",
+    "build": "b9878",
+    "targets": {
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9878/llama-b9878-bin-ubuntu-x64.tar.gz",
+        "sha256": "fa52c1bdc6a17f28bfeaad28ca6783ff94cf85f36dca4a4bb2d9c7e8687c007b",
+        "size": 15866030,
+        "binary_path": "llama-b9878/llama-server"
+      },
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9878/llama-b9878-bin-macos-arm64.tar.gz",
+        "sha256": null,
+        "size": 11136305,
+        "binary_path": "llama-b9878/llama-server"
+      },
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9878/llama-b9878-bin-win-cpu-x64.zip",
+        "sha256": null,
+        "size": 17482794,
+        "binary_path": "llama-b9878/llama-server.exe"
+      }
+    }
+  },
+  "model": {
+    "name": "bge-m3",
+    "file": "bge-m3-Q8_0.gguf",
+    "url": "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf",
+    "sha256": "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167",
+    "size": 634553760
+  },
+  "_notes": [
+    "engine.targets.*: url points at the v0.4.0 release naming per D63 (condense-server-<triple>.tar.gz/.zip); sha256/size are null tonight because no tagged release exists yet — CI (T3, feat/desktop-ci) fills these when `v0.4.0` is tagged.",
+    "embedder.targets.x86_64-unknown-linux-gnu: verified tonight — archive downloaded to ~/.cache/condense-desktop-assets/, sha256 + size measured directly, binary_path confirmed via `tar -tzf` (llama-b9878/llama-server present alongside 62 other files/libs in the release tarball).",
+    "embedder.targets.aarch64-apple-darwin / x86_64-pc-windows-msvc: url + size taken from the b9878 GitHub release API (ggml-org/llama.cpp) without downloading the archive tonight (RAM/time budget) — sha256 is null pending a real download, and binary_path is an unverified inference from the Linux archive's internal layout (macOS: same `llama-b9878/llama-server` name; Windows: same name + `.exe`). Both must be confirmed before shipping a real release.",
+    "model: gpustack/bge-m3-GGUF Q8_0 quant — sha256 + size measured directly from the file cached at ~/.cache/condense-desktop-assets/bge-m3-Q8_0.gguf tonight."
+  ]
+}

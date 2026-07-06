@@ -25,3 +25,14 @@ web/public/downloads/
 # OS
 .DS_Store
 sift_local.db*
+
+# Desktop shell (Tauri 2, desktop/ — T4 feat/desktop-standalone)
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/node_modules/
+desktop/src-tauri/binaries/*
+!desktop/src-tauri/binaries/.gitkeep
+desktop/qa-boot.png
+# Docker builder image writable HOME/CARGO_HOME mounts (repo root, see desktop/Dockerfile.builder)
+.home/
+.cargo-home/
