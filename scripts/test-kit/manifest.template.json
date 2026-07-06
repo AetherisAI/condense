@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "engine": {
+    "version": "0.4.0",
+    "targets": {
+      "x86_64-unknown-linux-gnu": {
+        "url": "file://__KIT_DIR__/condense-server-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "__ENGINE_SHA256__",
+        "size": __ENGINE_SIZE__,
+        "binary_path": "condense-server-x86_64-unknown-linux-gnu/engine/sift-engine"
+      }
+    }
+  },
+  "embedder": {
+    "name": "llama-server",
+    "build": "b9878",
+    "targets": {
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9878/llama-b9878-bin-ubuntu-x64.tar.gz",
+        "sha256": "fa52c1bdc6a17f28bfeaad28ca6783ff94cf85f36dca4a4bb2d9c7e8687c007b",
+        "size": 15866030,
+        "binary_path": "llama-b9878/llama-server"
+      }
+    }
+  },
+  "model": {
+    "name": "bge-m3",
+    "file": "bge-m3-Q8_0.gguf",
+    "url": "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf",
+    "sha256": "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167",
+    "size": 634553760
+  },
+  "_notes": [
+    "This is a TEST-KIT manifest (scripts/build-desktop-test-kit.sh), not the repo default (desktop/provisioning/manifest.json). The repo is private, so a laptop without access to it cannot have the app fetch the engine tarball from a GitHub release URL the way the real default manifest does -- so this manifest instead ships the engine tarball INSIDE the kit and points 'engine.targets.*.url' at it via file://, resolved to this kit's actual install path by setup-test.sh at run time (the __KIT_DIR__ token above is replaced -- do not hand-edit the rendered manifest.json, it is regenerated on every setup-test.sh run).",
+    "embedder + model keep the REAL public URLs/sha256/size copied verbatim from desktop/provisioning/manifest.json -- both are public releases (llama.cpp GitHub, bge-m3-GGUF HuggingFace) and are downloaded for real by the app during provisioning, exercising the exact code path production users will hit.",
+    "At public launch, once desktop/provisioning/manifest.json's engine URLs point at a real tagged GitHub release, this whole file:// workaround goes away -- AppConfig.manifest_url: null resolves straight to that repo default and every component downloads over the network. See desktop/TESTING.md."
+  ]
+}
