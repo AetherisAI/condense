@@ -6,17 +6,20 @@
       "x86_64-unknown-linux-gnu": {
         "url": "https://github.com/AetherisAI/condense/releases/download/v0.4.0/condense-server-x86_64-unknown-linux-gnu.tar.gz",
         "sha256": null,
-        "size": null
+        "size": null,
+        "binary_path": "condense-server-x86_64-unknown-linux-gnu/engine/sift-engine"
       },
       "aarch64-apple-darwin": {
         "url": "https://github.com/AetherisAI/condense/releases/download/v0.4.0/condense-server-aarch64-apple-darwin.tar.gz",
         "sha256": null,
-        "size": null
+        "size": null,
+        "binary_path": "condense-server-aarch64-apple-darwin/engine/sift-engine"
       },
       "x86_64-pc-windows-msvc": {
         "url": "https://github.com/AetherisAI/condense/releases/download/v0.4.0/condense-server-x86_64-pc-windows-msvc.zip",
         "sha256": null,
-        "size": null
+        "size": null,
+        "binary_path": "condense-server-x86_64-pc-windows-msvc/engine/sift-engine.exe"
       }
     }
   },
@@ -53,8 +56,11 @@
   },
   "_notes": [
     "engine.targets.*: url points at the v0.4.0 release naming per D63 (condense-server-<triple>.tar.gz/.zip); sha256/size are null tonight because no tagged release exists yet — CI (T3, feat/desktop-ci) fills these when `v0.4.0` is tagged.",
+    "engine.targets.x86_64-unknown-linux-gnu.binary_path: verified tonight (T5) via `tar -tzf` against the real artifact built by T1 at ~/.cache/condense-wt-engine/dist/condense-server-x86_64-unknown-linux-gnu.tar.gz — the archive's single top-level dir is `condense-server-x86_64-unknown-linux-gnu/`, containing `engine/sift-engine` (the PyInstaller onedir entry point, with its `_internal/` support dir alongside it), `bin/sift-agent-cli`, `run.sh`, `run.bat`, `env.example`, `README.md`.",
+    "engine.targets.aarch64-apple-darwin / x86_64-pc-windows-msvc.binary_path: NOT verified tonight (no macOS/Windows artifact was built) — inferred by analogy to the Linux layout (same build-server-bundle.sh script presumably produces the same `condense-server-<triple>/engine/sift-engine[.exe]` shape per target). Confirm via `tar -tzf` / `unzip -l` before shipping a real release.",
     "embedder.targets.x86_64-unknown-linux-gnu: verified tonight — archive downloaded to ~/.cache/condense-desktop-assets/, sha256 + size measured directly, binary_path confirmed via `tar -tzf` (llama-b9878/llama-server present alongside 62 other files/libs in the release tarball).",
     "embedder.targets.aarch64-apple-darwin / x86_64-pc-windows-msvc: url + size taken from the b9878 GitHub release API (ggml-org/llama.cpp) without downloading the archive tonight (RAM/time budget) — sha256 is null pending a real download, and binary_path is an unverified inference from the Linux archive's internal layout (macOS: same `llama-b9878/llama-server` name; Windows: same name + `.exe`). Both must be confirmed before shipping a real release.",
-    "model: gpustack/bge-m3-GGUF Q8_0 quant — sha256 + size measured directly from the file cached at ~/.cache/condense-desktop-assets/bge-m3-Q8_0.gguf tonight."
+    "model: gpustack/bge-m3-GGUF Q8_0 quant — sha256 + size measured directly from the file cached at ~/.cache/condense-desktop-assets/bge-m3-Q8_0.gguf tonight.",
+    "Unpacking convention (T5, backend.rs/provisioning.rs): archives are extracted WITHOUT stripping their top-level directory — `binary_path` is always relative to the component's own runtime dir (`runtime/engine/`, `runtime/embedder/`) and includes whatever leading path segment the upstream archive happens to use (e.g. `condense-server-<triple>/engine/sift-engine`, `llama-b9878/llama-server`)."
   ]
 }

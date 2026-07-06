@@ -24,3 +24,11 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# T5 (provisioning + backend/agent supervision) additions:
+tokio = { version = "1", features = ["process", "fs", "io-util", "macros", "rt-multi-thread", "time", "sync"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+tar = "0.4"
+flate2 = "1"
+zip = "2"
+sha2 = "0.10"
+rand = "0.8"
