@@ -320,6 +320,13 @@ const SystemMenu = forwardRef<
   const [desktopError, setDesktopError] = useState<string | null>(null)
   const [modeSwitching, setModeSwitching] = useState(false)
   const [backendBusy, setBackendBusy] = useState(false)
+  // Manifest URL editor (D67) — the escape hatch the wizard's manifest-failure copy points at
+  // ("set a manifest URL in System ▸ Desktop"). Draft holds the CONFIGURED value (empty = use the
+  // baked default), not the effective URL; seeded once per drawer-open like the agent editor so a
+  // config refresh (mode switch, save) never clobbers in-progress edits.
+  const [manifestUrlDraft, setManifestUrlDraft] = useState('')
+  const [manifestSaving, setManifestSaving] = useState(false)
+  const manifestSeededRef = useRef(false)
 
   // ---- Folder agent live controls (Tauri-only) -----------------------------------------------
   const [agentPaths, setAgentPaths] = useState<string[]>([])
@@ -395,17 +402,27 @@ const SystemMenu = forwardRef<
   }, [open, token])
 
   // Desktop section: config + backend status + provisioning, loaded once per drawer-open, kept
-  // live via `backend-state` events for as long as the drawer stays open.
+  // live via `backend-state` events for as long as the drawer stays open. `provisioning_status`
+  // loads SEPARATELY from config/backend (D67): it fetches a manifest and can fail (e.g. a broken
+  // user-set manifest URL, where the Rust embedded fallback deliberately doesn't apply) — coupling
+  // them in one Promise.all left this whole section stuck on "Loading…" in exactly the state where
+  // the user needs the manifest-URL field below to fix things.
   useEffect(() => {
     if (!isTauri || !open) return
     let cancelled = false
     async function load() {
       try {
-        const [cfg, status, prov] = await Promise.all([appConfigGet(), backendStatus(), provisioningStatus()])
+        const [cfg, status] = await Promise.all([appConfigGet(), backendStatus()])
         if (cancelled) return
         setDesktopConfig(cfg)
         setBackend(status)
-        setProvisioning(prov)
+      } catch (err) {
+        if (!cancelled) setDesktopError(err instanceof Error ? err.message : String(err))
+        return
+      }
+      try {
+        const prov = await provisioningStatus()
+        if (!cancelled) setProvisioning(prov)
       } catch (err) {
         if (!cancelled) setDesktopError(err instanceof Error ? err.message : String(err))
       }
@@ -415,6 +432,18 @@ const SystemMenu = forwardRef<
       cancelled = true
     }
   }, [open])
+
+  // Seed the manifest-URL draft once per drawer-open session (same pattern as the agent editor
+  // below) — empty string means "no override configured, use the baked default".
+  useEffect(() => {
+    if (!open) manifestSeededRef.current = false
+  }, [open])
+
+  useEffect(() => {
+    if (!desktopConfig || manifestSeededRef.current) return
+    setManifestUrlDraft(desktopConfig.manifest_url ?? '')
+    manifestSeededRef.current = true
+  }, [desktopConfig])
 
   useEffect(() => {
     if (!isTauri || !open) return
@@ -538,6 +567,24 @@ const SystemMenu = forwardRef<
       setProvisioning(await provisioningStatus())
     } catch (err) {
       setDesktopError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleSaveManifestUrl() {
+    if (!desktopConfig || manifestSaving) return
+    setManifestSaving(true)
+    setDesktopError(null)
+    try {
+      const trimmed = manifestUrlDraft.trim()
+      const saved = await appConfigSet({ ...desktopConfig, manifest_url: trimmed === '' ? null : trimmed })
+      setDesktopConfig(saved)
+      // Re-check immediately against the new URL so the components list + effective-URL line
+      // reflect the change (and a bad URL surfaces its error right here, next to the field).
+      setProvisioning(await provisioningStatus())
+    } catch (err) {
+      setDesktopError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setManifestSaving(false)
     }
   }
 
@@ -773,18 +820,37 @@ const SystemMenu = forwardRef<
                     ))}
                   </div>
 
-                  {(() => {
-                    const manifestUrl =
-                      provisioning?.manifest_url ?? desktopConfig.manifest_url ?? 'default'
-                    return (
-                      <div className="sys-row">
-                        <span className="sys-key">Manifest URL</span>
-                        <span className="sys-val sys-val-trunc" title={manifestUrl}>
-                          {manifestUrl}
-                        </span>
-                      </div>
-                    )
-                  })()}
+                  <div className="sys-token">
+                    <label className="sys-label" htmlFor="manifest-url">
+                      Manifest URL
+                    </label>
+                    <input
+                      id="manifest-url"
+                      className="sys-token-input"
+                      type="text"
+                      value={manifestUrlDraft}
+                      placeholder="leave empty for default"
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(e) => setManifestUrlDraft(e.target.value)}
+                    />
+                    {provisioning?.source === 'embedded-fallback' && (
+                      <p className="sys-muted">
+                        The default manifest couldn't be reached online — using the component list
+                        bundled with this app. Set a reachable URL here to override it.
+                      </p>
+                    )}
+                    <div className="wizard-actions">
+                      <button
+                        type="button"
+                        className="wizard-secondary-btn"
+                        onClick={() => void handleSaveManifestUrl()}
+                        disabled={manifestSaving || (desktopConfig.manifest_url ?? '') === manifestUrlDraft.trim()}
+                      >
+                        {manifestSaving ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
 
                   {desktopError && <p className="sys-error">{desktopError}</p>}
                 </>

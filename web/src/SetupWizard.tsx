@@ -76,8 +76,18 @@ type SetupWizardProps = {
 export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWizardProps) {
   const [loading, setLoading] = useState(true)
   const [config, setConfig] = useState<AppConfig | null>(null)
+  // Set only if `app_config_get` itself rejects — effectively never in practice (it's a local
+  // file read/create), but per the "zero infinite spinners anywhere" rule this still needs a
+  // real terminal UI state instead of leaving `loading` stuck at `true` forever.
+  const [configError, setConfigError] = useState<string | null>(null)
   const [step, setStep] = useState<StepId>('choose')
   const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null)
+  // Set only if `provisioning_status` itself fails (manifest unreachable, parse error, etc.).
+  // Deliberately NEVER gates the choose/loading screens — only the 'local-setup' step (the one
+  // that actually needs the component list) reads it, with a Retry that bumps
+  // `provisioningStatusAttempt`.
+  const [provisioningError, setProvisioningError] = useState<string | null>(null)
+  const [provisioningStatusAttempt, setProvisioningStatusAttempt] = useState(0)
   const [selected, setSelected] = useState<Partial<Record<ComponentId, boolean>>>({})
   const [llmKeyDraft, setLlmKeyDraft] = useState('')
   const [provisionIds, setProvisionIds] = useState<ComponentId[]>([])
@@ -103,24 +113,56 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
   const baseConfigRef = useRef<AppConfig | null>(null)
   const pendingLlmRef = useRef<{ base_url: string; model: string; api_key: string } | null>(null)
 
-  // Initial load: config + provisioning status together, once. Reports the resolved config up
-  // immediately, whatever `mode` turns out to be — a returning user (mode already set) never sees
-  // this component render anything beyond this effect.
+  // Initial load: config ONLY. Reports the resolved config up immediately, whatever `mode` turns
+  // out to be — a returning user (mode already set) never sees this component render anything
+  // beyond this effect. Deliberately does NOT wait on `provisioning_status` (that call fetches a
+  // manifest over the network and can fail on a pristine install — e.g. the baked default
+  // manifest URL 404ing against a private repo); this bare spinner must clear on the config alone,
+  // or every install with no reachable manifest hangs on it forever (see `provisioningError`
+  // below for how the manifest fetch's own failure is surfaced instead of swallowed).
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const [cfg, prov] = await Promise.all([appConfigGet(), provisioningStatus()])
-      if (cancelled) return
-      setConfig(cfg)
-      setProvisioning(prov)
-      setLoading(false)
-      onConfigResolved(cfg)
+      try {
+        const cfg = await appConfigGet()
+        if (cancelled) return
+        setConfig(cfg)
+        setLoading(false)
+        onConfigResolved(cfg)
+      } catch (err) {
+        if (!cancelled) {
+          setConfigError(describeError(err))
+          setLoading(false)
+        }
+      }
     }
     void load()
     return () => {
       cancelled = true
     }
   }, [onConfigResolved])
+
+  // Provisioning status: fetched independently of config, only once there's a pristine (`mode ===
+  // null`) config to act on — a returning user in 'local'/'client' mode never needs the component
+  // list, so this skips the manifest fetch entirely for them instead of doing it silently on every
+  // launch. Failure surfaces via `provisioningError`; Retry bumps `provisioningStatusAttempt`.
+  useEffect(() => {
+    if (!config || config.mode !== null) return
+    let cancelled = false
+    setProvisioningError(null)
+    async function load() {
+      try {
+        const prov = await provisioningStatus()
+        if (!cancelled) setProvisioning(prov)
+      } catch (err) {
+        if (!cancelled) setProvisioningError(describeError(err))
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [config, provisioningStatusAttempt])
 
   // Default the component checklist to "download what's missing" once provisioning status loads.
   useEffect(() => {
@@ -315,7 +357,7 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
     return 'Stopped'
   }
 
-  if (loading || !config) {
+  if (loading) {
     return (
       <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Loading Condense">
         {/* The overlay covers the app-level SlashField, so it mounts its own — the signature
@@ -323,6 +365,29 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
         <SlashField />
         <div className="wizard-loading mark-busy">
           <Logo />
+        </div>
+      </div>
+    )
+  }
+
+  // `app_config_get` itself failed — extremely rare (a local file read/create), but still a real
+  // terminal state rather than an indefinite spinner. No retry-in-place here: `onConfigResolved`
+  // was never called, so a reload is the only path back to a clean init.
+  if (configError || !config) {
+    return (
+      <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Condense setup error">
+        <SlashField />
+        <div className="wizard-card">
+          <div className="wizard-head">
+            <div className="wizard-head-mark">
+              <Logo />
+            </div>
+            <div>
+              <p className="wizard-eyebrow">First-run setup</p>
+              <h2 className="wizard-title">Couldn't load your configuration</h2>
+            </div>
+          </div>
+          <p className="sys-error">{configError ?? 'Unknown error.'}</p>
         </div>
       </div>
     )
@@ -370,71 +435,102 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
           </div>
         )}
 
-        {step === 'local-setup' && provisioning && (
+        {step === 'local-setup' && (
           <div className="wizard-step-body">
             <button type="button" className="wizard-secondary-btn wizard-back" onClick={() => setStep('choose')}>
               ‹ Back
             </button>
 
-            <ul className="wizard-component-list">
-              {provisioning.components.map((c) => (
-                <li className="wizard-component-row" key={c.id}>
-                  <input
-                    type="checkbox"
-                    id={`wizard-comp-${c.id}`}
-                    checked={selected[c.id] ?? false}
-                    onChange={(e) => setSelected((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                  />
-                  <label className="wizard-component-meta" htmlFor={`wizard-comp-${c.id}`}>
-                    <span className="wizard-component-name">{c.name}</span>
-                    <span className="wizard-component-size">{formatMaybeSize(c.size_bytes)}</span>
+            {provisioning ? (
+              <>
+                {provisioning.source === 'embedded-fallback' && (
+                  <p className="sys-muted">
+                    Couldn't reach the latest component list online — showing the version bundled with
+                    this app instead.
+                  </p>
+                )}
+
+                <ul className="wizard-component-list">
+                  {provisioning.components.map((c) => (
+                    <li className="wizard-component-row" key={c.id}>
+                      <input
+                        type="checkbox"
+                        id={`wizard-comp-${c.id}`}
+                        checked={selected[c.id] ?? false}
+                        onChange={(e) => setSelected((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                      />
+                      <label className="wizard-component-meta" htmlFor={`wizard-comp-${c.id}`}>
+                        <span className="wizard-component-name">{c.name}</span>
+                        <span className="wizard-component-size">{formatMaybeSize(c.size_bytes)}</span>
+                      </label>
+                      {c.installed && (
+                        <span className="wizard-component-status">
+                          Installed{c.version ? ` · ${c.version}` : ''}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="wizard-llm-field">
+                  <label className="sys-label" htmlFor="wizard-llm-key">
+                    LLM API key (optional)
                   </label>
-                  {c.installed && (
-                    <span className="wizard-component-status">
-                      Installed{c.version ? ` · ${c.version}` : ''}
-                    </span>
+                  <div className="sys-model-key-row">
+                    <input
+                      id="wizard-llm-key"
+                      className="sys-token-input"
+                      type="password"
+                      value={llmKeyDraft}
+                      placeholder="paste a Mistral, OpenAI, or Anthropic key"
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(e) => setLlmKeyDraft(e.target.value)}
+                    />
+                    {detectedProvider && <span className="sys-provider-badge">{detectedProvider}</span>}
+                  </div>
+                  {detectedProvider && (
+                    <p className="sys-model-hint">
+                      Will use {PROVIDER_DEFAULTS[detectedProvider].base_url} ·{' '}
+                      {PROVIDER_DEFAULTS[detectedProvider].model} — editable later in Settings.
+                    </p>
                   )}
-                </li>
-              ))}
-            </ul>
+                  {llmKeyDraft && (
+                    <button type="button" className="wizard-skip-link" onClick={() => setLlmKeyDraft('')}>
+                      Skip for now
+                    </button>
+                  )}
+                </div>
 
-            <div className="wizard-llm-field">
-              <label className="sys-label" htmlFor="wizard-llm-key">
-                LLM API key (optional)
-              </label>
-              <div className="sys-model-key-row">
-                <input
-                  id="wizard-llm-key"
-                  className="sys-token-input"
-                  type="password"
-                  value={llmKeyDraft}
-                  placeholder="paste a Mistral, OpenAI, or Anthropic key"
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => setLlmKeyDraft(e.target.value)}
-                />
-                {detectedProvider && <span className="sys-provider-badge">{detectedProvider}</span>}
-              </div>
-              {detectedProvider && (
-                <p className="sys-model-hint">
-                  Will use {PROVIDER_DEFAULTS[detectedProvider].base_url} ·{' '}
-                  {PROVIDER_DEFAULTS[detectedProvider].model} — editable later in Settings.
+                {stepError && <p className="sys-error">{stepError}</p>}
+
+                <div className="wizard-actions">
+                  <button type="button" className="btn-primary" onClick={handleStartLocal}>
+                    Download &amp; start
+                  </button>
+                </div>
+              </>
+            ) : provisioningError ? (
+              <>
+                <p className="sys-error">
+                  Couldn't load the component list — {provisioningError}. Check your connection, or set a
+                  manifest URL in System ▸ Desktop, then retry.
                 </p>
-              )}
-              {llmKeyDraft && (
-                <button type="button" className="wizard-skip-link" onClick={() => setLlmKeyDraft('')}>
-                  Skip for now
-                </button>
-              )}
-            </div>
-
-            {stepError && <p className="sys-error">{stepError}</p>}
-
-            <div className="wizard-actions">
-              <button type="button" className="btn-primary" onClick={handleStartLocal}>
-                Download &amp; start
-              </button>
-            </div>
+                <div className="wizard-actions">
+                  <button
+                    type="button"
+                    className="wizard-secondary-btn"
+                    onClick={() => setProvisioningStatusAttempt((n) => n + 1)}
+                  >
+                    Retry
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="wizard-loading-inline mark-busy">
+                <Logo />
+              </div>
+            )}
           </div>
         )}
 
@@ -518,7 +614,10 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
                   type="button"
                   className="wizard-secondary-btn"
                   onClick={() => {
-                    void provisionCancel()
+                    // Best-effort — we're already navigating away regardless of the outcome, but
+                    // an uncaught rejection here would still surface as an unhandled promise
+                    // rejection in the console for no user-visible benefit.
+                    void provisionCancel().catch(() => {})
                     setStep('local-setup')
                   }}
                 >

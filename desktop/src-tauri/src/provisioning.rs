@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,45 @@ pub const DEFAULT_MANIFEST_URL: &str =
 /// The only manifest schema this build understands (`desktop/provisioning/manifest.json`'s own
 /// `"schema": 1`). Bumped in lockstep if the shape ever changes incompatibly.
 const SUPPORTED_MANIFEST_SCHEMA: u32 = 1;
+
+/// The repo's own `desktop/provisioning/manifest.json`, frozen into the binary at compile time —
+/// the resilience fallback `resolve_manifest_with_source` reaches for when `DEFAULT_MANIFEST_URL`
+/// can't be fetched (e.g. a laptop that never cloned the — private — repo gets a fast 404 from
+/// `raw.githubusercontent.com`, found 2026-07-06 chasing the first-run "stuck on the loading logo"
+/// bug: `provisioning_status` rejected almost immediately, but nothing ever caught the rejection).
+/// The embedder/model URLs in this frozen copy are public (llama.cpp GitHub release, HuggingFace)
+/// so those two components install for real off this fallback alone; only `engine` still needs a
+/// real tagged release/manifest override, and its own per-component error+Retry (already wired in
+/// `provision_component`) covers that honestly if its download 404s.
+const EMBEDDED_MANIFEST_JSON: &str = include_str!("../../provisioning/manifest.json");
+
+/// Shared client for every manifest/download request in this module — built once so its
+/// connection pool is reused rather than rebuilt per call. `connect_timeout` bounds only the TCP
+/// (+TLS) handshake: a silently-dropped SYN or a hung proxy fails fast instead of hanging forever
+/// (found in the same investigation: neither `reqwest::get` call in this file had ANY timeout set
+/// — fine against a live server that answers fast either way, as `raw.githubusercontent.com` did
+/// here, but a real hang-until-the-user-gives-up risk on a flaky network). Deliberately does NOT
+/// set a client-wide total `.timeout()` — component archives/models can legitimately take minutes
+/// to download; only the (small, JSON) manifest fetch gets a total-duration cap, applied per
+/// request in `fetch_manifest` below.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .expect("building shared reqwest client")
+    })
+}
+
+/// Where a successfully resolved `Manifest` came from — surfaced to the wizard (`provisioning_status`'s
+/// `source` field) as a notice rather than a silent substitution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManifestSource {
+    Remote,
+    EmbeddedFallback,
+}
 
 // ---------------------------------------------------------------------------------------------
 // Manifest shape
@@ -92,7 +131,13 @@ pub async fn fetch_manifest(url: &str) -> Result<Manifest, String> {
             .await
             .map_err(|e| format!("reading manifest at {path}: {e}"))?
     } else {
-        let resp = reqwest::get(url)
+        // Total-duration cap on top of the client's `connect_timeout` — the manifest is a small
+        // JSON file, so 30s total (connect + transfer) is generous without risking an indefinite
+        // hang if the connection stalls mid-response.
+        let resp = http_client()
+            .get(url)
+            .timeout(Duration::from_secs(30))
+            .send()
             .await
             .map_err(|e| format!("fetching manifest {url}: {e}"))?;
         if !resp.status().is_success() {
@@ -113,11 +158,52 @@ pub async fn fetch_manifest(url: &str) -> Result<Manifest, String> {
     Ok(manifest)
 }
 
-/// Convenience: resolve `AppConfig.manifest_url` and fetch it in one call. Used by both
-/// `provisioning_status`/`provision_start` here and by `backend::backend_start` (which needs
-/// `binary_path` for the current target).
+fn parse_embedded_manifest() -> Result<Manifest, String> {
+    let manifest: Manifest = serde_json::from_str(EMBEDDED_MANIFEST_JSON)
+        .map_err(|e| format!("parsing embedded manifest: {e}"))?;
+    if manifest.schema != SUPPORTED_MANIFEST_SCHEMA {
+        return Err(format!(
+            "embedded manifest has schema {} — this build only understands schema {}",
+            manifest.schema, SUPPORTED_MANIFEST_SCHEMA
+        ));
+    }
+    Ok(manifest)
+}
+
+/// Resolve `AppConfig.manifest_url` and fetch it, falling back to the manifest embedded at build
+/// time (see `EMBEDDED_MANIFEST_JSON`) if that fetch fails AND the config is still on the baked
+/// default (`cfg.manifest_url.is_none()`) — an explicit override (a hand-set `file://`/`http(s)://`
+/// URL, e.g. local E2E or a manual laptop workaround) failing is the user's own configuration, so
+/// silently swapping in the repo default there would hide a real misconfiguration instead of
+/// surfacing it.
+pub async fn resolve_manifest_with_source(
+    cfg: &AppConfig,
+) -> Result<(Manifest, ManifestSource), String> {
+    let url = resolve_manifest_url(cfg);
+    match fetch_manifest(&url).await {
+        Ok(manifest) => Ok((manifest, ManifestSource::Remote)),
+        Err(fetch_err) => {
+            if cfg.manifest_url.is_some() {
+                return Err(fetch_err);
+            }
+            eprintln!(
+                "provisioning: remote manifest fetch failed ({fetch_err}) — falling back to the \
+                 manifest embedded at build time"
+            );
+            let manifest = parse_embedded_manifest().map_err(|embed_err| {
+                format!("{fetch_err}; embedded fallback also failed: {embed_err}")
+            })?;
+            Ok((manifest, ManifestSource::EmbeddedFallback))
+        }
+    }
+}
+
+/// Convenience: resolve `AppConfig.manifest_url` and fetch it in one call, discarding which
+/// source it came from. Used by `provision_start` here and by `backend::backend_start` (which
+/// needs `binary_path` for the current target) — neither needs to report the fallback notice, only
+/// `provisioning_status` (the wizard-facing one) does.
 pub async fn resolve_manifest(cfg: &AppConfig) -> Result<Manifest, String> {
-    fetch_manifest(&resolve_manifest_url(cfg)).await
+    resolve_manifest_with_source(cfg).await.map(|(m, _)| m)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -196,6 +282,7 @@ pub struct ComponentStatus {
 pub struct ProvisioningStatusResponse {
     pub components: Vec<ComponentStatus>,
     pub manifest_url: String,
+    pub source: ManifestSource,
 }
 
 #[tauri::command]
@@ -211,7 +298,7 @@ pub async fn provisioning_status(
             .clone()
     };
     let manifest_url = resolve_manifest_url(&cfg);
-    let manifest = fetch_manifest(&manifest_url).await?;
+    let (manifest, source) = resolve_manifest_with_source(&cfg).await?;
 
     let engine_dir = paths::runtime_engine_dir(&app)?;
     let embedder_dir = paths::runtime_embedder_dir(&app)?;
@@ -256,6 +343,7 @@ pub async fn provisioning_status(
     Ok(ProvisioningStatusResponse {
         components,
         manifest_url,
+        source,
     })
 }
 
@@ -558,7 +646,11 @@ async fn download(
         return Ok(());
     }
 
-    let mut resp = reqwest::get(url)
+    // No total `.timeout()` here on purpose (see `http_client`'s doc comment) — a multi-hundred-MB
+    // component download can legitimately run for minutes; only the connect phase is bounded.
+    let mut resp = http_client()
+        .get(url)
+        .send()
         .await
         .map_err(|e| format!("requesting {url}: {e}"))?;
     if !resp.status().is_success() {

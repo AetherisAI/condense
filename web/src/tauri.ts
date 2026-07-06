@@ -43,6 +43,10 @@ export type ProvisioningComponent = {
 export type ProvisioningStatus = {
   components: ProvisioningComponent[]
   manifest_url: string
+  /** `'embedded-fallback'` when the remote manifest fetch failed and the Rust side fell back to
+   * the copy baked into the binary at build time (`provisioning.rs`'s `include_str!`) — surfaced
+   * so the wizard can show a non-blocking notice instead of silently substituting data. */
+  source: 'remote' | 'embedded-fallback'
 }
 
 /** `'stopped'|'starting'|'running'|'error:<msg>'` — the leading token before any `:` is the
@@ -222,8 +226,18 @@ export async function appConfigSet(config: AppConfig): Promise<AppConfig> {
 
 export async function provisioningStatus(): Promise<ProvisioningStatus> {
   if (isRealTauri) return invoke<ProvisioningStatus>('provisioning_status')
+  // QA seam (D67): `localStorage.setItem('mockManifestFail', '1')` makes this mock reject the way
+  // the real command does when the manifest is unreachable. The mock never failing is exactly why
+  // the first-run spinner hang (an unhandled provisioning_status rejection) survived browser QA —
+  // this makes that whole class of bug reproducible in an ordinary Chrome tab.
+  if (localStorage.getItem('mockManifestFail') === '1') {
+    throw new Error(
+      'fetching manifest https://raw.githubusercontent.com/AetherisAI/condense/main/desktop/provisioning/manifest.json: HTTP 404 Not Found (mocked)',
+    )
+  }
   return {
     manifest_url: mockConfig.manifest_url ?? 'https://raw.githubusercontent.com/AetherisAI/condense/main/desktop/provisioning/manifest.json',
+    source: 'remote',
     components: (Object.keys(MOCK_COMPONENTS) as ComponentId[]).map((id) => ({
       id,
       name: MOCK_COMPONENTS[id].name,
