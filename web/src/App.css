@@ -2061,6 +2061,8 @@ button:disabled {
 
 .composer {
   flex-shrink: 0;
+  /* Blends with the scrolling stream (NOT a second white slab like the topbar) — the elevated
+     search FIELD below is what stands out, floating over a continuous background. */
   border-top: 1px solid var(--border);
   background: var(--page-bg);
 }
@@ -2069,10 +2071,26 @@ button:disabled {
   width: 100%;
   max-width: 780px;
   margin: 0 auto;
-  padding: 12px 20px 18px;
+  padding: 14px 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* The search field IS the standout: an elevated white card floating on the grey composer —
+   taller, stronger border, a soft drop shadow, and square corners to match the buttons beside it. */
+.composer .row input[type='text'] {
+  padding: 14px 16px;
+  border-radius: 0;
+  border-color: var(--border-strong);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.composer .row input[type='text']:focus-visible {
+  box-shadow:
+    var(--shadow),
+    0 0 0 3px var(--accent-bg);
 }
 
 .composer-pills {
