@@ -24,6 +24,7 @@ needs uniqueness + a stable order, never assumes indices map 1:1 to token-window
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Final, Protocol
 
@@ -117,6 +118,14 @@ class TokenChunker:
         raise ValueError(f"unknown tokenizer {name!r}; expected 'tiktoken' or 'bge-m3'")
 
     async def chunk(self, doc: Document) -> list[Chunk]:
+        # Tokenization is pure-CPU and can be heavy (a full encode of the document plus a decode
+        # per window over the bge-m3 Rust / tiktoken tokenizer). Offload it to a worker thread —
+        # exactly as MarkitdownParser does its conversion — so a large-document ingest doesn't
+        # stall the shared event loop and starve concurrent searches. Determinism is unchanged:
+        # identical input still yields identical chunks/indices.
+        return await asyncio.to_thread(self._chunk_sync, doc)
+
+    def _chunk_sync(self, doc: Document) -> list[Chunk]:
         # Build the document-level token stream page by page so every token's source page
         # is known (the window's start token → its page). For markitdown's single page
         # this is exactly one encode of the whole document; multi-page is best-effort.

@@ -109,7 +109,7 @@ def _ranked(request: httpx.Request) -> httpx.Response:
 
 async def test_crossencoder_reorders_and_rescores(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = _patch_transport(monkeypatch, _ranked)
-    reranker = CrossEncoderReranker(base_url="http://tei", model="bge-reranker-v2-m3")
+    reranker = CrossEncoderReranker(base_url="http://tei")
     candidates = [_hit("a"), _hit("b")]
 
     out = await reranker.rerank("query", candidates)

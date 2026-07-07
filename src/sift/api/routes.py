@@ -41,9 +41,19 @@ from sift.pipelines.ingest import IngestOutcome
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Never serialize these back to a client — only whether they are configured.
+# Never serialize these back to a client — only whether they are configured. ``auth_tokens``
+# holds the per-consumer bearer credentials verbatim ("name:token,...") and authenticates every
+# protected route exactly like ``ingest_token``, so it must be redacted too — otherwise any
+# authenticated consumer could read every other consumer's plaintext token off GET /status.
 _SECRET_KEYS = frozenset(
-    {"turso_auth_token", "embed_api_key", "llm_api_key", "ingest_token", "ocr_api_key"}
+    {
+        "turso_auth_token",
+        "embed_api_key",
+        "llm_api_key",
+        "ingest_token",
+        "ocr_api_key",
+        "auth_tokens",
+    }
 )
 
 

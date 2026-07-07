@@ -102,6 +102,9 @@ _SELECT_DOCUMENTS_BASE = (
     "ORDER BY f.indexed_at DESC"
 )
 
+# Total documents (one row per file) under the same filter — for a paged listing's `total`.
+_COUNT_DOCUMENTS_BASE = "SELECT COUNT(*) FROM files f WHERE {where}"
+
 _SELECT_CHUNKS_BY_HASH = (
     "SELECT c.text, c.source_path, c.page, c.source_hash, c.idx, c.metadata, f.modified_at "
     "FROM chunks c "
@@ -147,9 +150,10 @@ def _search_sql(
     return sql, params
 
 
-def _documents_sql(metadata: Mapping[str, str] | None) -> tuple[str, list[Any]]:
-    """Build the ``list_documents`` SQL + its bound params: a document matches ``metadata`` when
-    at least one of its chunks carries every given key/value (equality, via ``json_extract``)."""
+def _documents_where(metadata: Mapping[str, str] | None) -> tuple[str, list[Any]]:
+    """The shared WHERE clause + bound params for ``list_documents``/``count_documents``: a
+    document matches ``metadata`` when at least one of its chunks carries every given key/value
+    (equality, via ``json_extract``)."""
     clauses = ["f.tenant = ?"]
     params: list[Any] = []
     if metadata:
@@ -160,7 +164,28 @@ def _documents_sql(metadata: Mapping[str, str] | None) -> tuple[str, list[Any]]:
             )
             params.append(f"$.{key}")
             params.append(value)
-    sql = _SELECT_DOCUMENTS_BASE.format(where=" AND ".join(clauses))
+    return " AND ".join(clauses), params
+
+
+def _documents_sql(
+    metadata: Mapping[str, str] | None, limit: int | None, offset: int
+) -> tuple[str, list[Any]]:
+    """Build the ``list_documents`` SQL + its bound params, paging in the DB when ``limit`` is
+    set (``LIMIT ? OFFSET ?``) so only the requested page is materialized, not every row."""
+    where, params = _documents_where(metadata)
+    sql = _SELECT_DOCUMENTS_BASE.format(where=where)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params.append(limit)
+        params.append(offset)
+    return sql, params
+
+
+def _count_documents_sql(metadata: Mapping[str, str] | None) -> tuple[str, list[Any]]:
+    """Build the ``count_documents`` SQL: COUNT over the grouped document set (one row per file)
+    under the same ``tenant``/``metadata`` filter as :func:`_documents_sql`."""
+    where, params = _documents_where(metadata)
+    sql = _COUNT_DOCUMENTS_BASE.format(where=where)
     return sql, params
 
 
@@ -214,10 +239,25 @@ class LibSQLStore:
     # --- document-admin seam (SupportsDocumentAdmin) ------------------------------
 
     async def list_documents(
-        self, tenant: str, metadata: Mapping[str, str] | None = None
+        self,
+        tenant: str,
+        metadata: Mapping[str, str] | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[DocumentInfo]:
         # Read-only: no lock, mirroring search / known_hashes.
-        return await self._submit(functools.partial(self._list_documents_job, tenant, metadata))
+        return await self._submit(
+            functools.partial(self._list_documents_job, tenant, metadata, limit, offset)
+        )
+
+    async def count_documents(
+        self, tenant: str, metadata: Mapping[str, str] | None = None
+    ) -> int:
+        # Read-only: no lock, mirroring list_documents.
+        return await self._submit(
+            functools.partial(self._count_documents_job, tenant, metadata)
+        )
 
     async def delete_document(self, source_hash: str, tenant: str) -> int:
         async with self._lock:
@@ -267,6 +307,12 @@ class LibSQLStore:
         dim = rows[0][1]
 
         now = datetime.now(UTC).isoformat()
+        # The `files` row is per-source-hash, but every chunk of one document carries the same
+        # source_hash/source_path/modified_at — so upserting it inside the chunk loop wrote the
+        # same row N times (N-1 redundant round-trips against remote Turso). Collect one file row
+        # per unique source_hash (last chunk wins, matching the old per-chunk ON CONFLICT order)
+        # and upsert each once after the chunks.
+        file_rows: dict[str, tuple[str, str | None]] = {}
         for chunk in chunks:
             if chunk.vector is None:
                 raise ValueError(f"chunk {chunk.source_hash}:{chunk.index} has no vector")
@@ -288,10 +334,9 @@ class LibSQLStore:
                     json.dumps(chunk.metadata) if chunk.metadata is not None else None,
                 ),
             )
-            conn.execute(
-                _INSERT_FILE,
-                (tenant, chunk.source_hash, chunk.source_path, now, chunk.modified_at),
-            )
+            file_rows[chunk.source_hash] = (chunk.source_path, chunk.modified_at)
+        for source_hash, (source_path, modified_at) in file_rows.items():
+            conn.execute(_INSERT_FILE, (tenant, source_hash, source_path, now, modified_at))
         conn.commit()
 
     def _search_job(
@@ -326,14 +371,14 @@ class LibSQLStore:
         return {row[0] for row in rows}
 
     def _list_documents_job(
-        self, tenant: str, metadata: Mapping[str, str] | None
+        self, tenant: str, metadata: Mapping[str, str] | None, limit: int | None, offset: int
     ) -> list[DocumentInfo]:
         conn = self._connection()
         # Same fresh-database guard as ``_known_hashes_job``: the document list is read
         # before the first ingest creates the schema, so an empty store is "no documents".
         if not conn.execute(_FILES_TABLE_EXISTS).fetchall():
             return []
-        sql, extra_params = _documents_sql(metadata)
+        sql, extra_params = _documents_sql(metadata, limit, offset)
         rows = conn.execute(sql, (tenant, *extra_params)).fetchall()
         return [
             DocumentInfo(
@@ -345,6 +390,14 @@ class LibSQLStore:
             )
             for row in rows
         ]
+
+    def _count_documents_job(self, tenant: str, metadata: Mapping[str, str] | None) -> int:
+        conn = self._connection()
+        # Same fresh-database guard as ``_list_documents_job``: no schema yet ⇒ zero documents.
+        if not conn.execute(_FILES_TABLE_EXISTS).fetchall():
+            return 0
+        sql, extra_params = _count_documents_sql(metadata)
+        return conn.execute(sql, (tenant, *extra_params)).fetchall()[0][0]
 
     def _get_chunks_job(self, source_hash: str, tenant: str) -> list[Chunk]:
         conn = self._connection()

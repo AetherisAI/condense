@@ -21,11 +21,28 @@ class SupportsDocumentAdmin(Protocol):
     """The seam Dev B's ``/documents`` routes depend on — structural, so a fake can stand in."""
 
     async def list_documents(
-        self, tenant: str, metadata: Mapping[str, str] | None = None
+        self,
+        tenant: str,
+        metadata: Mapping[str, str] | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[DocumentInfo]:
         """List the tenant's ingested files, optionally narrowed to those with at least one
         chunk whose ``metadata`` matches every given key/value (additive param, default
-        ``None`` — WP v0.2.0 T2's ``GET /v1/tools/documents``)."""
+        ``None`` — WP v0.2.0 T2's ``GET /v1/tools/documents``).
+
+        ``limit``/``offset`` page the result *in the store* (default ``limit=None`` → no cap,
+        preserving the original full-list behaviour). A paginating caller passes them so the DB
+        materializes only the requested page instead of every document row (see
+        :meth:`count_documents` for the matching total)."""
+        ...
+
+    async def count_documents(
+        self, tenant: str, metadata: Mapping[str, str] | None = None
+    ) -> int:
+        """Total documents matching the same ``tenant``/``metadata`` filter as
+        :meth:`list_documents`, ignoring pagination — the ``total`` a paged listing reports."""
         ...
 
     async def delete_document(self, source_hash: str, tenant: str) -> int: ...
