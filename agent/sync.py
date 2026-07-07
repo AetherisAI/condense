@@ -24,7 +24,7 @@ import fnmatch
 import hashlib
 import os
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePath
@@ -157,7 +157,9 @@ def _root_prefixes(roots: list[str]) -> dict[str, str | None]:
     if len(roots) <= 1:
         return dict.fromkeys(roots)
     counts: dict[str, int] = {}
-    prefixes: dict[str, str] = {}
+    # Annotated with the declared return's value type (str | None): dict is invariant, so a bare
+    # dict[str, str] is not assignable to the dict[str, str | None] return.
+    prefixes: dict[str, str | None] = {}
     for root in roots:
         base = os.path.basename(os.path.normpath(root)) or root
         counts[base] = counts.get(base, 0) + 1
@@ -195,24 +197,58 @@ def _iter_matching(
                 yield full
 
 
-def _by_mtime(paths) -> list[str]:
-    """Order paths oldest-modified first.
+def _stat_sorted(fulls: Iterable[str]) -> list[tuple[str, os.stat_result]]:
+    """Stat each path ONCE and return ``(full, stat)`` pairs oldest-modified first.
 
     Uploading a batch in mtime order makes the server stamp each document's ``indexed_at`` in
     modification order, so the most recently edited file in a near-duplicate set (e.g. v2 of a
     doc) carries the latest recency token and wins version-collapse at search time — even when
-    every version is ingested in the same cold pass. Files missing an mtime sort oldest.
+    every version is ingested in the same cold pass.
+
+    A single ``os.stat`` yields both ``st_mtime`` (ordering + the modified-at stamp) and
+    ``st_size`` (the size guard), so the collect loop reuses it instead of re-issuing up to four
+    separate ``getmtime``/``getsize``/``exists`` syscalls per file. A file that vanished between
+    listing and stat is dropped here (it could be neither hashed nor uploaded anyway).
     """
-    return sorted(paths, key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0.0)
+    stated: list[tuple[str, os.stat_result]] = []
+    for full in fulls:
+        try:
+            stated.append((full, os.stat(full)))
+        except OSError:
+            continue
+    stated.sort(key=lambda item: item[1].st_mtime)
+    return stated
 
 
-def _modified_iso(full: str) -> str:
-    """The file's last-modified time as an ISO-8601 UTC string — the recency signal for collapse.
+def _modified_iso(st: os.stat_result) -> str:
+    """The file's last-modified time (from a prior :func:`os.stat`) as an ISO-8601 UTC string.
 
     ``last_modified`` (mtime), not creation time: editing v1 into v2 bumps v2's mtime, which is
     exactly "this is the newer version". It is also portable (Linux has no reliable birth time).
     """
-    return datetime.fromtimestamp(os.path.getmtime(full), tz=UTC).isoformat()
+    return datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat()
+
+
+def _sha256_cached(
+    full: str, st: os.stat_result, cache: dict[str, tuple[int, int, str]] | None
+) -> str:
+    """SHA-256 of ``full``, reusing a cached digest while ``(mtime_ns, size)`` is unchanged.
+
+    Watch mode re-collects the whole tree on every debounced change, so without a cache a single
+    edit re-reads and re-hashes the entire corpus. Keyed by absolute path → ``(st_mtime_ns,
+    st_size, sha)`` and bounded to one entry per path (self-updating on edit): any real edit bumps
+    mtime/size and misses the cache, preserving content-hash dedup correctness. ``cache is None``
+    (one-shot ingest, tests) always hashes fresh — identical behaviour to before this cache.
+    """
+    if cache is None:
+        return _sha256_file(full)
+    key = os.path.abspath(full)
+    entry = cache.get(key)
+    if entry is not None and entry[0] == st.st_mtime_ns and entry[1] == st.st_size:
+        return entry[2]
+    sha = _sha256_file(full)
+    cache[key] = (st.st_mtime_ns, st.st_size, sha)
+    return sha
 
 
 def _sha256_file(path: str) -> str:
@@ -244,13 +280,12 @@ def _read_file(path: str) -> Callable[[], bytes]:
     return _load
 
 
-def _skip_oversized(full: str, max_bytes: int, max_file_size_mb: int) -> bool:
-    """True (and warns) if ``full`` exceeds the size guard — caller should skip it entirely."""
-    size = os.path.getsize(full)
-    if size <= max_bytes:
+def _skip_oversized(full: str, st: os.stat_result, max_bytes: int, max_file_size_mb: int) -> bool:
+    """True (and warns) if ``full`` (already stat'd) exceeds the size guard — caller skips it."""
+    if st.st_size <= max_bytes:
         return False
     warnings.warn(
-        f"agent: skipping {full} ({size} bytes exceeds max_file_size_mb={max_file_size_mb})",
+        f"agent: skipping {full} ({st.st_size} bytes exceeds max_file_size_mb={max_file_size_mb})",
         stacklevel=3,
     )
     return True
@@ -263,6 +298,7 @@ def collect(
     max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
     exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
+    hash_cache: dict[str, tuple[int, int, str]] | None = None,
 ) -> list[tuple[str, str, Callable[[], bytes], str]]:
     """Walk one ``root`` → ``(relpath_name, sha256_hex, loader, modified_at)`` (one-shot keys).
 
@@ -272,16 +308,18 @@ def collect(
     ``UserWarning``) — never hashed, never loaded. Any directory named in ``exclude_dirs`` (default
     :data:`DEFAULT_EXCLUDE_DIRS`) is pruned from the walk before it's ever listed (D35); any
     filename matching ``exclude_files`` (default :data:`DEFAULT_EXCLUDE_FILES`) is skipped the
-    same way, even when its extension is otherwise included (D39).
+    same way, even when its extension is otherwise included (D39). ``hash_cache`` (owned by a
+    long-lived watch caller) skips re-hashing files whose mtime/size are unchanged (see
+    :func:`_sha256_cached`); ``None`` hashes every file fresh.
     """
     max_bytes = max_file_size_mb * 1024 * 1024
     name_root = _name_root(root)
     found: list[tuple[str, str, Callable[[], bytes], str]] = []
-    for full in _by_mtime(_iter_matching(root, includes, exclude_dirs, exclude_files)):
-        if _skip_oversized(full, max_bytes, max_file_size_mb):
+    for full, st in _stat_sorted(_iter_matching(root, includes, exclude_dirs, exclude_files)):
+        if _skip_oversized(full, st, max_bytes, max_file_size_mb):
             continue
-        sha = _sha256_file(full)
-        found.append((upload_name(name_root, full), sha, _read_file(full), _modified_iso(full)))
+        sha = _sha256_cached(full, st, hash_cache)
+        found.append((upload_name(name_root, full), sha, _read_file(full), _modified_iso(st)))
     return found
 
 
@@ -292,6 +330,7 @@ def collect_roots(
     max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
     exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
+    hash_cache: dict[str, tuple[int, int, str]] | None = None,
 ) -> list[tuple[str, str, Callable[[], bytes], str]]:
     """Walk every root; return ``(name, sha256_hex, loader, modified_at)``, de-duped across roots.
 
@@ -307,7 +346,7 @@ def collect_roots(
     path, not by upload key (two different roots can legitimately produce two different keys for
     the same bytes; only literally re-visiting the same file is deduped).
 
-    Ordered oldest-modified first (see :func:`_by_mtime`) so recency survives into the index.
+    Ordered oldest-modified first (see :func:`_stat_sorted`) so recency survives into the index.
     ``loader``, the size guard, ``exclude_dirs``, and ``exclude_files`` behave exactly as in
     :func:`collect` (A3/D35/D39).
     """
@@ -326,11 +365,11 @@ def collect_roots(
             rel = upload_name(name_root, full)
             by_full[full] = f"{prefix}/{rel}" if prefix else rel
     found: list[tuple[str, str, Callable[[], bytes], str]] = []
-    for full in _by_mtime(by_full):
-        if _skip_oversized(full, max_bytes, max_file_size_mb):
+    for full, st in _stat_sorted(by_full):
+        if _skip_oversized(full, st, max_bytes, max_file_size_mb):
             continue
-        sha = _sha256_file(full)
-        found.append((by_full[full], sha, _read_file(full), _modified_iso(full)))
+        sha = _sha256_cached(full, st, hash_cache)
+        found.append((by_full[full], sha, _read_file(full), _modified_iso(st)))
     return found
 
 
@@ -452,6 +491,7 @@ def sync(
     max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
     exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
+    hash_cache: dict[str, tuple[int, int, str]] | None = None,
 ) -> Summary:
     """Run one full reconcile pass across one or more ``roots``: ingest new/changed, delete stale.
 
@@ -484,6 +524,7 @@ def sync(
         max_file_size_mb=max_file_size_mb,
         exclude_dirs=exclude_dirs,
         exclude_files=exclude_files,
+        hash_cache=hash_cache,
     )
     local = {name: digest for name, digest, _loader, _m in files}
     loader_by_name = {name: loader for name, _digest, loader, _m in files}
