@@ -343,23 +343,25 @@ class LibSQLConversationStore:
         if not stale_ids:
             return 0
         # Set-based prune: one COUNT + two DELETEs keyed on the whole stale set, instead of the
-        # old per-conversation COUNT+DELETE+DELETE loop (1 + 3*M statements → 3 total). The
-        # placeholder string is built purely from the id COUNT — every value stays bound.
+        # old per-conversation COUNT+DELETE+DELETE loop (1 + 3*M statements → 3 total).
+        # The only interpolated text is `placeholders` — a run of bound `?` markers built purely
+        # from len(stale_ids); every actual value is passed via `params`, so despite the f-strings
+        # this is NOT SQL injection (bandit B608 is a false positive here, hence the nosec markers).
         placeholders = ",".join("?" * len(stale_ids))
         params = (tenant, *stale_ids)
         deleted = conn.execute(
-            f"SELECT COUNT(*) FROM conversations WHERE tenant = ? "
-            f"AND conversation_id IN ({placeholders})",
+            f"SELECT COUNT(*) FROM conversations "  # nosec B608
+            f"WHERE tenant = ? AND conversation_id IN ({placeholders})",
             params,
         ).fetchall()[0][0]
         conn.execute(
-            f"DELETE FROM conversations WHERE tenant = ? "
-            f"AND conversation_id IN ({placeholders})",
+            f"DELETE FROM conversations "  # nosec B608
+            f"WHERE tenant = ? AND conversation_id IN ({placeholders})",
             params,
         )
         conn.execute(
-            f"DELETE FROM conversations_meta WHERE tenant = ? "
-            f"AND conversation_id IN ({placeholders})",
+            f"DELETE FROM conversations_meta "  # nosec B608
+            f"WHERE tenant = ? AND conversation_id IN ({placeholders})",
             params,
         )
         conn.commit()

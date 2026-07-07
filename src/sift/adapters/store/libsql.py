@@ -251,13 +251,9 @@ class LibSQLStore:
             functools.partial(self._list_documents_job, tenant, metadata, limit, offset)
         )
 
-    async def count_documents(
-        self, tenant: str, metadata: Mapping[str, str] | None = None
-    ) -> int:
+    async def count_documents(self, tenant: str, metadata: Mapping[str, str] | None = None) -> int:
         # Read-only: no lock, mirroring list_documents.
-        return await self._submit(
-            functools.partial(self._count_documents_job, tenant, metadata)
-        )
+        return await self._submit(functools.partial(self._count_documents_job, tenant, metadata))
 
     async def delete_document(self, source_hash: str, tenant: str) -> int:
         async with self._lock:

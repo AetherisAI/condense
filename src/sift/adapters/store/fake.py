@@ -139,9 +139,7 @@ class FakeVectorStore:
             for h in page
         ]
 
-    async def count_documents(
-        self, tenant: str, metadata: Mapping[str, str] | None = None
-    ) -> int:
+    async def count_documents(self, tenant: str, metadata: Mapping[str, str] | None = None) -> int:
         hashes, _paths, _counts = self._matching_document_hashes(tenant, metadata)
         return len(hashes)
 

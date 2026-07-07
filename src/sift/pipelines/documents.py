@@ -38,9 +38,7 @@ class SupportsDocumentAdmin(Protocol):
         :meth:`count_documents` for the matching total)."""
         ...
 
-    async def count_documents(
-        self, tenant: str, metadata: Mapping[str, str] | None = None
-    ) -> int:
+    async def count_documents(self, tenant: str, metadata: Mapping[str, str] | None = None) -> int:
         """Total documents matching the same ``tenant``/``metadata`` filter as
         :meth:`list_documents`, ignoring pagination — the ``total`` a paged listing reports."""
         ...
