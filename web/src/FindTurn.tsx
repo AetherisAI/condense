@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
 
 /**
@@ -55,32 +55,39 @@ function formatModifiedAt(value: string): string | null {
  * `<div role="button">` rather than a native `<button>` (matching `Ingest.tsx`'s dropzone
  * pattern) since the row's content — badges + a `<blockquote>` — isn't valid inside a real
  * `<button>`'s phrasing-content-only model. */
-function FindRow({
+const FindRow = memo(function FindRow({
   hit,
   rank,
+  index,
   query,
   expanded,
   onToggle,
 }: {
   hit: FindHit
   rank: number
+  index: number
   query: string
   expanded: boolean
-  onToggle: () => void
+  onToggle: (index: number) => void
 }) {
-  const snippet = collapseWhitespace(hit.text)
+  // Rebuilding the unicode highlight RegExp + splitting the snippet is the row's costliest work;
+  // memoize it (and the whitespace-collapse) so it runs only when the hit text or query changes,
+  // not on every parent render (the whole thread re-renders on each streamed answer token).
+  const snippet = useMemo(() => collapseWhitespace(hit.text), [hit.text])
+  const highlighted = useMemo(() => highlightQueryTerms(snippet, query), [snippet, query])
   const modified = hit.modified_at ? formatModifiedAt(hit.modified_at) : null
+  const toggle = () => onToggle(index)
   return (
     <div
       className={`find-row${rank === 1 ? ' find-row-top' : ''}`}
       role="button"
       tabIndex={0}
       aria-expanded={expanded}
-      onClick={onToggle}
+      onClick={toggle}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          onToggle()
+          toggle()
         }
       }}
     >
@@ -98,23 +105,26 @@ function FindRow({
         </span>
         {snippet && (
           <blockquote className={`snippet${expanded ? '' : ' snippet-clamp find-snippet-clamp'}`}>
-            “{highlightQueryTerms(snippet, query)}”
+            “{highlighted}”
           </blockquote>
         )}
       </span>
     </div>
   )
-}
+})
 
 /** Renders one Find turn — the query + its ranked list, or the empty-state copy when the corpus
  * has nothing for it (D57/Task U3: retrieval never hard-fails on "no match", so an empty `hits`
  * array is the normal shape of "nothing relevant", not an error). */
-export function FindTurnCard({ turn }: { turn: FindTurn }) {
+export const FindTurnCard = memo(function FindTurnCard({ turn }: { turn: FindTurn }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
 
-  function toggle(i: number) {
+  // Stable across renders so `FindRow`'s `React.memo` holds: toggling one row then only
+  // re-renders that row, and a streaming answer (which re-renders the whole thread per token)
+  // skips this whole card entirely, since `turn` is a stable reference for untouched turns.
+  const toggle = useCallback((i: number) => {
     setExpanded((prev) => ({ ...prev, [i]: !prev[i] }))
-  }
+  }, [])
 
   return (
     <div className="chat-turn chat-find">
@@ -139,13 +149,14 @@ export function FindTurnCard({ turn }: { turn: FindTurn }) {
               key={`${hit.source_hash}-${hit.index}`}
               hit={hit}
               rank={i + 1}
+              index={i}
               query={turn.query}
               expanded={!!expanded[i]}
-              onToggle={() => toggle(i)}
+              onToggle={toggle}
             />
           ))}
         </div>
       )}
     </div>
   )
-}
+})

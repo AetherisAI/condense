@@ -9,8 +9,9 @@ import './App.css'
 /**
  * Top-level shell — "the workbench" (D57/Task U1): a single 100svh grid (sticky topbar / the
  * conversation stream, the ONLY scrollable region / a fixed composer, both inside `Chat`). Chat
- * IS the page now — the old Search|Chat tab pill and boxed chat card are gone; `Search`/`Ingest`
- * stay in the tree for U2/U3 to absorb but are not mounted here. Holds the one shared bearer
+ * IS the page now — the old Search|Chat tab pill and boxed chat card are gone; the old
+ * `Search`/`Ingest` panels have been fully absorbed (search → `FindTurn`, ingest → `Composer`)
+ * and their orphaned modules deleted. Holds the one shared bearer
  * token (entered in the System drawer, persisted to localStorage) plus which drawer (if any) is
  * open — lifted up here so a single topbar button per drawer replaces the old floating chips,
  * without touching the drawers' own markup/behavior. The standalone Agent drawer is retired
