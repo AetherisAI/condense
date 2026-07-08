@@ -10,10 +10,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sift.api.schemas import SearchResponse, Source
 from sift.config import Settings
 from sift.core.ports import Completer, Embedder, Reranker, VectorStore
-from sift.core.types import Hit
+from sift.core.types import Hit, SearchOutcome, SearchSource
 
 _RECAP_SYSTEM = (
     "Answer the user's question directly and helpfully, using ONLY the passages provided. Lead "
@@ -177,13 +176,13 @@ class SearchPipeline:
 
     async def search(
         self, query: str, tenant: str = "default", recap: bool | None = None
-    ) -> SearchResponse:
+    ) -> SearchOutcome:
         settings = self._settings
         await self._store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
         vectors = await self._embedder.embed([query])
         candidates = await self._store.search(vectors[0], settings.retrieve_k, tenant)
         if not candidates:
-            return SearchResponse(summary="No results found.", sources=[])
+            return SearchOutcome(summary="No results found.", sources=[])
         # Collapse near-duplicate versions before reranking so a stale copy can never out-rank
         # its newer twin (and so the reranker / recap spend their budget on distinct passages).
         if settings.version_collapse_enabled:
@@ -199,7 +198,7 @@ class SearchPipeline:
         else:
             summary = ""
         sources = [
-            Source(
+            SearchSource(
                 path=hit.source_path,
                 page=hit.page,
                 score=hit.score,
@@ -209,4 +208,4 @@ class SearchPipeline:
             )
             for hit in top
         ]
-        return SearchResponse(summary=summary, sources=sources)
+        return SearchOutcome(summary=summary, sources=sources)
