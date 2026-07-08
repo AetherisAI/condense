@@ -368,6 +368,7 @@ class SettingsPatch(BaseModel):
     final_k: int | None = None
     chunk_size: int | None = None
     chunk_overlap: int | None = None
+    chunk_tokenizer: Literal["auto", "bge-m3", "tiktoken"] | None = None
     rerank_strategy: Literal["none", "llm", "crossencoder"] | None = None
 
 
