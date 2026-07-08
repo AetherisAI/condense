@@ -96,6 +96,13 @@ class Settings(BaseSettings):
 
     chunk_size: int = 512
     chunk_overlap: int = 64
+    # Which tokenizer `TokenChunker` sizes/windows chunks in (factory.py audit fix): `EMBED_MODEL`
+    # is itself configurable, so hardcoding `bge-m3` here silently mis-tokenized chunks against
+    # whatever *other* embedding model was actually configured. `"auto"` (default) resolves to
+    # `bge-m3`'s own tokenizer when `EMBED_MODEL` names bge-m3 (matching the historical hardcoded
+    # behavior) and falls back to the chunker's generic `tiktoken` fallback otherwise (see
+    # `factory.resolve_chunk_tokenizer`); an explicit `"tiktoken"`/`"bge-m3"` always wins.
+    chunk_tokenizer: Literal["auto", "bge-m3", "tiktoken"] = "auto"
     # Degenerate-chunk floor (DECISIONS.md D50): a fixed-size token window can decode to real-but
     # -useless text when its start happens to land on whitespace/template filler (e.g. a
     # document's padding, a repeated footer) — a handful of characters that still got embedded

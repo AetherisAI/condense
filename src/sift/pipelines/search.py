@@ -10,10 +10,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sift.api.schemas import SearchResponse, Source
 from sift.config import Settings
 from sift.core.ports import Completer, Embedder, Reranker, VectorStore
-from sift.core.types import Hit
+from sift.core.types import Hit, SearchOutcome, SearchSource
 
 _RECAP_SYSTEM = (
     "Answer the user's question directly and helpfully, using ONLY the passages provided. Lead "
@@ -56,12 +55,21 @@ def _shingles(text: str, n: int = 5) -> set[str]:
     return {" ".join(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
 
 
-def _lexical_similarity(a: str, b: str) -> float:
-    """Token-shingle Jaccard ∈ [0,1]: 1.0 identical text, ~0 disjoint. Order-sensitive, stdlib."""
-    sa, sb = _shingles(a), _shingles(b)
+def _shingle_similarity(sa: set[str], sb: set[str]) -> float:
+    """Jaccard ∈ [0,1] over two pre-built shingle sets — the reusable core of the lexical signal.
+
+    Kept separate from :func:`_shingles` so callers that compare one text against many can build
+    each shingle set once and reuse it, instead of re-shingling both sides on every comparison
+    (``_collapse_versions`` is O(n²) in comparisons — re-shingling there is quadratic waste).
+    """
     if not sa or not sb:
         return 1.0 if sa == sb else 0.0
     return len(sa & sb) / len(sa | sb)
+
+
+def _lexical_similarity(a: str, b: str) -> float:
+    """Token-shingle Jaccard ∈ [0,1]: 1.0 identical text, ~0 disjoint. Order-sensitive, stdlib."""
+    return _shingle_similarity(_shingles(a), _shingles(b))
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -120,15 +128,23 @@ def _collapse_versions(candidates: list[Hit], threshold: float) -> list[Hit]:
     through untouched, so order and ranking are preserved for everything that is not a duplicate.
     """
     kept: list[Hit] = []
+    kept_shingles: list[set[str]] = []  # parallel to `kept`: each keeper's shingle set, built once
     for cand in candidates:
+        cand_shingles = _shingles(cand.text)
         dup_index = next(
-            (i for i, k in enumerate(kept) if _lexical_similarity(cand.text, k.text) >= threshold),
+            (
+                i
+                for i, ks in enumerate(kept_shingles)
+                if _shingle_similarity(cand_shingles, ks) >= threshold
+            ),
             None,
         )
         if dup_index is None:
             kept.append(cand)
+            kept_shingles.append(cand_shingles)
         elif _is_newer(cand, kept[dup_index]):
             kept[dup_index] = cand
+            kept_shingles[dup_index] = cand_shingles
     return kept
 
 
@@ -160,13 +176,13 @@ class SearchPipeline:
 
     async def search(
         self, query: str, tenant: str = "default", recap: bool | None = None
-    ) -> SearchResponse:
+    ) -> SearchOutcome:
         settings = self._settings
         await self._store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
         vectors = await self._embedder.embed([query])
         candidates = await self._store.search(vectors[0], settings.retrieve_k, tenant)
         if not candidates:
-            return SearchResponse(summary="No results found.", sources=[])
+            return SearchOutcome(summary="No results found.", sources=[])
         # Collapse near-duplicate versions before reranking so a stale copy can never out-rank
         # its newer twin (and so the reranker / recap spend their budget on distinct passages).
         if settings.version_collapse_enabled:
@@ -182,7 +198,7 @@ class SearchPipeline:
         else:
             summary = ""
         sources = [
-            Source(
+            SearchSource(
                 path=hit.source_path,
                 page=hit.page,
                 score=hit.score,
@@ -192,4 +208,4 @@ class SearchPipeline:
             )
             for hit in top
         ]
-        return SearchResponse(summary=summary, sources=sources)
+        return SearchOutcome(summary=summary, sources=sources)

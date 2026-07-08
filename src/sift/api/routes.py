@@ -30,6 +30,7 @@ from sift.api.schemas import (
     ManifestResponse,
     SearchResponse,
     SettingsPatch,
+    Source,
     StatusResponse,
 )
 from sift.config import Settings
@@ -41,9 +42,19 @@ from sift.pipelines.ingest import IngestOutcome
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Never serialize these back to a client — only whether they are configured.
+# Never serialize these back to a client — only whether they are configured. ``auth_tokens``
+# holds the per-consumer bearer credentials verbatim ("name:token,...") and authenticates every
+# protected route exactly like ``ingest_token``, so it must be redacted too — otherwise any
+# authenticated consumer could read every other consumer's plaintext token off GET /status.
 _SECRET_KEYS = frozenset(
-    {"turso_auth_token", "embed_api_key", "llm_api_key", "ingest_token", "ocr_api_key"}
+    {
+        "turso_auth_token",
+        "embed_api_key",
+        "llm_api_key",
+        "ingest_token",
+        "ocr_api_key",
+        "auth_tokens",
+    }
 )
 
 
@@ -117,8 +128,26 @@ async def search(
 
     ``recap`` overrides the configured default: ``recap=false`` skips the LLM summary and
     returns just the source citation (doc + page); omitted falls back to ``RECAP_ENABLED``.
+
+    The pipeline returns a stdlib-only :class:`~sift.core.types.SearchOutcome` (the dependency
+    rule: pipelines never import ``sift.api``) — mapped 1:1 onto the HTTP ``SearchResponse``/
+    ``Source`` schemas here, so the JSON shape is unchanged.
     """
-    return await container.search.search(q, tenant, recap=recap)
+    outcome = await container.search.search(q, tenant, recap=recap)
+    return SearchResponse(
+        summary=outcome.summary,
+        sources=[
+            Source(
+                path=source.path,
+                page=source.page,
+                score=source.score,
+                snippet=source.snippet,
+                index=source.index,
+                metadata=source.metadata,
+            )
+            for source in outcome.sources
+        ],
+    )
 
 
 @router.get("/ingest/manifest")

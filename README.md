@@ -67,6 +67,19 @@ way, your documents stay on your infrastructure and you bring your own LLM key.
 
 ## Install
 
+### ⚡ Quick install (recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh
+```
+Detects Linux/macOS, grabs the right asset from the [latest release](https://github.com/AetherisAI/condense/releases/latest),
+and installs the desktop app (no sudo, nothing outside `$HOME`). Or download a specific
+platform button from [Releases](https://github.com/AetherisAI/condense/releases/latest) /
+the landing page — see per-OS detail below. Add `--server-only` to install just the headless
+`condense-server` bundle (engine + agent CLI, no UI, no Docker) instead; `--uninstall` reverses
+either. Windows: `scripts/install-windows.ps1` (same flags, PowerShell). **macOS and Windows
+installers are untested on real hardware until v0.4.0 QA** — Linux is the verified path today;
+see the per-OS notes below.
+
 ### 🐧 Linux (Ubuntu 22.04+)
 - **AppImage:** download `Condense_<version>_amd64.AppImage` from
   [Releases](https://github.com/AetherisAI/condense/releases), then:
@@ -104,7 +117,8 @@ cp .env.example .env
 docker compose up
 ```
 - API at `http://localhost:8000` (interactive docs at `/docs`); web UI at `http://localhost:8080`
-  — both configurable via `API_PORT`/`WEB_PORT` in `.env`.
+  — both loopback-only by default (ports configurable via `API_PORT`/`WEB_PORT` in `.env`; see
+  "Security & privacy" below to expose either on your LAN).
 - Optional cross-encoder reranker: `docker compose --profile tei up` (+ `RERANK_STRATEGY=crossencoder`).
 - Coming with `v0.4.0`: a standalone `condense-server-<os>` bundle (engine + agent CLI + a run
   script, no Docker required) — the same artifact the desktop app downloads for itself, for
@@ -135,10 +149,18 @@ plus a local `llama-server`/`bge-m3` embedder as child processes it supervises; 
 deployment runs the identical engine in Docker. Full spec: [`docs/SPEC.md`](docs/SPEC.md).
 
 ## Security & privacy
-- Everything binds to `localhost`/`127.0.0.1` by default — the ingest/answer surface is not
-  meant to face the public internet.
+- **`docker compose up` publishes every port to `127.0.0.1` (loopback) only, by default** — the
+  API, the web UI, and the optional `tei` reranker are unreachable from other machines out of
+  the box, even on a host with a public IP.
+- To reach a `docker compose` deployment from another machine on your LAN (e.g. the co-dev
+  topology this repo was built for), opt in explicitly: set `API_HOST=0.0.0.0` and/or
+  `WEB_HOST=0.0.0.0` in `.env` (a specific interface IP works too) and keep the bearer token
+  set — it still gates every write and query. **Never set these to `0.0.0.0` — or otherwise
+  port-forward any of these ports — on a host reachable from the public internet.** Condense has
+  no additional network hardening (rate limiting, TLS termination, etc.); it is designed to be
+  reached over a trusted private LAN, not the open internet.
 - A single bearer token (`INGEST_TOKEN`, plus optional per-consumer `AUTH_TOKENS`) gates every
-  write and query.
+  write and query, on or off the LAN.
 - In local desktop mode, your documents, their embeddings, and the libSQL database never leave
   your machine.
 - The only outbound calls Condense ever makes are to the embedding/rerank/LLM providers **you

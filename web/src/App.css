@@ -63,7 +63,7 @@
   color: var(--muted);
   background: transparent;
   border: 1px solid var(--border-strong);
-  border-radius: 980px;
+  border-radius: 0; /* square */
   padding: 7px 14px;
   cursor: pointer;
   transition:
@@ -403,7 +403,7 @@ button {
   color: #fff;
   background: var(--accent-ui); /* blue-purple — matches the logo */
   border: none;
-  border-radius: 980px; /* pill */
+  border-radius: 0; /* square */
   padding: 11px 24px;
   cursor: pointer;
   transition:
@@ -645,7 +645,7 @@ button:disabled {
   background: #1d1d1f; /* match the Machine graphite */
   border: none;
   padding: 5px 12px;
-  border-radius: var(--radius-sm);
+  border-radius: 0; /* square */
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -1236,7 +1236,7 @@ button:disabled {
   color: #fff;
   background: var(--accent-ui);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: 0; /* square */
   text-decoration: none;
   cursor: pointer;
   transition: background 0.18s ease;
@@ -2061,6 +2061,8 @@ button:disabled {
 
 .composer {
   flex-shrink: 0;
+  /* Blends with the scrolling stream (NOT a second white slab like the topbar) — the elevated
+     search FIELD below is what stands out, floating over a continuous background. */
   border-top: 1px solid var(--border);
   background: var(--page-bg);
 }
@@ -2069,10 +2071,26 @@ button:disabled {
   width: 100%;
   max-width: 780px;
   margin: 0 auto;
-  padding: 12px 20px 18px;
+  padding: 14px 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* The search field IS the standout: an elevated white card floating on the grey composer —
+   taller, stronger border, a soft drop shadow, and square corners to match the buttons beside it. */
+.composer .row input[type='text'] {
+  padding: 14px 16px;
+  border-radius: 0;
+  border-color: var(--border-strong);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.composer .row input[type='text']:focus-visible {
+  box-shadow:
+    var(--shadow),
+    0 0 0 3px var(--accent-bg);
 }
 
 .composer-pills {
@@ -2092,7 +2110,7 @@ button:disabled {
   padding: 3px;
   background: var(--page-bg);
   border: 1px solid var(--border);
-  border-radius: 980px;
+  border-radius: 0; /* square */
   flex-shrink: 0;
 }
 
@@ -2103,7 +2121,7 @@ button:disabled {
   color: var(--muted);
   background: transparent;
   border: none;
-  border-radius: 980px;
+  border-radius: 0; /* square */
   padding: 5px 12px;
   cursor: pointer;
   transition:
@@ -2140,7 +2158,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 0; /* square */
   color: var(--muted);
   background: var(--page-bg);
   border: 1px solid var(--border-strong);

@@ -12,9 +12,9 @@ import { useEffect, useRef } from 'react'
 // --- tunables (top of file for quick iteration) ---
 const SPACING = 32 // px between marks
 const LINE = 11 // mark length in px
-const BASE_ALPHA = 0.1 // resting opacity (very light grey)
-const BOOST = 0.35 // extra opacity right at the cursor
-const RADIUS = 140 // px: how far the cursor's "brighten" reaches
+const BASE_ALPHA = 0.035 // resting opacity (very faint — matches the landing page)
+const BOOST = 0.1 // extra opacity right at the cursor (matches the landing page)
+const RADIUS = 110 // px: how far the cursor's "brighten" reaches (matches the landing page)
 const INK = '120, 116, 128' // rgb of --muted, used as rgba(INK, alpha)
 
 export default function SlashField() {

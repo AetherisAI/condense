@@ -2,14 +2,15 @@
 
 Drives the query path end-to-end through ``FakeEmbedder`` + ``FakeVectorStore`` +
 ``NullReranker`` + ``NullCompleter``: the exact-match best chunk surfaces as the single
-``Source`` (M1), an empty base yields the "No results found." recap, and a source-level
-grep guards the dependency rule (the pipeline must compose ports, never import an adapter).
+``SearchSource`` (M1), an empty base yields the "No results found." recap. The dependency-rule
+guard itself (the pipeline must compose ports, never import an adapter or the API schemas) now
+lives in ``tests/contract/test_layering.py`` — an AST-based check covering every module under
+``pipelines/``, not just this one via a source-level substring grep.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
@@ -186,10 +187,3 @@ async def test_empty_store_returns_no_results() -> None:
 
     assert response.summary == "No results found."
     assert response.sources == []
-
-
-def test_search_pipeline_imports_no_adapter() -> None:
-    import sift.pipelines.search as search_module
-
-    source = Path(search_module.__file__).read_text(encoding="utf-8")
-    assert "sift.adapters" not in source

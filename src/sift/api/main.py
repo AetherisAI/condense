@@ -16,6 +16,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from sift.api.routes import router
+from sift.api.tokens import router as tokens_router
 from sift.api.v1 import router as v1_router
 from sift.config import get_settings
 from sift.factory import build_container
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.add_middleware(_SettingsDrivenCORSMiddleware)
     app.include_router(router)
     app.include_router(v1_router)
+    app.include_router(tokens_router)
     return app
 
 

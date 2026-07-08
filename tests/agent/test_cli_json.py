@@ -145,6 +145,74 @@ def test_human_output_unchanged_without_json_flag(
         json.loads(out)  # human mode must never be accidentally-valid JSON
 
 
+# --------------------------------------------------------------------------- network failure
+
+
+def test_dry_run_json_against_unreachable_server_emits_one_fatal_event(tmp_path: Path) -> None:
+    """The one-shot path's ``client.manifest()`` call (before the ``--dry-run`` check) used to
+    crash with a raw ``httpx.ConnectError`` traceback on stdout, breaking the "every stdout line
+    is valid NDJSON" contract. ``--server http://127.0.0.1:9`` (the discard port) is refused
+    instantly and purely locally — nothing real is ever contacted — mirroring the SIGTERM test
+    above. In ``--json`` mode this must now behave like ``_watch()`` already does: exactly one
+    ``{"event": "fatal", ...}`` line on stdout, exit 1, no traceback anywhere on stdout/stderr.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agent.cli",
+            str(tmp_path),
+            "--server",
+            "http://127.0.0.1:9",
+            "--token",
+            "x",
+            "--json",
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert proc.returncode == 1, proc.stderr
+    lines = [line for line in proc.stdout.splitlines() if line.strip()]
+    assert len(lines) == 1, proc.stdout
+    event = json.loads(lines[0])  # raises if the one line isn't valid JSON
+    assert event["event"] == "fatal"
+    assert "error" in event
+    assert "Traceback" not in proc.stderr
+    assert "Traceback" not in proc.stdout
+
+
+def test_dry_run_without_json_against_unreachable_server_still_raises(tmp_path: Path) -> None:
+    """Same invocation as above, minus ``--json`` — human-mode behaviour must be byte-for-byte
+    unchanged: the connection error still propagates and crashes with a traceback (on stderr,
+    since an uncaught exception never touches stdout), exactly as it did before this fix.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agent.cli",
+            str(tmp_path),
+            "--server",
+            "http://127.0.0.1:9",
+            "--token",
+            "x",
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert proc.returncode != 0
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(proc.stdout)  # human mode: stdout is never JSON, fatal or otherwise
+    assert "Traceback" in proc.stderr  # the raw crash — unchanged from before this fix
+    assert "ConnectError" in proc.stderr
+
+
 # --------------------------------------------------------------------------- SIGTERM
 
 

@@ -68,6 +68,11 @@ class OpenAICompatCompleter:
         self._answer_max_tokens = answer_max_tokens
         # Sticky for the process lifetime once "auto" has seen native fail once (module docstring).
         self._native_unsupported = False
+        # One keep-alive client reused across every `_post` for this (long-lived, per-container)
+        # completer, so the repeated same-host completions in one `/v1/answer` tool-loop reuse a
+        # connection instead of paying a fresh TCP+TLS handshake per round-trip. Created lazily on
+        # first use (construction has no `await`, so the check-and-set is atomic on the loop).
+        self._client: httpx.AsyncClient | None = None
 
     async def complete(self, system: str, user: str) -> str:
         headers = self._headers()
@@ -151,13 +156,24 @@ class OpenAICompatCompleter:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
 
+    def _get_client(self) -> httpx.AsyncClient:
+        """The reused keep-alive client, created on first use (no ``await`` → race-free on loop)."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
+        return self._client
+
     async def _post(self, payload: Mapping[str, object], headers: Mapping[str, str]) -> Any:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-            response = await client.post(
-                f"{self._base_url}/chat/completions", json=payload, headers=headers
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self._get_client().post(
+            f"{self._base_url}/chat/completions", json=payload, headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def aclose(self) -> None:
+        """Close the reused client — call from a lifespan shutdown when teardown is wired."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
 
 # --- content normalization (D40 amendment: BUG #2) --------------------------------------------

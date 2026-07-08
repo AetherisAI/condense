@@ -15,16 +15,29 @@ from __future__ import annotations
 
 import sys
 import threading
+from typing import TYPE_CHECKING
 
-try:  # Tk ships with python.org builds; Homebrew/Linux need an extra package (see _TK_HINT).
+# Tk is optional at runtime (python.org builds bundle it; Homebrew/Linux need an extra package —
+# see _TK_HINT), but for the type checker it always exists: under TYPE_CHECKING we import the real
+# modules so every `tk.*`/`ttk.*`/`filedialog.*`/`tkfont.*` access is checked against the true,
+# always-bound symbols. At runtime the `else` branch does the graceful try/except, binding every
+# name to None on absence so `main()`'s `tk is None` guard can show _TK_HINT instead of crashing.
+if TYPE_CHECKING:
     import tkinter as tk
     from tkinter import filedialog, ttk
     from tkinter import font as tkfont
 
     _TK_ERROR: Exception | None = None
-except Exception as exc:  # pragma: no cover - environment-dependent
-    tk = None  # type: ignore[assignment]
-    _TK_ERROR = exc
+else:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, ttk
+        from tkinter import font as tkfont
+
+        _TK_ERROR = None
+    except Exception as exc:  # pragma: no cover - environment-dependent
+        tk = ttk = filedialog = tkfont = None
+        _TK_ERROR = exc
 
 from agent.client import SiftClient
 from agent.config import AgentConfig, load, save
@@ -229,6 +242,9 @@ class AgentApp:
         self._syncing = False
         self._pending = False
         self._managed: set[str] = set()  # on-disk paths seen so far — scopes delete_removed
+        # Persistent (abspath -> mtime_ns, size, sha256) cache so a debounced re-sync only
+        # re-hashes files that actually changed, not the whole watched tree every time.
+        self._hash_cache: dict[str, tuple[int, int, str]] = {}
 
         root.title("Condense Agent")
         root.minsize(440, 0)
@@ -389,6 +405,7 @@ class AgentApp:
                     max_file_size_mb=cfg.max_file_size_mb,
                     exclude_dirs=set(cfg.exclude_dirs),
                     exclude_files=set(cfg.exclude_files),
+                    hash_cache=self._hash_cache,
                 )
                 self._managed = set(summary.managed)
             self._ui(lambda s=summary: self._status.set(s.line()))

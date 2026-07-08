@@ -21,7 +21,7 @@ from sift.adapters.rerank.null import NullReranker
 from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
 from sift.core.hashing import content_hash
-from sift.factory import Container, build_container
+from sift.factory import Container, build_container, resolve_chunk_tokenizer
 from sift.pipelines.answer import AnswerPipeline
 from sift.pipelines.ingest import IngestOutcome, SupportsIngest
 from sift.pipelines.tools import ToolRegistry
@@ -201,6 +201,28 @@ def test_build_container_wires_title_completer_same_instance_as_recap() -> None:
     container = build_container(Settings(ingest_token="t"))
 
     assert container.answer._title_completer is container.search._completer
+
+
+def test_resolve_chunk_tokenizer_auto_picks_bge_m3_for_bge_m3_embed_model() -> None:
+    # "auto" (the default) must reproduce the historical hardcoded behavior for the historical
+    # default embedding model.
+    assert resolve_chunk_tokenizer("auto", "bge-m3") == "bge-m3"
+
+
+def test_resolve_chunk_tokenizer_auto_matches_bge_m3_case_insensitively_and_as_substring() -> None:
+    # A fuller model id (e.g. a namespaced HF repo id) still names bge-m3 — must still match.
+    assert resolve_chunk_tokenizer("auto", "BAAI/BGE-M3") == "bge-m3"
+
+
+def test_resolve_chunk_tokenizer_auto_falls_back_to_tiktoken_for_other_models() -> None:
+    # The audit fix: any OTHER EMBED_MODEL must no longer be silently mis-tokenized as bge-m3.
+    assert resolve_chunk_tokenizer("auto", "text-embedding-3-small") == "tiktoken"
+
+
+def test_resolve_chunk_tokenizer_explicit_value_always_wins() -> None:
+    # An operator's explicit choice passes through untouched, regardless of EMBED_MODEL.
+    assert resolve_chunk_tokenizer("tiktoken", "bge-m3") == "tiktoken"
+    assert resolve_chunk_tokenizer("bge-m3", "text-embedding-3-small") == "bge-m3"
 
 
 async def test_stub_ingest_reports_indexed() -> None:

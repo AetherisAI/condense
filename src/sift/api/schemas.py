@@ -368,6 +368,7 @@ class SettingsPatch(BaseModel):
     final_k: int | None = None
     chunk_size: int | None = None
     chunk_overlap: int | None = None
+    chunk_tokenizer: Literal["auto", "bge-m3", "tiktoken"] | None = None
     rerank_strategy: Literal["none", "llm", "crossencoder"] | None = None
 
 
@@ -378,3 +379,53 @@ class StatusResponse(BaseModel):
     embed_model: str | None = None
     components: dict[str, ComponentHealth] = {}
     settings: dict[str, Any]
+
+
+class TokenInfo(BaseModel):
+    """One per-consumer token as listed by ``GET /v1/tokens`` — the name only, NEVER the value."""
+
+    name: str
+
+
+class TokenListResponse(BaseModel):
+    """Response for ``GET /v1/tokens`` — every live consumer name, sorted, no token values."""
+
+    tokens: list[TokenInfo]
+
+
+class TokenCreateRequest(BaseModel):
+    """Request body for ``POST /v1/tokens`` — the new consumer's name.
+
+    ``name`` must be non-empty and free of ``":"``, ``","``, and whitespace (422 otherwise) —
+    those are the ``AUTH_TOKENS``/``name:token,...`` wire format's own delimiters, so a name
+    containing them could never round-trip through :func:`~sift.config.parse_auth_tokens`.
+    """
+
+    name: str = Field(min_length=1)
+
+    @field_validator("name")
+    @classmethod
+    def _valid_name(cls, value: str) -> str:
+        if any(c in value for c in (":", ",")) or any(c.isspace() for c in value):
+            raise ValueError("name must not contain ':', ',', or whitespace")
+        return value
+
+
+class TokenCreateResponse(BaseModel):
+    """Response for ``POST /v1/tokens`` — the ONLY place a generated token value appears.
+
+    ``env_line`` is the complete, ready-to-paste ``AUTH_TOKENS=...`` line covering every
+    currently-live consumer token (including this new one) — see ``api/tokens.py`` for the
+    runtime-live / operator-persisted durability model.
+    """
+
+    name: str
+    token: str
+    env_line: str
+
+
+class TokenRevokeResponse(BaseModel):
+    """Response for ``DELETE /v1/tokens/{name}`` — the updated ``AUTH_TOKENS=...`` line minus
+    the revoked consumer, ready to paste over the operator's ``.env`` entry."""
+
+    env_line: str

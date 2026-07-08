@@ -155,13 +155,32 @@ def _build_store(settings: Settings) -> VectorStore:
     return FakeVectorStore()
 
 
+def resolve_chunk_tokenizer(chunk_tokenizer: str, embed_model: str) -> str:
+    """Resolve ``Settings.chunk_tokenizer`` into the concrete tokenizer name ``TokenChunker``
+    accepts (``"tiktoken"`` | ``"bge-m3"``) — a small pure function so the "auto" resolution is
+    unit-testable independent of the rest of ``_build_ingest``'s (lazy-import-heavy) wiring.
+
+    ``"auto"`` (the default) picks ``bge-m3``'s own tokenizer whenever ``embed_model`` names
+    bge-m3 (a case-insensitive substring match, so ``"BAAI/bge-m3"``/``"bge-m3-large"`` etc. all
+    still match) — matching the historical hardcoded behavior exactly — and falls back to the
+    chunker's generic ``tiktoken`` encoder for any other embedding model, so switching
+    ``EMBED_MODEL`` away from bge-m3 no longer silently mis-tokenizes chunks against a mismatched
+    vocabulary. Any explicit value (``"tiktoken"`` or ``"bge-m3"``) passes through untouched — an
+    operator's explicit choice always wins over the auto-resolution.
+    """
+    if chunk_tokenizer != "auto":
+        return chunk_tokenizer
+    return "bge-m3" if "bge-m3" in embed_model.lower() else "tiktoken"
+
+
 def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) -> SupportsIngest:
     """The real :class:`IngestPipeline` when a Turso store is configured, else the stub.
 
     Parser/chunker (markitdown, tokenizers) are imported lazily inside the real branch so the
     parsing/chunking extras stay out of the default/test path — exactly as the store does. The
-    chunker is pinned to the ``bge-m3`` tokenizer to match ``EMBED_MODEL`` (its default is
-    ``tiktoken``), and ``(model, dim)`` is threaded so the store pins the tenant on first use.
+    chunker's tokenizer is derived from ``CHUNK_TOKENIZER`` (see :func:`resolve_chunk_tokenizer`)
+    rather than hardcoded to ``bge-m3``, since ``EMBED_MODEL`` is itself configurable; ``(model,
+    dim)`` is threaded so the store pins the tenant on first use.
     """
     if settings.store_backend == "libsql" and settings.turso_database_url:
         from sift.adapters.chunking.token import (  # pyright: ignore[reportMissingImports]
@@ -194,7 +213,7 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
             TokenChunker(
                 chunk_size=settings.chunk_size,
                 chunk_overlap=settings.chunk_overlap,
-                tokenizer="bge-m3",
+                tokenizer=resolve_chunk_tokenizer(settings.chunk_tokenizer, settings.embed_model),
                 chunk_min_chars=settings.chunk_min_chars,
             ),
             embedder,
@@ -242,6 +261,8 @@ def _build_reranker(settings: Settings, completer: Completer) -> Reranker:
         case "crossencoder":
             if not settings.rerank_base_url:
                 raise ValueError("RERANK_STRATEGY='crossencoder' requires RERANK_BASE_URL")
-            return CrossEncoderReranker(settings.rerank_base_url, settings.rerank_model)
+            # TEI's /rerank endpoint serves a single model and takes no model param, so
+            # rerank_model is intentionally not forwarded here (it pins the deployed TEI image).
+            return CrossEncoderReranker(settings.rerank_base_url)
         case "none":
             return NullReranker()

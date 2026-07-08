@@ -4,9 +4,10 @@ The public front door for Condense: a single-page, self-contained marketing site
 matches the app's exact look (purple accent, system-ui + monospace, the animated "many → one"
 mark, and the interactive slash-field background — all reused from `web/src/`).
 
-Two calls to action: **View on GitHub** and **Download** (points at
-[Releases](https://github.com/AetherisAI/condense/releases), the future home of the packaged,
-Ollama-style installer).
+Two calls to action: **View on GitHub** and **Download** (scrolls to the in-page `#download`
+section: the `curl | sh` one-liner, per-platform buttons, and a "server only" row — see
+`scripts/install.sh`). A small inline script checks the public releases API so those buttons
+never look dead before the first tagged release (`v0.4.0`) ships.
 
 ## Files
 - `index.html` — the whole page (inline CSS + inline JS, zero dependencies, no build step).

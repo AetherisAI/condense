@@ -1,36 +1,50 @@
-# UNTESTED -- no Windows machine available to this WP. Written against the documented NSIS
-# installer shape tauri-action / build-desktop.yml produces
-# (desktop/src-tauri/target/release/bundle/nsis/*-setup.exe), but never actually run on Windows.
-# Please report back anything that doesn't match reality (exact asset filename, installer UI,
-# silent-install flags, etc. are all best-guess).
+# UNTESTED -- no Windows machine available when this script was written. Written against the
+# documented NSIS installer shape Condense's release automation produces
+# (desktop/src-tauri/target/release/bundle/nsis/*-setup.exe) and the condense-server-<triple>.zip
+# server bundle, but never actually run on Windows. Please report back anything that doesn't
+# match reality (exact asset filenames, installer UI, silent-install flags, etc. are all
+# best-guess).
 #
-# Install (or uninstall) the Condense desktop app on Windows.
+# Install (or uninstall) Condense on Windows -- the desktop app by default, or the headless
+# server-only bundle with -ServerOnly.
 #
-# Resolution order for the installer .exe:
-#   1. -File <path>   use this local installer .exe directly.
-#   2. the newest GitHub Release asset for AetherisAI/condense (`gh release download` if `gh` is
-#      on PATH, else Invoke-WebRequest against the public releases API).
-#   3. neither found -> print a clear message pointing at CI artifacts and exit non-zero.
+# Resolution order for the artifact:
+#   1. -File <path>     use this local artifact directly.
+#   2. the newest GitHub Release asset for AetherisAI/condense, via the public,
+#      unauthenticated Releases API (Invoke-RestMethod -- no `gh` CLI or token required).
+#   3. neither found -> print a clear message pointing at CI artifacts and the repo, and exit
+#      non-zero. This script never half-installs: if it can't find or fetch a real artifact, it
+#      does nothing to your machine.
 #
-# The NSIS installer itself is a normal Windows installer (Program Files, Start Menu shortcut,
-# uninstaller entry) -- this script's job is just to find/download it and launch it; Tauri's NSIS
-# bundle handles the actual install UI (and, with -Silent, a silent install).
+# The desktop path: the NSIS installer itself is a normal Windows installer (Program Files,
+# Start Menu shortcut, uninstaller entry) -- this script's job is just to find/download it and
+# launch it; Tauri's NSIS bundle handles the actual install UI (and, with -Silent, a silent
+# install).
+#
+# The -ServerOnly path: downloads condense-server-x86_64-pc-windows-msvc.zip and unpacks it to
+# %LOCALAPPDATA%\condense-server (no admin rights, no installer) -- the headless engine + agent
+# CLI, no UI.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1
-#   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -File .\Condense_0.4.0_x64-setup.exe
+#   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -ServerOnly
+#   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -File .\Condense_x64-setup.exe
 #   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -Silent
 #   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -Uninstall
+#
+# For Linux/macOS, use scripts/install.sh instead.
 
 [CmdletBinding()]
 param(
     [string]$File,
     [switch]$Silent,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [switch]$ServerOnly
 )
 
 $ErrorActionPreference = "Stop"
 $RepoSlug = "AetherisAI/condense"
+$ServerDir = Join-Path $env:LOCALAPPDATA "condense-server"
 
 function Find-InstalledCondense {
     # Tauri's NSIS bundle registers a normal uninstall entry under the identifier
@@ -54,6 +68,18 @@ function Find-InstalledCondense {
 
 if ($Uninstall) {
     Write-Host "==> Condense uninstaller"
+
+    if ($ServerOnly) {
+        if (Test-Path $ServerDir) {
+            Remove-Item -Recurse -Force $ServerDir
+            Write-Host "    removed $ServerDir"
+        } else {
+            Write-Host "    $ServerDir already absent"
+        }
+        Write-Host "done."
+        exit 0
+    }
+
     $entry = Find-InstalledCondense
     if ($null -eq $entry) {
         Write-Host "    no Condense install found in the Windows uninstall registry."
@@ -70,54 +96,62 @@ if ($Uninstall) {
     exit 0
 }
 
-$SrcInstaller = $null
+# --- pick the asset pattern for this mode ------------------------------------------------------
+if ($ServerOnly) {
+    $kind = "server bundle"
+    $assetPattern = "condense-server-*windows*.zip"
+} else {
+    # Matched strictly against the "Condense_*" desktop-app naming convention, not just any .exe
+    # in the release, so this never mistakes an unrelated or legacy asset (e.g. the old v0.3.0
+    # sift-agent-*.exe bundles) for the actual desktop installer.
+    $kind = "desktop app"
+    $assetPattern = "Condense*.exe"
+}
+
+$SrcArtifact = $null
 
 if ($File) {
     if (-not (Test-Path $File)) {
         Write-Host "error: -File $File not found" -ForegroundColor Red
         exit 1
     }
-    $SrcInstaller = (Resolve-Path $File).Path
-    Write-Host "==> using local artifact: $SrcInstaller"
+    $SrcArtifact = (Resolve-Path $File).Path
+    Write-Host "==> using local artifact: $SrcArtifact"
 } else {
-    Write-Host "==> looking for the newest GitHub Release asset ($RepoSlug)"
+    Write-Host "==> looking for the newest GitHub Release $kind asset ($RepoSlug)"
     $assetUrl = $null
     $assetName = $null
 
-    if (Get-Command gh -ErrorAction SilentlyContinue) {
-        try {
-            $json = gh release view --repo $RepoSlug --json assets 2>$null | ConvertFrom-Json
-            $match = $json.assets | Where-Object { $_.name -like "*.exe" } | Select-Object -First 1
-            if ($match) {
-                $assetUrl = $match.url
-                $assetName = $match.name
-            }
-        } catch {
-            # fall through to the plain REST API below
+    try {
+        $resp = Invoke-RestMethod -Uri "https://api.github.com/repos/$RepoSlug/releases/latest" -ErrorAction Stop
+        $match = $resp.assets | Where-Object { $_.name -like $assetPattern } | Select-Object -First 1
+        if ($match) {
+            $assetUrl = $match.browser_download_url
+            $assetName = $match.name
         }
-    }
-
-    if (-not $assetUrl) {
-        try {
-            $resp = Invoke-RestMethod -Uri "https://api.github.com/repos/$RepoSlug/releases/latest" -ErrorAction Stop
-            $match = $resp.assets | Where-Object { $_.name -like "*.exe" } | Select-Object -First 1
-            if ($match) {
-                $assetUrl = $match.browser_download_url
-                $assetName = $match.name
-            }
-        } catch {
-            # no releases yet, or network error -- handled below
-        }
+    } catch {
+        # 404 (no releases yet) or a network error -- handled below either way.
     }
 
     if (-not $assetUrl) {
         Write-Host ""
-        Write-Host "error: no installer .exe asset found on a GitHub Release for $RepoSlug yet." -ForegroundColor Red
+        Write-Host "No published $kind release found yet for $RepoSlug." -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "The desktop app may not be tagged/released yet. Grab a build from CI instead (Actions ->"
-        Write-Host "build-desktop -> feat/desktop-standalone -> artifact condense-desktop-x86_64-pc-windows-msvc),"
-        Write-Host "then re-run:"
-        Write-Host "    powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -File <path-to-.exe>"
+        Write-Host "Condense's install artifacts (Condense_*.AppImage/.deb/.dmg/.exe and"
+        Write-Host "condense-server-*.tar.gz/.zip) ship starting with the v0.4.0 release. Until the"
+        Write-Host "first tagged release lands, you have two options:"
+        Write-Host ""
+        Write-Host "  1. Grab a build from CI:"
+        Write-Host "       https://github.com/$RepoSlug/actions"
+        Write-Host ""
+        Write-Host "  2. Build it yourself (see packaging/README.md and desktop/README.md in the repo):"
+        Write-Host "       https://github.com/$RepoSlug"
+        Write-Host ""
+        $extra = if ($ServerOnly) { " -ServerOnly" } else { "" }
+        Write-Host "Then install the local file directly:"
+        Write-Host "    powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -File <path-to-artifact>$extra"
+        Write-Host ""
+        Write-Host "Nothing was installed."
         exit 1
     }
 
@@ -126,21 +160,52 @@ if ($File) {
     New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
     $dest = Join-Path $tmpDir $assetName
     Invoke-WebRequest -Uri $assetUrl -OutFile $dest
-    $SrcInstaller = $dest
+    $SrcArtifact = $dest
 }
 
-Write-Host "==> launching installer: $SrcInstaller"
+# --- server-only: unpack the zip and stop ------------------------------------------------------
+if ($ServerOnly) {
+    Write-Host "==> installing server bundle to $ServerDir"
+    if (Test-Path $ServerDir) { Remove-Item -Recurse -Force $ServerDir }
+    New-Item -ItemType Directory -Force -Path $ServerDir | Out-Null
+
+    # condense-server-<triple>.zip contains one top-level "condense-server-<triple>/" directory
+    # (same layout as the .tar.gz used on Linux/macOS) -- expand then flatten it into $ServerDir.
+    $expandTmp = Join-Path $env:TEMP "condense-server-expand-$([guid]::NewGuid())"
+    Expand-Archive -Path $SrcArtifact -DestinationPath $expandTmp -Force
+    $inner = Get-ChildItem $expandTmp | Select-Object -First 1
+    if ($inner -and $inner.PSIsContainer) {
+        Copy-Item -Path (Join-Path $inner.FullName "*") -Destination $ServerDir -Recurse -Force
+    } else {
+        Copy-Item -Path (Join-Path $expandTmp "*") -Destination $ServerDir -Recurse -Force
+    }
+    Remove-Item -Recurse -Force $expandTmp -ErrorAction SilentlyContinue
+
+    Write-Host ""
+    Write-Host "done. condense-server installed to $ServerDir"
+    $runBat = Join-Path $ServerDir "run.bat"
+    if (Test-Path $runBat) {
+        Write-Host "Run it with:"
+        Write-Host "  $runBat"
+    } else {
+        Write-Host "See $ServerDir\README.md to run the engine directly."
+    }
+    exit 0
+}
+
+# --- desktop app: launch the NSIS installer -----------------------------------------------------
+Write-Host "==> launching installer: $SrcArtifact"
 if ($Silent) {
     # Tauri's NSIS bundles support a silent mode; flag name has varied across tauri-action/NSIS
     # template versions, so try the modern one first and fall back if it errors.
     try {
-        Start-Process -FilePath $SrcInstaller -ArgumentList "/S" -Wait
+        Start-Process -FilePath $SrcArtifact -ArgumentList "/S" -Wait
     } catch {
         Write-Host "    /S failed, retrying without silent flag (installer UI will appear)"
-        Start-Process -FilePath $SrcInstaller -Wait
+        Start-Process -FilePath $SrcArtifact -Wait
     }
 } else {
-    Start-Process -FilePath $SrcInstaller
+    Start-Process -FilePath $SrcArtifact
     Write-Host "    installer launched -- follow the setup wizard."
 }
 

@@ -97,12 +97,14 @@ class FakeVectorStore:
             return set()
         return {chunk.source_hash for chunk in rows.values()}
 
-    async def list_documents(
-        self, tenant: str, metadata: Mapping[str, str] | None = None
-    ) -> list[DocumentInfo]:
+    def _matching_document_hashes(
+        self, tenant: str, metadata: Mapping[str, str] | None
+    ) -> tuple[list[str], dict[str, str], dict[str, int]]:
+        """Sorted content-hashes matching ``tenant``/``metadata`` plus per-hash path/chunk-count —
+        the shared core of ``list_documents`` and ``count_documents``."""
         rows = self._rows.get(tenant)
         if not rows:
-            return []
+            return [], {}, {}
         paths: dict[str, str] = {}
         counts: dict[str, int] = {}
         matched: set[str] = set()
@@ -112,6 +114,18 @@ class FakeVectorStore:
             if metadata and _metadata_matches(chunk.metadata, metadata):
                 matched.add(chunk.source_hash)
         hashes = matched if metadata else counts.keys()
+        return sorted(hashes), paths, counts
+
+    async def list_documents(
+        self,
+        tenant: str,
+        metadata: Mapping[str, str] | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[DocumentInfo]:
+        hashes, paths, counts = self._matching_document_hashes(tenant, metadata)
+        page = hashes[offset:] if limit is None else hashes[offset : offset + limit]
         stamps = self._indexed_at.get(tenant, {})
         mtimes = self._modified_at.get(tenant, {})
         return [
@@ -122,8 +136,12 @@ class FakeVectorStore:
                 modified_at=mtimes.get(h),
                 indexed_at=stamps.get(h),
             )
-            for h in sorted(hashes)
+            for h in page
         ]
+
+    async def count_documents(self, tenant: str, metadata: Mapping[str, str] | None = None) -> int:
+        hashes, _paths, _counts = self._matching_document_hashes(tenant, metadata)
+        return len(hashes)
 
     async def delete_document(self, source_hash: str, tenant: str) -> int:
         rows = self._rows.get(tenant)

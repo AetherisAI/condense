@@ -1,3 +1,5 @@
+> **Historical (Step-0, 2026-06-27)** — for current state see `README.md`, `docs/api-schema.md`, `CLAUDE.md` §9.
+
 # Two-developer split & coordination
 
 How Sift is built by two people in parallel against the frozen Step 0 contracts.
