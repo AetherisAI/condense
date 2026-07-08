@@ -212,9 +212,10 @@ async def _list_documents_executor(
     await store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
     if not isinstance(store, SupportsDocumentAdmin):
         return {"documents": [], "total": 0, "limit": limit, "offset": offset}
-    documents = await store.list_documents(tenant, metadata=metadata)
-    total = len(documents)
-    page = documents[offset : offset + limit]
+    # Page in the store (LIMIT/OFFSET pushed into the query) rather than fetching every document
+    # row and slicing in Python; a separate COUNT gives the unpaginated total.
+    total = await store.count_documents(tenant, metadata=metadata)
+    page = await store.list_documents(tenant, metadata=metadata, limit=limit, offset=offset)
     return {"documents": page, "total": total, "limit": limit, "offset": offset}
 
 

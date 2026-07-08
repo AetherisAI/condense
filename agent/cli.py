@@ -144,6 +144,9 @@ def _watch(args: argparse.Namespace, client: SiftClient) -> int:
     exclude_dirs = DEFAULT_EXCLUDE_DIRS | set(args.exclude_dir)
     exclude_files = DEFAULT_EXCLUDE_FILES | set(args.exclude_file)
     managed: set[str] = set()  # paths seen on disk so far — scopes --delete-removed safely
+    # Persistent (abspath -> mtime_ns, size, sha256) cache so each debounced re-sync only
+    # re-hashes files that actually changed, not the whole tree every pass.
+    hash_cache: dict[str, tuple[int, int, str]] = {}
     stop_event = threading.Event()
 
     def _on_sigterm(signum: int, frame: object) -> None:
@@ -163,6 +166,7 @@ def _watch(args: argparse.Namespace, client: SiftClient) -> int:
             max_file_size_mb=args.max_file_size_mb,
             exclude_dirs=exclude_dirs,
             exclude_files=exclude_files,
+            hash_cache=hash_cache,
         )
         managed = set(summary.managed)
         if args.json:

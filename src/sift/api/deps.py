@@ -11,6 +11,7 @@ additive — only this function changes when real tenants arrive.
 
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Annotated
 
@@ -28,6 +29,20 @@ def get_container(request: Request) -> Container:
     return request.app.state.container
 
 
+def _match_consumer(token: str, auth_tokens: dict[str, str]) -> str | None:
+    """Constant-time lookup of ``token`` in the per-consumer table (CWE-208).
+
+    A plain ``dict.get(token)`` compares hash-then-bytes and can short-circuit; scan every
+    entry with :func:`hmac.compare_digest` instead so the match time doesn't depend on which
+    (or how many) leading bytes of a candidate token are correct.
+    """
+    matched: str | None = None
+    for known_token, consumer in auth_tokens.items():
+        if hmac.compare_digest(token, known_token):
+            matched = consumer
+    return matched
+
+
 async def resolve_tenant(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     container: Annotated[Container, Depends(get_container)],
@@ -43,10 +58,14 @@ async def resolve_tenant(
     """
     if credentials is not None:
         token = credentials.credentials
-        if token == container.settings.ingest_token:
+        # Constant-time compare (CWE-208): a plain ``==`` short-circuits at the first differing
+        # byte, leaking how many leading bytes are correct via response latency. The empty
+        # ``ingest_token`` default must never authenticate, so guard it explicitly.
+        ingest_token = container.settings.ingest_token
+        if ingest_token and hmac.compare_digest(token, ingest_token):
             logger.info("auth consumer=%r", "ingest")
             return "default"
-        consumer = container.auth_tokens.get(token)
+        consumer = _match_consumer(token, container.auth_tokens)
         if consumer is not None:
             logger.info("auth consumer=%r", consumer)
             return "default"

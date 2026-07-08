@@ -25,9 +25,13 @@ _APP = "sift-agent"
 
 
 def config_path() -> str:
-    """Absolute path to the agent's config file (directory created on demand)."""
+    """Absolute path to the agent's config file (directory created on demand, mode 0700).
+
+    The file stores the engine bearer token in cleartext, so the directory is created
+    owner-only (0700) — a default umask would otherwise leave it 0755/world-traversable.
+    """
     d = user_config_dir(_APP)
-    os.makedirs(d, exist_ok=True)
+    os.makedirs(d, mode=0o700, exist_ok=True)
     return os.path.join(d, "config.json")
 
 
@@ -95,6 +99,14 @@ def load() -> AgentConfig:
 
 
 def save(cfg: AgentConfig) -> None:
-    """Persist ``cfg`` to the config file as pretty JSON."""
-    with open(config_path(), "w", encoding="utf-8") as fh:
+    """Persist ``cfg`` to the config file as pretty JSON, owner-read/write only (0600).
+
+    The payload includes the engine bearer token, so open the file 0600 rather than let a
+    default umask leave it 0644/world-readable. ``os.open`` applies the mode atomically at
+    creation; an existing file is re-hardened via ``os.chmod`` in case it predates this.
+    """
+    path = config_path()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(asdict(cfg), fh, indent=2)
+    os.chmod(path, 0o600)

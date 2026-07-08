@@ -1,4 +1,4 @@
-import { type ReactNode, isValidElement } from 'react'
+import { type ReactNode, isValidElement, memo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import CodeBlock from './CodeBlock'
@@ -47,11 +47,19 @@ const components: Components = {
 /** The chat answer body's markdown renderer (D47): GFM tables/lists/bold/links as before, plus
  * real fenced code blocks (syntax-highlighted, own scroll box, copy button) and lazy Mermaid
  * diagrams. No raw-HTML passthrough — `rehype-raw` is deliberately never added, so any HTML the
- * model emits renders as inert escaped text, never live markup. */
-export default function ChatMarkdown({ text }: { text: string }) {
+ * model emits renders as inert escaped text, never live markup.
+ *
+ * Wrapped in `React.memo`: react-markdown re-parses its whole input on every render, and the
+ * chat thread re-renders on every streamed token, so an un-memoized instance would re-parse the
+ * markdown of *every* prior turn once per token (O(turns × tokens)). The only prop is `text`, so
+ * the default shallow compare lets unchanged turns skip the re-parse — only the actively
+ * streaming turn (whose `text` grows) re-renders. */
+function ChatMarkdown({ text }: { text: string }) {
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
       {text}
     </ReactMarkdown>
   )
 }
+
+export default memo(ChatMarkdown)
