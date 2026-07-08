@@ -87,6 +87,21 @@ DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
 # ``numpy-1.26.4.dist-info``), so they can't live in a fixed-name set — matched by suffix instead.
 _EXCLUDE_DIR_SUFFIXES = (".dist-info", ".egg-info")
 
+# Cap on how many local skip decisions a single collect/sync pass records into a caller-supplied
+# ``skip_sink`` (see :class:`SkipDetail`) — a huge tree (thousands of non-matching files under an
+# UN-pruned directory) must never make a debugging aid balloon into an unbounded list held in
+# memory and shipped over the sidecar's NDJSON pipe. Generous enough that a normal documents
+# folder's skip decisions all fit; once hit, later skips of the same run are simply not recorded
+# (the counts a caller derives independently — e.g. from ``collect``'s return length — are still
+# exact; only the *named* detail list is capped).
+_MAX_SKIP_DETAILS = 500
+
+
+def _record_skip(skip_sink: list[SkipDetail] | None, path: str, reason: str) -> None:
+    """Append one skip decision to ``skip_sink`` if present and under the cap — else a no-op."""
+    if skip_sink is not None and len(skip_sink) < _MAX_SKIP_DETAILS:
+        skip_sink.append(SkipDetail(path=path, reason=reason))
+
 
 def _is_excluded_dir(name: str, exclude_dirs: frozenset[str] | set[str]) -> bool:
     """True if a directory named ``name`` should be pruned from the walk entirely.
@@ -172,6 +187,7 @@ def _iter_matching(
     includes: set[str],
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
     exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
+    skip_sink: list[SkipDetail] | None = None,
 ):
     """Yield absolute paths of files under ``root`` (a file or directory) matching ``includes``.
 
@@ -179,6 +195,14 @@ def _iter_matching(
     from the walk entirely — its contents are never listed, hashed, or matched, however deep.
     Any filename matching an ``exclude_files`` glob (see :data:`DEFAULT_EXCLUDE_FILES`) is
     skipped even when its extension is otherwise included.
+
+    ``skip_sink``, when given, records every local skip *decision* this walk makes — not just
+    the oversized-file guard (see :func:`_skip_oversized`, called separately by ``collect``/
+    ``collect_roots`` after this generator returns) — so a caller (``agent.cli --json``, the
+    desktop app) can show *why* a file never made it into the upload set, the same way
+    :data:`Summary.failures` already names *why* an uploaded file was rejected server-side. A
+    pruned directory gets ONE entry (``"excluded_dir"``) for the directory itself, never one per
+    file inside it — enumerating those would defeat the whole point of pruning the walk.
     """
     if os.path.isfile(root):
         name = os.path.basename(root)
@@ -186,15 +210,29 @@ def _iter_matching(
             name, exclude_files
         ):
             yield os.path.abspath(root)
+        elif _is_excluded_file(name, exclude_files):
+            _record_skip(skip_sink, name, "excluded_file")
+        else:
+            _record_skip(skip_sink, name, "unsupported_extension")
         return
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if not _is_excluded_dir(d, exclude_dirs)]
+        kept, pruned = [], []
+        for d in dirnames:
+            (pruned if _is_excluded_dir(d, exclude_dirs) else kept).append(d)
+        dirnames[:] = kept
+        for d in pruned:
+            rel = PurePath(os.path.relpath(os.path.join(dirpath, d), root)).as_posix()
+            _record_skip(skip_sink, rel, "excluded_dir")
         for name in filenames:
-            if _is_excluded_file(name, exclude_files):
-                continue
             full = os.path.join(dirpath, name)
+            rel = PurePath(os.path.relpath(full, root)).as_posix()
+            if _is_excluded_file(name, exclude_files):
+                _record_skip(skip_sink, rel, "excluded_file")
+                continue
             if os.path.splitext(full)[1].lower() in includes:
                 yield full
+            else:
+                _record_skip(skip_sink, rel, "unsupported_extension")
 
 
 def _stat_sorted(fulls: Iterable[str]) -> list[tuple[str, os.stat_result]]:
@@ -280,7 +318,14 @@ def _read_file(path: str) -> Callable[[], bytes]:
     return _load
 
 
-def _skip_oversized(full: str, st: os.stat_result, max_bytes: int, max_file_size_mb: int) -> bool:
+def _skip_oversized(
+    full: str,
+    st: os.stat_result,
+    max_bytes: int,
+    max_file_size_mb: int,
+    skip_sink: list[SkipDetail] | None = None,
+    rel_path: str | None = None,
+) -> bool:
     """True (and warns) if ``full`` (already stat'd) exceeds the size guard — caller skips it."""
     if st.st_size <= max_bytes:
         return False
@@ -288,6 +333,7 @@ def _skip_oversized(full: str, st: os.stat_result, max_bytes: int, max_file_size
         f"agent: skipping {full} ({st.st_size} bytes exceeds max_file_size_mb={max_file_size_mb})",
         stacklevel=3,
     )
+    _record_skip(skip_sink, rel_path if rel_path is not None else full, "oversized")
     return True
 
 
@@ -299,6 +345,7 @@ def collect(
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
     exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
     hash_cache: dict[str, tuple[int, int, str]] | None = None,
+    skip_sink: list[SkipDetail] | None = None,
 ) -> list[tuple[str, str, Callable[[], bytes], str]]:
     """Walk one ``root`` → ``(relpath_name, sha256_hex, loader, modified_at)`` (one-shot keys).
 
@@ -310,16 +357,20 @@ def collect(
     filename matching ``exclude_files`` (default :data:`DEFAULT_EXCLUDE_FILES`) is skipped the
     same way, even when its extension is otherwise included (D39). ``hash_cache`` (owned by a
     long-lived watch caller) skips re-hashing files whose mtime/size are unchanged (see
-    :func:`_sha256_cached`); ``None`` hashes every file fresh.
+    :func:`_sha256_cached`); ``None`` hashes every file fresh. ``skip_sink``, when given, is
+    appended with every local skip decision (oversized/excluded dir/excluded file/unsupported
+    extension) this call makes — see :class:`SkipDetail`.
     """
     max_bytes = max_file_size_mb * 1024 * 1024
     name_root = _name_root(root)
     found: list[tuple[str, str, Callable[[], bytes], str]] = []
-    for full, st in _stat_sorted(_iter_matching(root, includes, exclude_dirs, exclude_files)):
-        if _skip_oversized(full, st, max_bytes, max_file_size_mb):
+    matches = _iter_matching(root, includes, exclude_dirs, exclude_files, skip_sink)
+    for full, st in _stat_sorted(matches):
+        name = upload_name(name_root, full)
+        if _skip_oversized(full, st, max_bytes, max_file_size_mb, skip_sink, rel_path=name):
             continue
         sha = _sha256_cached(full, st, hash_cache)
-        found.append((upload_name(name_root, full), sha, _read_file(full), _modified_iso(st)))
+        found.append((name, sha, _read_file(full), _modified_iso(st)))
     return found
 
 
@@ -331,6 +382,7 @@ def collect_roots(
     exclude_dirs: frozenset[str] | set[str] = DEFAULT_EXCLUDE_DIRS,
     exclude_files: frozenset[str] | set[str] = DEFAULT_EXCLUDE_FILES,
     hash_cache: dict[str, tuple[int, int, str]] | None = None,
+    skip_sink: list[SkipDetail] | None = None,
 ) -> list[tuple[str, str, Callable[[], bytes], str]]:
     """Walk every root; return ``(name, sha256_hex, loader, modified_at)``, de-duped across roots.
 
@@ -348,7 +400,8 @@ def collect_roots(
 
     Ordered oldest-modified first (see :func:`_stat_sorted`) so recency survives into the index.
     ``loader``, the size guard, ``exclude_dirs``, and ``exclude_files`` behave exactly as in
-    :func:`collect` (A3/D35/D39).
+    :func:`collect` (A3/D35/D39). ``skip_sink`` behaves exactly as in :func:`collect` too,
+    accumulating across every root in ``roots``.
     """
     max_bytes = max_file_size_mb * 1024 * 1024
     prefixes = _root_prefixes(roots)
@@ -357,7 +410,7 @@ def collect_roots(
     for root in roots:
         name_root = _name_root(root)
         prefix = prefixes.get(root)
-        for full in _iter_matching(root, includes, exclude_dirs, exclude_files):
+        for full in _iter_matching(root, includes, exclude_dirs, exclude_files, skip_sink):
             resolved = os.path.abspath(full)
             if resolved in seen_physical:
                 continue
@@ -366,7 +419,10 @@ def collect_roots(
             by_full[full] = f"{prefix}/{rel}" if prefix else rel
     found: list[tuple[str, str, Callable[[], bytes], str]] = []
     for full, st in _stat_sorted(by_full):
-        if _skip_oversized(full, st, max_bytes, max_file_size_mb):
+        oversized = _skip_oversized(
+            full, st, max_bytes, max_file_size_mb, skip_sink, rel_path=by_full[full]
+        )
+        if oversized:
             continue
         sha = _sha256_cached(full, st, hash_cache)
         found.append((by_full[full], sha, _read_file(full), _modified_iso(st)))
@@ -396,6 +452,26 @@ class Failure:
 
 
 @dataclass(frozen=True, slots=True)
+class SkipDetail:
+    """One file (or pruned directory) the agent decided *locally* not to upload, and why.
+
+    Complements :class:`Failure`: a ``Failure`` is something the server rejected after the agent
+    tried to upload it; a ``SkipDetail`` is something the agent never even attempted, per its own
+    local rules — so a caller (``agent.cli --json``, the desktop app) can tell "this file never
+    made it into the batch" apart from "this file was sent and the server said no" instead of
+    both silently collapsing into the same opaque ``skipped``/``failed`` count. ``reason`` is one
+    of ``"oversized"`` (over ``max_file_size_mb``), ``"excluded_dir"`` (inside a pruned directory
+    — one entry per pruned directory, not per file inside it), ``"excluded_file"`` (matched an
+    ``exclude_files`` glob), or ``"unsupported_extension"`` (not in ``includes``). ``path`` is
+    root-relative POSIX, same style as an upload name, except for an ``"excluded_dir"`` entry
+    where it names the pruned directory itself.
+    """
+
+    path: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class Summary:
     """Per-sync tallies for the UI status line, plus the paths now under management.
 
@@ -417,6 +493,13 @@ class Summary:
     gap, see DECISIONS.md D52/D54). A failure folded in from the delete-stale-hash pass below
     (keyed by content hash, not a watched path) is counted in ``failed`` but has no natural path
     to report, so it is *not* added here — a known, narrow gap, not a silent one.
+
+    ``skipped_details`` names every local skip *decision* this pass made — oversized, inside a
+    pruned/excluded directory, an excluded filename, or an unsupported extension — regardless of
+    whether it ends up counted in ``skipped`` (a client-side skip is; a not-even-attempted local
+    skip like these was never part of that count either, before or after this field existed — see
+    :class:`SkipDetail`). Capped at :data:`_MAX_SKIP_DETAILS` entries per pass so a huge tree with
+    a lot of non-matching content can't balloon this into an unbounded list.
     """
 
     indexed: int = 0
@@ -427,6 +510,7 @@ class Summary:
     error: str | None = None
     managed: frozenset[str] = frozenset()
     failures: tuple[Failure, ...] = ()
+    skipped_details: tuple[SkipDetail, ...] = ()
 
     def line(self) -> str:
         if self.error:
@@ -502,7 +586,9 @@ def sync(
     returned ``Summary.managed`` is this pass's on-disk set, to thread into the next call.
     ``max_file_size_mb``, ``exclude_dirs``, and ``exclude_files`` are the per-file size guard,
     vendored-dir pruning, and junk-filename pruning passed through to :func:`collect_roots`
-    (A3/D35/D39).
+    (A3/D35/D39). ``Summary.skipped_details`` is always populated from the same collect pass,
+    even on an early network-failure return below — the local skip decisions already happened
+    before any request was made.
 
     Falls back to add-only if the store doesn't support listing documents (``supported=False``):
     replacement/removal need ``/documents``, so without it we can still ingest (the engine's
@@ -518,6 +604,7 @@ def sync(
     from remote and retries — no lost update, no premature delete.
     """
     roots = [roots] if isinstance(roots, str) else list(roots)
+    skip_sink: list[SkipDetail] = []
     files = collect_roots(
         roots,
         includes,
@@ -525,16 +612,18 @@ def sync(
         exclude_dirs=exclude_dirs,
         exclude_files=exclude_files,
         hash_cache=hash_cache,
+        skip_sink=skip_sink,
     )
     local = {name: digest for name, digest, _loader, _m in files}
     loader_by_name = {name: loader for name, _digest, loader, _m in files}
     mtime_by_name = {name: modified for name, _digest, _loader, modified in files}
     now_managed = frozenset(local)
+    skipped_details = tuple(skip_sink)
 
     try:
         supported, docs = client.documents()
     except Exception as exc:  # network/HTTP — surface it rather than half-syncing
-        return Summary(error=str(exc), managed=now_managed)
+        return Summary(error=str(exc), managed=now_managed, skipped_details=skipped_details)
 
     remote = {d["path"]: d["source_hash"] for d in docs} if supported else {}
     actions = reconcile(
@@ -561,7 +650,12 @@ def sync(
             resp = exc.partial
             error = str(exc)
         except Exception as exc:
-            return Summary(skipped=len(actions.skip), error=str(exc), managed=now_managed)
+            return Summary(
+                skipped=len(actions.skip),
+                error=str(exc),
+                managed=now_managed,
+                skipped_details=skipped_details,
+            )
 
         for r in resp.get("results", []):
             path, status = r.get("path"), r.get("status")
@@ -609,4 +703,5 @@ def sync(
         error=error,
         managed=now_managed,
         failures=tuple(failures),
+        skipped_details=skipped_details,
     )

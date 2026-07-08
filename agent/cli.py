@@ -42,6 +42,7 @@ from agent.sync import (
     DEFAULT_EXCLUDE_FILES,
     DEFAULT_INCLUDE,
     DEFAULT_MAX_FILE_SIZE_MB,
+    SkipDetail,
     Summary,
     collect,
     sync,
@@ -63,6 +64,10 @@ def _sync_event(summary: Summary) -> dict[str, Any]:
         "skipped": summary.skipped,
         "failed": summary.failed,
         "failures": [{"path": f.path, "error": f.error} for f in summary.failures],
+        # Local skip decisions (oversized/excluded dir/excluded file/unsupported extension) — the
+        # agent's own filtering, distinct from ``failures`` (server-rejected uploads). See
+        # agent.sync.SkipDetail.
+        "skipped_details": [{"path": s.path, "reason": s.reason} for s in summary.skipped_details],
     }
     if summary.error:
         event["error"] = summary.error
@@ -216,6 +221,10 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
     includes = set(args.include)
     exclude_dirs = DEFAULT_EXCLUDE_DIRS | set(args.exclude_dir)
     exclude_files = DEFAULT_EXCLUDE_FILES | set(args.exclude_file)
+    # Shared across every ``args.paths`` root (mirrors ``sync()``'s own single ``skip_sink`` per
+    # pass) so one-shot mode's "sync" events name local skip decisions the same way ``--watch``'s
+    # do (see agent.sync.SkipDetail) — additive, never touches the human-mode output below.
+    skip_sink: list[SkipDetail] = []
     files = [
         f
         for path in args.paths
@@ -225,8 +234,10 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
             max_file_size_mb=args.max_file_size_mb,
             exclude_dirs=exclude_dirs,
             exclude_files=exclude_files,
+            skip_sink=skip_sink,
         )
     ]
+    skipped_details_json = [{"path": s.path, "reason": s.reason} for s in skip_sink]
     # Everything below hits the network (manifest, then ingest) — guarded the same way _watch()
     # guards its own network calls: in --json mode, an unexpected error (e.g. the server being
     # unreachable) becomes one clean {"event": "fatal", ...} line instead of a raw traceback on
@@ -246,6 +257,7 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
                         "skipped": skipped_known,
                         "failed": 0,
                         "failures": [],
+                        "skipped_details": skipped_details_json,
                     }
                 )
             else:
@@ -293,6 +305,7 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
                         ],
                         "error": str(exc),
                         "never_attempted": never_attempted,
+                        "skipped_details": skipped_details_json,
                     }
                 )
             else:
@@ -318,6 +331,7 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
                     "failures": [
                         {"path": r.get("path"), "error": r.get("detail")} for r in failed_results
                     ],
+                    "skipped_details": skipped_details_json,
                 }
             )
         else:

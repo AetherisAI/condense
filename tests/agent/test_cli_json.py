@@ -84,6 +84,7 @@ def test_dry_run_json_on_empty_dir_is_still_one_valid_ndjson_line(
         "skipped": 0,
         "failed": 0,
         "failures": [],
+        "skipped_details": [],
     }
 
 
@@ -143,6 +144,63 @@ def test_human_output_unchanged_without_json_flag(
     assert re.fullmatch(r"WOULD UPLOAD a\.txt \([0-9a-f]{64}\)\n", out)
     with pytest.raises(json.JSONDecodeError):
         json.loads(out)  # human mode must never be accidentally-valid JSON
+
+
+# --------------------------------------------------------------------------- skipped_details[]
+
+
+def test_one_shot_json_sync_event_carries_skipped_details_for_local_skips(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file the agent never even attempts to upload (unsupported extension here) is named in
+    ``skipped_details`` — distinct from ``failures`` (server-rejected uploads) — the local half
+    of D52/D54's failure-naming closed by this change.
+    """
+    (tmp_path / "good.txt").write_bytes(b"alpha")
+    (tmp_path / "notes.log").write_bytes(b"unsupported extension, never uploaded")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/ingest/manifest":
+            return _empty_manifest_handler(request)
+        if request.method == "POST" and request.url.path == "/ingest":
+            return httpx.Response(
+                200,
+                json={"tenant": TENANT, "results": [{"path": "good.txt", "status": "indexed"}]},
+            )
+        return httpx.Response(404, json={"detail": "not found"})
+
+    rc = main([str(tmp_path), "--json"], client=_client(handler))
+    out = capsys.readouterr().out
+    events = _parse_ndjson(out)
+
+    assert rc == 0
+    assert len(events) == 1
+    event = events[0]
+    assert event["indexed"] == 1
+    assert event["skipped_details"] == [{"path": "notes.log", "reason": "unsupported_extension"}]
+
+
+def test_one_shot_json_nothing_to_upload_still_carries_skipped_details(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The early "nothing to upload" return (all-known-hashes path) also names local skips."""
+    (tmp_path / "notes.log").write_bytes(b"unsupported extension")
+
+    rc = main([str(tmp_path), "--json"], client=_client(_empty_manifest_handler))
+    out = capsys.readouterr().out
+    events = _parse_ndjson(out)
+
+    assert rc == 0
+    assert events[0] == {
+        "event": "sync",
+        "indexed": 0,
+        "replaced": 0,
+        "deleted": 0,
+        "skipped": 0,
+        "failed": 0,
+        "failures": [],
+        "skipped_details": [{"path": "notes.log", "reason": "unsupported_extension"}],
+    }
 
 
 # --------------------------------------------------------------------------- network failure
