@@ -29,7 +29,7 @@ Quentin builds **retrieve + rank + recap + serve + UI**. Arthur builds **the eng
 - **Docs ship with code** — the `human.md`/`machine.md`/`DECISIONS.md` updates go in the *same commit* as the code they describe.
 - PR → review → **squash-merge → delete branch**. Tag `v0.<n>.0` on deployable milestones.
 - Contract changes (`core/` or API schema) get their own small PR both review.
-- Commit trailer: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+- Commit trailer: `Co-Authored-By: <the driving model's name> <noreply@anthropic.com>` — implementation agents attribute to whichever Claude model actually drove that session (e.g. `Claude Sonnet 5`), not a fixed name; keep it accurate to the model that did the work.
 - **Fetch `origin` regularly** to stay aligned with Arthur; reconcile any `core/` drift immediately.
 - **Autonomous run:** one `feat/<slice>` branch per WP, pushed to origin regularly; Dev-B-owned files auto-merge to `main` when green (D12); the shared seam (`core/`, `api/schemas.py`, `factory.py`) stays provisional until reconciled with Arthur's push. A ~45-min cron re-syncs with his engine branch (D15).
 
@@ -50,27 +50,37 @@ Quentin builds **retrieve + rank + recap + serve + UI**. Arthur builds **the eng
 ## 7. Tech stack (verified Jun 2026)
 Python 3.12 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `httpx` / `openai` client at custom base_url for embed+chat · plain `httpx` for TEI `/rerank` · libSQL client · `markitdown` (Arthur) · React + Vite 7 (TS) · ruff + pyright + pytest · Docker (`python:3.12-slim`, multi-arch via buildx).
 
-## 8. Config / env keys (README §8 — the single source of values)
+## 8. Config / env keys — core keys only; canonical list below
 ```
 STORE_BACKEND=libsql        TURSO_DATABASE_URL=        TURSO_AUTH_TOKEN=
 EMBED_BASE_URL=             EMBED_MODEL=bge-m3         EMBED_API_KEY=
-RERANK_STRATEGY=llm         RERANK_BASE_URL=          RERANK_MODEL=bge-reranker-v2-m3
+RERANK_STRATEGY=none        RERANK_BASE_URL=          RERANK_MODEL=bge-reranker-v2-m3
 RETRIEVE_K=30               FINAL_K=1
 LLM_BASE_URL=               LLM_MODEL=                LLM_API_KEY=
-CHUNK_SIZE=512              CHUNK_OVERLAP=64          INGEST_TOKEN=
+CHUNK_SIZE=512              CHUNK_OVERLAP=64          CHUNK_TOKENIZER=auto
+INGEST_TOKEN=               AUTH_TOKENS=
 ```
+This is an orientation subset, not the full contract — `Settings` (`config.py`) has grown well past
+these (recap/OCR/answer/toolbox/CORS knobs, etc.). The **canonical, mechanically-enforced list is
+`.env.example`**: a contract test (`tests/contract/test_config_env_parity.py`) fails CI if `Settings`,
+`.env.example`, and `docker-compose.yml`'s `api` environment block ever drift apart. See also
+`docs/api-schema.md` for the full endpoint + config picture.
 
 ## 9. Dev B component map (the lego we build)
 ```
-core/            types.py · ports.py            (co-owned; we propose Embedder/Reranker/Completer/VectorStore-consume + schemas)
+core/              types.py · ports.py · errors.py · hashing.py   (co-owned)
 adapters/
-  embedding/     openai_compat.py · fake.py
-  rerank/        null.py · llm_judge.py · crossencoder_http.py(opt)
-  llm/           openai_compat.py · null.py
-pipelines/       search.py                       (embed→retrieve_K→rerank→FINAL_K→recap)
-api/             main.py · routes.py · deps.py    (auth→tenant chokepoint, DI via factory)
+  embedding/       openai_compat.py · fake.py
+  rerank/          null.py · llm_judge.py · crossencoder_http.py(opt)
+  llm/             openai_compat.py · null.py · fake.py
+  conversation/    fake.py · libsql.py                (Arthur's SQL, our seam — D40)
+  ocr/             mistral.py · fallback_parser.py     (D26)
+pipelines/         search.py · answer.py · documents.py · tools.py
+api/               main.py · routes.py · deps.py · v1.py · tokens.py · schemas.py
+                   (auth→tenant chokepoint in deps.py; /v1 toolbox+answer+conversations;
+                    /v1/tokens master-gated mint/list/revoke, D69)
 config.py · factory.py
-web/             Vite+React test UI (search + ingest panels)
+web/               Vite+React chat-first workbench (Ask|Find, System drawer incl. AccessTokens.tsx)
 docker-compose.yml (api · web · tei profile)
 ```
 

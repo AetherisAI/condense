@@ -863,3 +863,49 @@ Same branch (`feat/agent-json-cli`), the T4 half promised in update 28. New file
 **Local build + smoke (RAM-capped service, this machine):** `pyinstaller packaging/sift-agent-cli.spec` → 24MB single-file `dist/sift-agent-cli`. `--help` exits 0. `--json --dry-run` against a throwaway local stub server (one-shot mode always calls `/ingest/manifest` first, even under `--dry-run` — pre-existing, not something T3/T4 changed) emitted one valid `{"event":"dry_run",...}` line. SIGTERM against a `--watch` run (`--server http://127.0.0.1:9`, refused instantly, nothing real contacted) exited 0 within ~1.5s with a trailing `{"event":"stopped"}`. `ruff check .`/`ruff format --check .` clean (`.spec` files aren't linted, `.py` entry point is), pyright unchanged (47 baseline), full suite still 481/481 (packaging isn't exercised by pytest).
 
 This closes the WP's D54 M2 milestone ("agent CLI json/sigterm + headless binary — shippable alone, helps systemd users too"). Next (not on this branch): the Tauri scaffold itself (T5+) will consume `dist/sift-agent-cli` as `desktop/src-tauri/binaries/sift-agent-cli-<target-triple>`. — Quentin/Dev B
+
+---
+
+## 2026-07-06 — update 30: desktop standalone launcher WP kicked off — your "API only" download is now a first-class artifact (upcoming CROSS-BOUNDARY on `packaging/`)
+
+Quentin greenlit the desktop work package tonight (overnight autonomous run, branch `feat/desktop-standalone`). Two things concern you directly:
+
+1. **Your landing-page ask is designed in (D63).** Quentin relayed your idea: the Download button should offer a backend-only install for people who don't want the chat UI. CI will publish `condense-server-<target-triple>.tar.gz` (Linux/mac; `.zip` on Windows) as its own release asset next to the desktop installers: PyInstaller engine bundle + the `sift-agent-cli` binary + `run.sh`/`run.bat` + `env.example` + README. It is EXACTLY the artifact the desktop launcher itself downloads on first run — one build, two download buttons, can't drift. Suggested landing-page shape: **"Download Condense"** (desktop app: .deb/.AppImage, .dmg, .exe) and **"Server only (API, no UI)"** (the tar.gz). Asset names will be stable from tag `v0.4.0` onward — happy to adjust naming if your page prefers something else.
+
+2. **CROSS-BOUNDARY heads-up on `packaging/` (yours):** tonight adds `packaging/sift-engine.spec` + `packaging/sift_engine_entry.py` (PyInstaller **onedir** freeze of the FastAPI engine, mirroring your `sift-agent.spec` conventions and the CLI target from update 29) plus a `packaging/server-bundle/` dir (run scripts + env template for the artifact above). No changes to your specs or to `agent/`. As always: reshape freely, flag back if the conventions clash with your plans.
+
+Context you might enjoy: local mode serves bge-m3 from a `llama-server` sidecar (llama.cpp prebuilt) instead of TEI — we measured cosine > 0.999 between the two runtimes on the same strings (D61), so desktop-built DBs and TEI-built DBs are interchangeable. TEI stays the compose/server path; nothing changes for the engine.
+
+
+## 2026-07-06 — update 31: the desktop standalone launcher is BUILT — your "API only" artifact is real; one caveat lives in `agent/cli.py` (your call)
+
+Overnight run delivered `feat/desktop-standalone` (awaiting Quentin's merge word). What's in it, from your side of the fence:
+
+1. **The server-only artifact exists and is E2E-proven.** `condense-server-x86_64-unknown-linux-gnu.tar.gz` (128MB: PyInstaller onedir engine + `sift-agent-cli` + `run.sh`/`run.bat` + `env.example` + README) was built, unpacked fresh, booted via `run.sh`, and passed a real ingest→search→answer loop tonight. CI (`.github/workflows/build-desktop.yml`, triggered on this branch's pushes + `v*` tags) builds it for Linux/macOS/Windows and attaches all assets to the release page from tag `v0.4.0` — stable names your landing page can link directly: `condense-server-<triple>.tar.gz`/`.zip` for "API only", `Condense_*.deb/.AppImage/.dmg/.exe` for the full app. The desktop app downloads THE SAME server artifact at first run (D62/D63), so the two download buttons can never drift.
+2. **Local embeddings without TEI/Docker**: the app runs llama.cpp's `llama-server` with `bge-m3-Q8_0.gguf` — measured cosine > 0.999 vs your TEI on identical strings (D61), so DBs are interchangeable. TEI/compose path untouched.
+3. **CROSS-BOUNDARY caveat found in `agent/cli.py` (yours — no change made, your call, D65):** in `--watch --json` mode under a supervisor, the CLI survives *unsignalled* parent death (hard app crash): the main thread blocks on `stop_event.wait()` forever, and the `BrokenPipeError` from a dead stdout only surfaces inside the Watcher callback thread, never waking the main thread. Clean/signalled quits are fine (your SIGTERM handling works — verified). Two candidate fixes we'd propose: a `--parent-pid <pid>` flag with a cheap poll (portable, ~10 lines), or catching `BrokenPipeError` in `emit()` and setting `stop_event`. Happy to implement either at your word, or take it yourself.
+4. Also merged tonight (all on the branch): `Settings.api_bind`/`api_port` (config-parity maintained), `packaging/sift-engine.spec` + entry (flagged in update 30), and a `desktop/` Tauri workspace that doesn't touch your dirs.
+
+Landing-page suggestion when v0.4.0 tags: Download → "Condense for Ubuntu/.deb · macOS/.dmg · Windows/.exe" + a secondary "Server only (API, no UI)" row → the tar.gz/zip assets. Screenshots of the first-run wizard available if you want them for the page.
+
+---
+
+## 2026-07-08 — update 32: full-repo audit + public-hardening wave merged (#22–#25), your desktop-standalone caveat re-raised, the 06-28 test-isolation bug closed out, and a CRITICAL history-rewrite heads-up
+
+A repo-wide audit + hardening pass ran today. Several things concern you directly.
+
+**1. Your tri-review (#22) — reviewed, merged, thank you.** All 19 fixes landed on `main`. Headline: the `/status` secret-redaction gap (`ocr_api_key` was leaking in plaintext) is closed, plus constant-time bearer comparisons throughout `api/deps.py` (CWE-208) and a proper CI pipeline (SAST, web, quality). Genuinely good catches — appreciated.
+
+**2. Also merged since: #23, #24, #25 (one line each).** #23 — compose now publishes loopback-only by default (`API_HOST`/`WEB_HOST` opt-in for LAN), `api` container runs non-root, the README security section is honest again (D70). #24 — `/v1/tokens` master-gated mint/list/revoke, runtime-live, operator-persists the `env_line` (D69). #25 — `pipelines/search.py` returns a core `SearchOutcome` instead of importing `api.schemas` (closes a real dependency-rule violation), a new AST-based layering contract test, `CHUNK_TOKENIZER=auto` (D72). **Pending, not yet pushed:** `chore/supply-chain` (pinned Actions + a maintained/verified AppImage tool + bounded dependency ranges, D71) — blocked on a `gh` token-scope fix on this end, not abandoned.
+
+**3. Full-repo audit ran today.** `main` was verified green end to end: the suite grew from 500 → 518 tests across the merges above, `ruff`/`pyright`/CI (python + sast + web) all clean at `f9cf38c`.
+
+**4. Re-raising the OPEN ask from update 31 — your call, still waiting.** The `agent/cli.py` `--watch --json` caveat: unsignalled parent death (a hard supervisor crash, not a clean SIGTERM) leaves the CLI blocked forever on `stop_event.wait()`, because the `BrokenPipeError` from a dead stdout only ever surfaces inside the Watcher's callback thread, never waking the main thread. Two candidate fixes are still on the table — a `--parent-pid <pid>` flag with a cheap poll (portable, ~10 lines), or catching `BrokenPipeError` directly in `emit()` and setting `stop_event`. Genuinely no preference on our end; whichever you'd rather implement (or tell us to take) is fine — just flagging that it's still open, not forgotten.
+
+**5. Desktop WP status.** Complete on `feat/desktop-standalone` (D60–D67) — Quentin is validating an installed build right now. Merge = `v0.4.0`, pending his word, not ours to call.
+
+**6. Closing out the 2026-06-28 test-isolation bug.** The "9 failed" markitdown-import side-effect flagged back then no longer reproduces on current `main` — both the full suite and a targeted repro of the original failure pattern are green. Likely dependency drift resolved it incidentally rather than anyone fixing it directly. Closing it out rather than leaving it open indefinitely; shout if you ever see it resurface.
+
+**7. Gentle ask: your docs look frozen.** `docs/Arthur/active/` and your `ROADMAP` haven't moved since 2026-06-27, and `docs/Arthur/archive/` was never created (mirroring our `docs/Quentin/archive/`) despite several WPs having shipped since. No urgency, just flagging in case it's an oversight rather than deliberate — a close-out cycle whenever you're back would keep the two doc trees comparable the way D14 intended.
+
+**8. CRITICAL — read before you next push anything.** An imminent history rewrite will **force-push every ref** (`main` and `feat/desktop-standalone` both) to scrub some confidential pilot-client references that made it into history before the repo went public. Practical consequences for you: **do not push from any existing local clone once this lands** — the ref history will have diverged underneath it and a normal push will either fail or (worse) try to reconcile two incompatible histories. **Re-clone fresh** afterward rather than trying to rebase/pull an old clone forward. Also: old PR refs on GitHub may still serve pre-rewrite blobs until GitHub support runs a purge on their end — this is expected and not a sign the rewrite failed. Will confirm here the moment it's done and re-clone is safe. — Quentin/Dev B

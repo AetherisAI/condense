@@ -1,3 +1,5 @@
+> **Historical (Step-0, 2026-06-27)** — for current state see `README.md`, `docs/api-schema.md`, `CLAUDE.md` §9.
+
 # Step 0 — The Foundation
 
 > Step 0 freezes the **contracts** so two people can build the two halves of Sift in
