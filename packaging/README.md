@@ -190,3 +190,48 @@ is the SAME artifact CI publishes as its own release asset (next to the desktop 
 the one the desktop launcher's local mode downloads and supervises — one build, both consumption
 paths, so they can't drift apart. See `packaging/server-bundle/README.md` for the end-user-facing
 quickstart and layout.
+
+## Install — the Tauri desktop app (end users, not developers)
+
+`scripts/install-<os>.*` are end-user installers for the Tauri desktop shell (`desktop/`, D60-D64)
+— idempotent, no-sudo-where-possible, and each resolves its artifact in the same order: an
+explicit local file first, then the newest GitHub Release asset, then a clear error pointing at
+CI artifacts if neither exists yet (true today — no `v0.4.0` tag has been cut, so
+`desktop/provisioning/manifest.json`'s own engine-download URLs are placeholders too; see
+`desktop/TESTING.md`'s test-kit workaround for exercising the app before a real release exists).
+
+| OS | Script | Notes |
+|----|--------|-------|
+| Linux | `scripts/install-ubuntu.sh` | Prefers the AppImage (`~/Applications/Condense.AppImage` + a `~/.local/share/applications/condense.desktop` entry). Falls back to extracting a `.deb` with `dpkg -x` into `~/.local/opt/condense` — never `dpkg -i`, so no root is ever required. `--uninstall` reverses it. |
+| macOS | `scripts/install-macos.sh` | **UNTESTED — no macOS hardware.** Mounts the `.dmg` (`hdiutil attach`), copies the `.app` to `~/Applications`, detaches. `--uninstall` removes it. |
+| Windows | `scripts/install-windows.ps1` | **UNTESTED — no Windows machine.** Downloads the NSIS `.exe` installer and launches it (`-Silent` for a silent install attempt). `-Uninstall` drives the registered uninstaller. |
+
+All three accept an explicit artifact instead of hitting the network:
+```bash
+scripts/install-ubuntu.sh --file ./Condense_0.4.0_amd64.AppImage
+scripts/install-macos.sh  --file ./Condense_0.4.0_aarch64.dmg      # untested
+```
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -File .\Condense_0.4.0_x64-setup.exe   # untested
+```
+
+### From a CI build (before any tagged release exists)
+`build-desktop.yml`'s `desktop` job artifacts are only uploaded to the GitHub Release on a `v*`
+tag push (see the workflow's `release` job) — a plain branch push only builds and verifies the
+bundle exists, it does not publish anywhere `gh release download` can see. Until `v0.4.0` (or
+later) is tagged, grab a build straight from the workflow run instead:
+```bash
+gh run list --repo AetherisAI/condense --workflow build-desktop.yml --branch feat/desktop-standalone
+gh run download <run-id> --repo AetherisAI/condense --name condense-desktop-x86_64-unknown-linux-gnu
+scripts/install-ubuntu.sh --file <extracted .deb or .AppImage>
+```
+(Swap the artifact name for `condense-desktop-aarch64-apple-darwin` / `condense-desktop-x86_64-pc-windows-msvc`
+on the other two platforms.) **Caveat found while writing these scripts:** every `desktop` matrix
+job on this branch has so far failed its own `Bundle exists` verification step even though the
+Tauri bundling itself succeeds — the step's glob (`bundle/deb/**/*.deb`) requires an extra
+directory level that `tauri-bundler`'s actual output (`bundle/deb/Condense_0.4.0_amd64.deb`,
+no nested subdirectory) doesn't have, so the job is marked red and no `condense-desktop-*`
+artifact is ever uploaded. Confirmed by reading the raw job logs: the `.deb`/`.AppImage` are built
+and listed by `tauri-bundler` right before the broken check step fails. Worth a follow-up fix to
+`.github/workflows/build-desktop.yml`'s `bundle_glob`/verification step — out of scope here since
+this WP is install-only, not a CI fix.
