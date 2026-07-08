@@ -91,6 +91,37 @@ class DocumentInfo:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class SearchSource:
+    """One search-result citation — the domain sibling of the API's ``api.schemas.Source``.
+
+    Mirrors that pydantic schema's fields exactly (``pipelines/search.py`` builds this, never
+    the API schema directly — the dependency rule: pipelines never import ``sift.api``); ``api/
+    routes.py``'s search handler maps this 1:1 onto ``Source`` for the HTTP response, so the
+    wire shape is unchanged even though the pipeline no longer constructs it.
+    """
+
+    path: str
+    page: int
+    score: float
+    snippet: str = ""
+    index: int | None = None
+    metadata: dict[str, str] | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchOutcome:
+    """The search pipeline's result: the recap plus its source citations.
+
+    The domain sibling of ``api.schemas.SearchResponse`` — :class:`~sift.pipelines.search.
+    SearchPipeline` returns this (stdlib-only, no pydantic), and ``api/routes.py``'s search
+    handler maps it 1:1 onto ``SearchResponse`` for the HTTP response.
+    """
+
+    summary: str
+    sources: list[SearchSource]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SearchFilters:
     """Narrows a :meth:`~sift.core.ports.VectorStore.search` candidate set (WP v0.2.0 T2, D38).
 

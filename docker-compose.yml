@@ -68,6 +68,8 @@ services:
       OCR_CONNECT_TIMEOUT_S: ${OCR_CONNECT_TIMEOUT_S:-5.0}
       CHUNK_SIZE: ${CHUNK_SIZE:-512}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-64}
+      # Chunk tokenizer (factory.py audit fix) — see .env.example.
+      CHUNK_TOKENIZER: ${CHUNK_TOKENIZER:-auto}
       # Degenerate-chunk floor (D50) — see .env.example.
       CHUNK_MIN_CHARS: ${CHUNK_MIN_CHARS:-24}
       # Parse guards (D34/D39) — see .env.example.
