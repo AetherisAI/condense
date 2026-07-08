@@ -17,12 +17,31 @@
       property="og:description"
       content="A self-contained document search engine. Point it at a folder, ask a question, get the single best answer with its source. Runs locally."
     />
+    <!--
+      NOTE: no confirmed deployed URL for this page exists yet (site/README.md only
+      suggests GitHub Pages as an option). og:url below is a best-guess placeholder
+      for the conventional project-Pages URL -- update it once the site has a real
+      home. og:image reuses the existing brand PNG (docs/assets/logo-256.png, 256x256)
+      via its raw.githubusercontent.com URL rather than shipping a dedicated
+      1200x630 export, which real hosting would want instead.
+    -->
+    <meta property="og:url" content="https://AetherisAI.github.io/condense/" />
+    <meta
+      property="og:image"
+      content="https://raw.githubusercontent.com/AetherisAI/condense/main/docs/assets/logo-256.png"
+    />
+    <meta property="og:image:width" content="256" />
+    <meta property="og:image:height" content="256" />
     <meta name="twitter:card" content="summary" />
 
     <style>
       /* ---------------------------------------------------------------------
-         Design tokens - copied verbatim from web/src/index.css so the landing
-         page is pixel-consistent with the Condense app. Light theme only.
+         Design tokens - copied verbatim from web/src/index.css / App.css so
+         the landing page is pixel-consistent with the Condense app, including
+         the app's real 12px/8px card rounding (--radius/--radius-sm below).
+         Buttons stay square to match the app too, but that's a separate,
+         deliberate `border-radius: 0` on .btn/.copy-btn, not this token.
+         Light theme only.
       --------------------------------------------------------------------- */
       :root {
         --text: #45424f;
@@ -43,8 +62,8 @@
         --btn: #7c5cff;
         --btn-hover: #6a45f0;
 
-        --radius: 0;
-        --radius-sm: 0;
+        --radius: 12px;
+        --radius-sm: 8px;
         --shadow-sm: rgba(16, 14, 24, 0.04) 0 1px 2px, rgba(16, 14, 24, 0.04) 0 1px 1px;
         --shadow: rgba(16, 14, 24, 0.06) 0 10px 24px -8px,
           rgba(16, 14, 24, 0.05) 0 4px 8px -4px;
@@ -188,7 +207,7 @@
         font-weight: 500;
         letter-spacing: 0.01em;
         padding: 12px 24px;
-        border-radius: 0;
+        border-radius: 0; /* square — matches the app's own `button { border-radius: 0 }` */
         border: 1px solid transparent;
         cursor: pointer;
         transition: background 0.15s ease, border-color 0.15s ease, transform 0.06s ease,
@@ -251,10 +270,14 @@
         padding: 13px 16px;
         font-family: var(--mono);
         font-size: 13px;
+        overflow: hidden;
+      }
+      .cmd-scroll {
+        flex: 1;
+        min-width: 0;
         overflow-x: auto;
       }
       .install-cmd code {
-        flex: 1;
         white-space: pre;
         color: var(--text-h);
       }
@@ -732,25 +755,27 @@
         </p>
 
         <div class="install-cmd" style="margin-top: 28px">
-          <code id="install-oneliner">curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh</code>
+          <div class="cmd-scroll">
+            <code id="install-oneliner">curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh</code>
+          </div>
           <button class="copy-btn" type="button" data-copy-target="install-oneliner" aria-label="Copy install command">Copy</button>
         </div>
 
         <div class="platform-row" id="platform-row" style="margin-top: 16px">
-          <a class="btn btn-secondary platform-btn" data-os="linux"
-             href="https://github.com/AetherisAI/condense/releases/latest/download/Condense_amd64.AppImage">
+          <a class="btn btn-secondary platform-btn soon" data-os="linux"
+             href="https://github.com/AetherisAI/condense/releases" aria-disabled="true">
             <span class="platform-badge">soon</span>
             <span class="platform-main">🐧 Linux</span>
             <span class="asset-note">.AppImage · .deb</span>
           </a>
-          <a class="btn btn-secondary platform-btn" data-os="macos"
-             href="https://github.com/AetherisAI/condense/releases/latest/download/Condense_aarch64.dmg">
+          <a class="btn btn-secondary platform-btn soon" data-os="macos"
+             href="https://github.com/AetherisAI/condense/releases" aria-disabled="true">
             <span class="platform-badge">soon</span>
             <span class="platform-main">🍎 macOS</span>
             <span class="asset-note">.dmg</span>
           </a>
-          <a class="btn btn-secondary platform-btn" data-os="windows"
-             href="https://github.com/AetherisAI/condense/releases/latest/download/Condense_x64-setup.exe">
+          <a class="btn btn-secondary platform-btn soon" data-os="windows"
+             href="https://github.com/AetherisAI/condense/releases" aria-disabled="true">
             <span class="platform-badge">soon</span>
             <span class="platform-main">🪟 Windows</span>
             <span class="asset-note">.exe</span>
@@ -761,20 +786,20 @@
         <div class="server-row-wrap">
           <div class="section-label" style="margin-bottom: 12px">Server only · API, no UI</div>
           <div class="platform-row" id="server-row">
-            <a class="btn btn-secondary platform-btn" data-os="linux" data-server="1"
-               href="https://github.com/AetherisAI/condense/releases/latest/download/condense-server-x86_64-unknown-linux-gnu.tar.gz">
+            <a class="btn btn-secondary platform-btn soon" data-os="linux" data-server="1"
+               href="https://github.com/AetherisAI/condense/releases" aria-disabled="true">
               <span class="platform-badge">soon</span>
               <span class="platform-main">🐧 Linux</span>
               <span class="asset-note">.tar.gz</span>
             </a>
-            <a class="btn btn-secondary platform-btn" data-os="macos" data-server="1"
-               href="https://github.com/AetherisAI/condense/releases/latest/download/condense-server-aarch64-apple-darwin.tar.gz">
+            <a class="btn btn-secondary platform-btn soon" data-os="macos" data-server="1"
+               href="https://github.com/AetherisAI/condense/releases" aria-disabled="true">
               <span class="platform-badge">soon</span>
               <span class="platform-main">🍎 macOS</span>
               <span class="asset-note">.tar.gz</span>
             </a>
-            <a class="btn btn-secondary platform-btn" data-os="windows" data-server="1"
-               href="https://github.com/AetherisAI/condense/releases/latest/download/condense-server-x86_64-pc-windows-msvc.zip">
+            <a class="btn btn-secondary platform-btn soon" data-os="windows" data-server="1"
+               href="https://github.com/AetherisAI/condense/releases" aria-disabled="true">
               <span class="platform-badge">soon</span>
               <span class="platform-main">🪟 Windows</span>
               <span class="asset-note">.zip</span>
@@ -1166,9 +1191,26 @@
               });
             });
             if (note) {
-              note.textContent = anyFound
-                ? (release.tag_name || 'Latest') + ' is out — click a platform above to download.'
-                : 'First release coming with v0.4.0 — pick a platform above once it lands.';
+              if (anyFound) {
+                note.textContent = (release.tag_name || 'Latest') + ' is out — click a platform above to download.';
+              } else {
+                // A release exists (res.ok was true above) but none of its assets match
+                // our expected naming for this platform yet -- this is NOT the "nothing
+                // has shipped" case allSoon() handles, so say so accurately instead of
+                // implying no release exists at all.
+                note.textContent = '';
+                note.appendChild(
+                  document.createTextNode(
+                    'Latest release is ' + (release.tag_name || 'out') +
+                      '; installers for this platform aren’t published yet. See '
+                  )
+                );
+                var relLink = document.createElement('a');
+                relLink.href = RELEASES_URL;
+                relLink.textContent = 'Releases';
+                note.appendChild(relLink);
+                note.appendChild(document.createTextNode('.'));
+              }
             }
           })
           .catch(allSoon);
