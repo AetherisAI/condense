@@ -140,6 +140,7 @@ export default function Library({
         role="dialog"
         aria-label="Library"
         aria-hidden={!open}
+        inert={!open}
       >
         <div className="drawer-head">
           <h2>Library</h2>
@@ -180,7 +181,9 @@ export default function Library({
                     <span className="doc-name" title={d.path}>
                       {fileName(d.path)}
                     </span>
-                    <span className="doc-sub">{d.chunks} chunks</span>
+                    <span className="doc-sub">
+                      {d.chunks} chunk{d.chunks === 1 ? '' : 's'}
+                    </span>
                   </span>
                   <button
                     type="button"
