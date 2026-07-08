@@ -152,7 +152,7 @@ export default function ChatHistory({
     <>
       {open && <div className="drawer-backdrop" onClick={() => onOpenChange(false)} />}
 
-      <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open}>
+      <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open} inert={!open}>
         <div className="drawer-head">
           <h2>History</h2>
           {count > 0 && <span className="drawer-count">{count}</span>}

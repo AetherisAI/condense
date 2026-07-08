@@ -47,6 +47,8 @@
   letter-spacing: -0.2px;
   color: var(--text-h);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-actions {
@@ -1706,7 +1708,7 @@ button:disabled {
 /* ---- History drawer rows (Chat panel, P2) — reuses the Library drawer's .drawer-item/
    .doc-meta/.doc-name/.doc-sub, just with a click-to-open button instead of a static row. */
 .history-item {
-  padding: 0;
+  padding: 0 12px 0 0;
 }
 
 .history-open {
@@ -2097,6 +2099,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ---- Segmented pill (D46; generic since D57/Task U3) — a compact segmented control, same

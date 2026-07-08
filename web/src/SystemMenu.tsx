@@ -384,6 +384,7 @@ const SystemMenu = forwardRef<
         role="dialog"
         aria-label="System status"
         aria-hidden={!open}
+        inert={!open}
       >
         <div className="drawer-head">
           <h2>System</h2>

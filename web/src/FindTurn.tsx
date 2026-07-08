@@ -100,7 +100,9 @@ const FindRow = memo(function FindRow({
             {fileName(hit.source_path)}
           </span>
           {showPageBadge(hit.page) && <span className="badge badge-page">p. {hit.page}</span>}
-          <span className="badge badge-score">{(hit.score * 100).toFixed(0)}% match</span>
+          <span className="badge badge-score">
+            {Math.max(0, hit.score * 100).toFixed(0)}% match
+          </span>
           {modified && <span className="badge badge-date">{modified}</span>}
         </span>
         {snippet && (
