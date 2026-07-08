@@ -74,3 +74,34 @@ async def resolve_tenant(
         detail="Invalid or missing bearer token",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def require_master(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    container: Annotated[Container, Depends(get_container)],
+) -> None:
+    """Gate token-management routes (``api/tokens.py``) to the master ``ingest_token`` ONLY.
+
+    Minting/revoking per-consumer bearer tokens is a higher-privilege action than anything
+    :func:`resolve_tenant` gates, so it gets its own chokepoint rather than reusing
+    ``resolve_tenant`` (which would let any already-issued consumer token mint or revoke others,
+    including itself). Same constant-time compare and same 401 shape as ``resolve_tenant`` for a
+    missing/unrecognized token; a recognized per-consumer token is rejected 403 with a distinct,
+    actionable detail rather than a bare 401 — the caller has *a* valid token, just not the
+    master one.
+    """
+    if credentials is not None:
+        token = credentials.credentials
+        ingest_token = container.settings.ingest_token
+        if ingest_token and hmac.compare_digest(token, ingest_token):
+            return
+        if _match_consumer(token, container.auth_tokens) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="master token required",
+            )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or missing bearer token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
