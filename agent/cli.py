@@ -227,97 +227,108 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
             exclude_files=exclude_files,
         )
     ]
-    known = client.manifest(args.tenant)
-    todo = [(rel, h, data, mtime) for rel, h, data, mtime in files if h not in known]
-    skipped_known = len(files) - len(todo)  # already on the server — never even sent (D45 parity)
-    if not todo:
-        if args.json:
-            emit(
-                {
-                    "event": "sync",
-                    "indexed": 0,
-                    "replaced": 0,
-                    "deleted": 0,
-                    "skipped": skipped_known,
-                    "failed": 0,
-                    "failures": [],
-                }
-            )
-        else:
-            print("nothing to upload (all known)")
-        return 0
-    if args.dry_run:
-        if args.json:
-            emit(
-                {
-                    "event": "dry_run",
-                    "would_upload": [{"path": rel, "hash": h} for rel, h, _data, _m in todo],
-                }
-            )
-        else:
-            for rel, h, _data, _m in todo:
-                print(f"WOULD UPLOAD {rel} ({h})")
-        return 0
+    # Everything below hits the network (manifest, then ingest) — guarded the same way _watch()
+    # guards its own network calls: in --json mode, an unexpected error (e.g. the server being
+    # unreachable) becomes one clean {"event": "fatal", ...} line instead of a raw traceback on
+    # stdout; without --json, behaviour is unchanged (let it crash as it always has).
     try:
-        resp = client.ingest(
-            args.tenant,
-            [(rel, data) for rel, _h, data, _m in todo],
-            modified_at={rel: mtime for rel, _h, _data, mtime in todo},
-        )
-    except PartialIngestError as exc:
-        # One or more batches landed before a later one failed (A4) — report every status the
-        # server actually confirmed rather than nothing, then a clear, greppable summary so a
-        # partial ingest can never read as either "silent success" or "total failure".
-        results = exc.partial.get("results", [])
-        indexed = sum(1 for r in results if r.get("status") == "indexed")
-        skipped = sum(1 for r in results if r.get("status") == "skipped_dedup")
-        failed_results = [r for r in results if r.get("status") == "failed"]
-        never_attempted = len(todo) - len(results)
+        known = client.manifest(args.tenant)
+        todo = [(rel, h, data, mtime) for rel, h, data, mtime in files if h not in known]
+        skipped_known = len(files) - len(todo)  # already on server — never even sent (D45 parity)
+        if not todo:
+            if args.json:
+                emit(
+                    {
+                        "event": "sync",
+                        "indexed": 0,
+                        "replaced": 0,
+                        "deleted": 0,
+                        "skipped": skipped_known,
+                        "failed": 0,
+                        "failures": [],
+                    }
+                )
+            else:
+                print("nothing to upload (all known)")
+            return 0
+        if args.dry_run:
+            if args.json:
+                emit(
+                    {
+                        "event": "dry_run",
+                        "would_upload": [{"path": rel, "hash": h} for rel, h, _data, _m in todo],
+                    }
+                )
+            else:
+                for rel, h, _data, _m in todo:
+                    print(f"WOULD UPLOAD {rel} ({h})")
+            return 0
+        try:
+            resp = client.ingest(
+                args.tenant,
+                [(rel, data) for rel, _h, data, _m in todo],
+                modified_at={rel: mtime for rel, _h, _data, mtime in todo},
+            )
+        except PartialIngestError as exc:
+            # One or more batches landed before a later one failed (A4) — report every status the
+            # server actually confirmed rather than nothing, then a clear, greppable summary so a
+            # partial ingest can never read as either "silent success" or "total failure".
+            results = exc.partial.get("results", [])
+            indexed = sum(1 for r in results if r.get("status") == "indexed")
+            skipped = sum(1 for r in results if r.get("status") == "skipped_dedup")
+            failed_results = [r for r in results if r.get("status") == "failed"]
+            never_attempted = len(todo) - len(results)
+            if args.json:
+                emit(
+                    {
+                        "event": "sync",
+                        "indexed": indexed,
+                        "replaced": 0,
+                        "deleted": 0,
+                        "skipped": skipped_known + skipped,
+                        "failed": len(failed_results),
+                        "failures": [
+                            {"path": r.get("path"), "error": r.get("detail")}
+                            for r in failed_results
+                        ],
+                        "error": str(exc),
+                        "never_attempted": never_attempted,
+                    }
+                )
+            else:
+                for r in results:
+                    print(f"{r['status']}\t{r['path']}")
+                print(
+                    f"PARTIAL: {indexed} indexed, {skipped} skipped, {len(failed_results)} failed, "
+                    f"{never_attempted} of {len(todo)} files never attempted ({exc})"
+                )
+            return 1
+        results = resp["results"]
         if args.json:
+            failed_results = [r for r in results if r.get("status") == "failed"]
             emit(
                 {
                     "event": "sync",
-                    "indexed": indexed,
+                    "indexed": sum(1 for r in results if r.get("status") == "indexed"),
                     "replaced": 0,
                     "deleted": 0,
-                    "skipped": skipped_known + skipped,
+                    "skipped": skipped_known
+                    + sum(1 for r in results if r.get("status") == "skipped_dedup"),
                     "failed": len(failed_results),
                     "failures": [
                         {"path": r.get("path"), "error": r.get("detail")} for r in failed_results
                     ],
-                    "error": str(exc),
-                    "never_attempted": never_attempted,
                 }
             )
         else:
             for r in results:
                 print(f"{r['status']}\t{r['path']}")
-            print(
-                f"PARTIAL: {indexed} indexed, {skipped} skipped, {len(failed_results)} failed, "
-                f"{never_attempted} of {len(todo)} files never attempted ({exc})"
-            )
+        return 0
+    except Exception as exc:
+        if not args.json:
+            raise  # unchanged human behaviour: let it crash with a traceback
+        emit({"event": "fatal", "error": str(exc)})
         return 1
-    results = resp["results"]
-    if args.json:
-        failed_results = [r for r in results if r.get("status") == "failed"]
-        emit(
-            {
-                "event": "sync",
-                "indexed": sum(1 for r in results if r.get("status") == "indexed"),
-                "replaced": 0,
-                "deleted": 0,
-                "skipped": skipped_known
-                + sum(1 for r in results if r.get("status") == "skipped_dedup"),
-                "failed": len(failed_results),
-                "failures": [
-                    {"path": r.get("path"), "error": r.get("detail")} for r in failed_results
-                ],
-            }
-        )
-    else:
-        for r in results:
-            print(f"{r['status']}\t{r['path']}")
-    return 0
 
 
 if __name__ == "__main__":
