@@ -87,12 +87,6 @@ _UPSERT_META = (
     "ON CONFLICT(tenant, conversation_id) DO UPDATE SET updated_at = excluded.updated_at"
 )
 
-_CONVERSATIONS_TABLE_EXISTS = (
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'conversations'"
-)
-
-_COUNT_TURNS = "SELECT COUNT(*) FROM conversations WHERE tenant = ? AND conversation_id = ?"
-
 _MAX_TURN = "SELECT MAX(turn) FROM conversations WHERE tenant = ? AND conversation_id = ?"
 
 _INSERT_TURN = (
@@ -167,6 +161,7 @@ class LibSQLConversationStore:
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._lock = asyncio.Lock()
         self._conn: Any = None
+        self._migrated = False  # schema reconciled once per process (see `_ensure_schema`)
 
     def _connection(self) -> Any:
         if self._conn is None:
@@ -258,7 +253,16 @@ class LibSQLConversationStore:
         """Create-if-missing every table, ALTER-if-missing every additive column — run at the
         top of EVERY job (read or write) so a fresh process's first call, whichever it is,
         never 500s against a not-yet-migrated database (mirrors the BUG #1 fix in
-        ``pipelines/tools.py``'s executors)."""
+        ``pipelines/tools.py``'s executors).
+
+        The reconciliation is idempotent and can never change once done, so it runs at most once
+        per process: after the first successful pass ``_migrated`` short-circuits every later
+        call. All jobs are serialized on the single-worker executor over one long-lived
+        connection, so the flag is race-free. This turns the ~6 create/probe statements that
+        previously fired on *every* job (~24 per chat turn against remote Turso) into a one-time
+        cost, and collapses the double-migrate in ``_get_conversation_job`` → ``_history_job``."""
+        if self._migrated:
+            return
         conn.execute(_DDL_CONVERSATIONS)
         if not conn.execute(_CONVERSATIONS_HAS_SOURCES).fetchall():
             conn.execute(_ALTER_CONVERSATIONS_ADD_SOURCES)
@@ -269,6 +273,7 @@ class LibSQLConversationStore:
         if not conn.execute(_CONVERSATIONS_HAS_GROUNDING_SEGMENTS).fetchall():
             conn.execute(_ALTER_CONVERSATIONS_ADD_GROUNDING_SEGMENTS)
         conn.execute(_DDL_CONVERSATIONS_META)
+        self._migrated = True
 
     def _append_turn_job(
         self,
@@ -331,13 +336,34 @@ class LibSQLConversationStore:
         conn = self._connection()
         self._ensure_schema(conn)
         cutoff = (datetime.now(UTC) - timedelta(days=ttl_days)).isoformat()
-        stale = conn.execute(_SELECT_STALE_CONVERSATION_IDS, (tenant, cutoff)).fetchall()
-        deleted = 0
-        for (conversation_id,) in stale:
-            count = conn.execute(_COUNT_TURNS, (tenant, conversation_id)).fetchall()[0][0]
-            conn.execute(_DELETE_CONVERSATION, (tenant, conversation_id))
-            conn.execute(_DELETE_CONVERSATION_META, (tenant, conversation_id))
-            deleted += count
+        stale_ids = [
+            row[0]
+            for row in conn.execute(_SELECT_STALE_CONVERSATION_IDS, (tenant, cutoff)).fetchall()
+        ]
+        if not stale_ids:
+            return 0
+        # Set-based prune: one COUNT + two DELETEs keyed on the whole stale set, instead of the
+        # old per-conversation COUNT+DELETE+DELETE loop (1 + 3*M statements → 3 total).
+        # The only interpolated text is `placeholders` — a run of bound `?` markers built purely
+        # from len(stale_ids); every actual value is passed via `params`, so despite the f-strings
+        # this is NOT SQL injection (bandit B608 is a false positive here, hence the nosec markers).
+        placeholders = ",".join("?" * len(stale_ids))
+        params = (tenant, *stale_ids)
+        deleted = conn.execute(
+            f"SELECT COUNT(*) FROM conversations "  # nosec B608
+            f"WHERE tenant = ? AND conversation_id IN ({placeholders})",
+            params,
+        ).fetchall()[0][0]
+        conn.execute(
+            f"DELETE FROM conversations "  # nosec B608
+            f"WHERE tenant = ? AND conversation_id IN ({placeholders})",
+            params,
+        )
+        conn.execute(
+            f"DELETE FROM conversations_meta "  # nosec B608
+            f"WHERE tenant = ? AND conversation_id IN ({placeholders})",
+            params,
+        )
         conn.commit()
         return deleted
 

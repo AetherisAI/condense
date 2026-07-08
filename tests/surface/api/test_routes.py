@@ -172,6 +172,9 @@ def test_status_redacts_every_secret_key() -> None:
         "llm_api_key": "llm-secret",
         "ingest_token": _TOKEN,
         "ocr_api_key": "ocr-secret",
+        # Per-consumer bearer credentials — redacted like any other secret so /status can't be
+        # used to harvest every consumer's plaintext token (security review, 2026-07-06).
+        "auth_tokens": "consumer-a:tok-a,consumer-b:tok-b",
     }
     # Keep this fixture honest: if a new secret is added to _SECRET_KEYS without a value here
     # (or vice versa), fail the test rather than silently under-covering it.

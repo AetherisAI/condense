@@ -19,9 +19,8 @@ from sift.core.types import Hit
 class CrossEncoderReranker:
     """Reranker backed by a TEI ``/rerank`` HTTP endpoint."""
 
-    def __init__(self, base_url: str, model: str | None = None) -> None:
+    def __init__(self, base_url: str) -> None:
         self._base_url = base_url.rstrip("/")
-        self._model = model
 
     async def rerank(self, query: str, candidates: list[Hit]) -> list[Hit]:
         if not candidates:
