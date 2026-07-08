@@ -1146,13 +1146,26 @@ button:disabled {
   line-height: 1.5;
 }
 .sys-key {
+  display: inline-flex;
+  align-items: center;
   color: var(--muted);
   white-space: nowrap;
+  flex-shrink: 0; /* the label column never gives up space to a long, ellipsis-truncated value */
 }
+/* Single-line, ellipsis-truncated value (this WP) — was `word-break: break-all`, which wrapped
+   any URL/path/token longer than the value column raw, character-by-character, ballooning a
+   single settings row to 5-7 lines. `min-width: 0` is what actually lets this flex item (a child
+   of `.sys-row-right`, itself `min-width: 0` above) shrink below its text's intrinsic width so
+   the ellipsis has room to kick in, instead of forcing the row to overflow. The full string
+   always stays available via the row's own `title` attribute (see `SettingRow.tsx`) plus, for
+   copyable string values, an inline copy button. */
 .sys-val {
+  min-width: 0;
   color: var(--text-h);
   text-align: right;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sys-null {
   color: var(--muted);
@@ -1808,21 +1821,49 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0; /* let sys-val actually shrink to its ellipsis-truncated width, see .sys-val below */
 }
 .sys-row-restart .sys-val {
   color: var(--muted);
 }
-.sys-restart-badge {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
+
+/* ---- Restart-required indicator (this WP) — replaces the old `.sys-restart-badge`, which lived
+   in `.sys-row-right` beside a (potentially multi-line, word-break:break-all-wrapped) value: with
+   `align-items:center`, a long wrapped value dragged the badge to the vertical midpoint of an
+   N-line block instead of staying pinned to line 1. Both replacements below live on the LABEL
+   line instead (`.sys-key`, `white-space:nowrap`), which is always exactly one line, so their
+   position is deterministic regardless of how the value renders. */
+.sys-restart-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 5px;
+  border-radius: 50%;
   background: var(--page-bg);
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 1px 5px;
+  color: var(--muted);
   cursor: help;
+  vertical-align: middle;
+}
+.sys-restart-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-h);
+  background: var(--page-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.sys-restart-banner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--muted);
 }
 .sys-saved {
   font-size: 11px;
@@ -1845,16 +1886,40 @@ button:disabled {
   }
 }
 
-/* Reuse the Search panel's info-tooltip pattern for each setting's one-line explanation. */
+/* Reuse the Search panel's info-icon trigger styling (`.mode-info`) for each setting's one-line
+   explanation — only the trigger glyph; the popup itself is `.sys-tip-portal` below, portaled to
+   `document.body` (`SettingsTooltip.tsx`) rather than CSS-anchored, so it can never be clipped by
+   `.drawer-body`'s scroll container again. */
 .sys-info {
   margin-left: 5px;
   font-size: 11px;
 }
-.sys-tip {
-  left: auto;
-  right: -8px;
-  width: 210px;
+
+/* Portal-rendered tooltip (this WP, replaces the old CSS-anchored `.sys-tip`, which extended
+   leftward from `right:-8px` and got clipped at the System drawer's own left edge by
+   `.drawer-body{overflow-y:auto}` forcing an implicit `overflow-x:auto` per the CSS Overflow
+   spec). `position:fixed` + a `left`/`top` computed from the trigger icon's own
+   `getBoundingClientRect()` (clamped to the viewport) means this box lives outside any scrolling
+   ancestor entirely — nothing can clip it. */
+.sys-tip-portal {
+  position: fixed;
+  z-index: 90;
+  width: 230px;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  color: #fff;
+  background: var(--text-h);
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  transform: translateY(-100%); /* anchors the box's BOTTOM edge to `top` (opens upward) */
+}
+.sys-tip-portal-below {
+  transform: translateY(0); /* anchors the box's TOP edge to `top` (opens downward) */
 }
 
 /* ---- System drawer, simple-first reorg (D57/Task U6) ------------------------ */
@@ -1963,6 +2028,13 @@ button:disabled {
 }
 .sys-advanced-body {
   padding-top: 6px;
+}
+/* Access tokens (this WP) — same `<summary>`/chevron/body styling as `.sys-advanced` above via
+   `.sys-advanced-summary`/`.sys-advanced-body`, but sits inside its own top-level `.sys-section`
+   (matching Connection/Model/Folder agent's rhythm) rather than nested one level down, so it
+   doesn't take `.sys-advanced`'s own extra border-top/margin-top on top of that section's. */
+.sys-access-tokens[open] .sys-advanced-chevron {
+  transform: rotate(90deg);
 }
 
 /* ---- Empty-corpus nudge (D57/Task U6) ---------------------------------------- */
@@ -2831,11 +2903,40 @@ button:disabled {
 }
 
 /* ---- Desktop section (SystemMenu, Tauri-only) -------------------------------- */
-.sys-mode-row {
+/* Mode choice (this WP) — replaces the bare two-word "Local"/"Client" `.grounding-select` pill
+   with the SAME card component the first-run wizard's own mode choice uses (`.wizard-choice`,
+   below), scoped smaller for the drawer via these two modifiers. Both full sentences are always
+   visible (not hidden behind hover), and the active one is highlighted — deliberately NOT a
+   `.grounding-select` reuse: that component is shared with the Ask/Find grounding pill elsewhere
+   in the app, and terse single-word labels don't fit a decision this consequential (switching
+   stops a running engine). */
+.sys-mode-select {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.sys-mode-choice {
+  /* `.wizard-choice`'s own `flex: 1 1 220px` targets its ORIGINAL row layout (`.wizard-choices`,
+     `flex-direction: row`) — under `.sys-mode-select`'s column layout that flex-basis would apply
+     to height instead of width, forcing each card to ~220px tall. Reset to content-sized. */
+  flex: none;
+  padding: 12px 14px;
+  gap: 3px;
+}
+.sys-mode-choice .wizard-choice-title {
+  font-size: 13px;
+}
+.sys-mode-choice .wizard-choice-desc {
+  font-size: 11.5px;
+}
+.sys-mode-choice.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.sys-mode-choice:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .sys-backend-rows {
@@ -2857,16 +2958,29 @@ button:disabled {
   margin-bottom: 4px;
 }
 
-/* One-line value with ellipsis (the manifest URL would otherwise wrap over several lines) —
-   the full string stays available via the row's `title` tooltip. `min-width: 0` lets the flex
-   item actually shrink; `word-break: normal` undoes `.sys-val`'s break-all so the ellipsis
-   applies instead of a mid-token wrap. */
-.sys-val-trunc {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
+/* Small icon-only copy button beside a truncated `.sys-val` (this WP) — smaller sibling of
+   `.copy-btn` (AccessTokens.tsx's rectangular text button), sized to sit inline after a one-line
+   value without disturbing the row's fixed height. */
+.sys-copy-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.sys-copy-btn:hover {
+  color: var(--accent-ui-strong);
+  border-color: var(--accent-ui);
 }
 
 /* ---- Folder agent live controls (SystemMenu, Tauri-only) --------------------- */

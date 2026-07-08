@@ -1,9 +1,11 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import AccessTokens from './AccessTokens'
 import AgentDownloads from './AgentDownloads'
 import { apiFetch, apiUrl, getApiBase, setApiBase } from './api'
 import { detectProvider } from './provider'
 import { isTauri } from './platform'
+import SettingRow from './SettingRow'
+import { RestartIcon } from './SettingsIcons'
 import {
   agentStart,
   agentStatus,
@@ -57,12 +59,6 @@ type StatusResponse = {
 
 type Health = 'up' | 'down' | 'unknown'
 
-function fmt(v: unknown): string {
-  if (v === null || v === undefined) return '—'
-  if (typeof v === 'boolean') return v ? 'true' : 'false'
-  return String(v)
-}
-
 /** Map a component status onto a status-dot modifier (no green — bluish-purple = ok). */
 function dotFor(status: string): string {
   if (status === 'ok') return 'sys-dot-up'
@@ -81,8 +77,67 @@ const EDITABLE = new Set([
   'final_k',
   'chunk_size',
   'chunk_overlap',
+  'chunk_tokenizer',
   'rerank_strategy',
 ])
+
+/** Human-readable label per settings key, shown instead of the raw `SNAKE_CASE` field name
+ * everywhere except the true "raw" escape hatch (an unmapped key in the Advanced accordion's
+ * leftover "Other" bucket, which has no entry here by construction). */
+const LABELS: Record<string, string> = {
+  store_backend: 'Store backend',
+  turso_database_url: 'Database URL',
+  turso_auth_token: 'Database auth token',
+  embed_base_url: 'Embedding base URL',
+  embed_model: 'Embedding model',
+  embed_dim: 'Embedding dimensions',
+  embed_api_key: 'Embedding API key',
+  embed_batch_size: 'Embedding batch size',
+  embed_timeout_s: 'Embedding timeout (s)',
+  embed_connect_timeout_s: 'Embedding connect timeout (s)',
+  embed_retry_attempts: 'Embedding retry attempts',
+  rerank_strategy: 'Rerank strategy',
+  rerank_base_url: 'Rerank base URL',
+  rerank_model: 'Rerank model',
+  retrieve_k: 'Retrieve K',
+  final_k: 'Final K',
+  version_collapse_enabled: 'Version collapsing',
+  version_similarity_threshold: 'Version similarity threshold',
+  recap_enabled: 'AI recap',
+  recap_context_k: 'Recap context K',
+  recap_max_tokens: 'Recap max tokens',
+  recap_temperature: 'Recap temperature',
+  source_snippet_chars: 'Source snippet length',
+  llm_base_url: 'Chat base URL',
+  llm_model: 'Chat model',
+  llm_api_key: 'Chat API key',
+  answer_tool_mode: 'Answer tool mode',
+  answer_max_tool_calls: 'Max tool calls',
+  answer_timeout_s: 'Answer timeout (s)',
+  answer_max_tokens: 'Answer max tokens',
+  answer_history_max_turns: 'History turns kept',
+  answer_history_ttl_days: 'History TTL (days)',
+  answer_autotitle_enabled: 'Auto-title conversations',
+  answer_grounding_default: 'Grounding mode',
+  ocr_enabled: 'OCR fallback',
+  ocr_base_url: 'OCR base URL',
+  ocr_model: 'OCR model',
+  ocr_api_key: 'OCR API key',
+  ocr_timeout_s: 'OCR timeout (s)',
+  ocr_connect_timeout_s: 'OCR connect timeout (s)',
+  parse_max_xlsx_cells: 'Spreadsheet cell cap',
+  parse_max_chars: 'Parsed text cap (chars)',
+  parse_timeout_s: 'Parse timeout (s)',
+  chunk_size: 'Chunk size (tokens)',
+  chunk_overlap: 'Chunk overlap (tokens)',
+  chunk_tokenizer: 'Chunk tokenizer',
+  chunk_min_chars: 'Minimum chunk length',
+  ingest_token: 'Ingest token',
+  auth_tokens: 'Named access tokens',
+  tools_search_k: 'Default search hits',
+  tools_search_max_k: 'Max search hits',
+  cors_origins: 'Allowed origins (CORS)',
+}
 
 /** Model pins / base URLs / store backend / tokens — baked into the container at startup, so
  * changing one has no effect until the engine restarts. Shown read-only + greyed with a hint,
@@ -149,6 +204,9 @@ const EXPLANATIONS: Record<string, string> = {
   parse_max_xlsx_cells: 'Reject a spreadsheet whose declared used-range implies more cells than this.',
   chunk_size: 'Target tokens per chunk when splitting a document for embedding.',
   chunk_overlap: 'Tokens of overlap between consecutive chunks.',
+  chunk_tokenizer:
+    'Which tokenizer chunk boundaries are measured in — "auto" matches bge-m3 when EMBED_MODEL names it, tiktoken otherwise.',
+  chunk_min_chars: 'A chunk shorter than this after whitespace-collapsing is dropped, never embedded.',
   ingest_token: 'Bearer token required to upload documents.',
   parse_max_chars: "Reject a parsed document whose extracted text exceeds this many characters.",
   parse_timeout_s: 'Wall-clock timeout for parsing a single file.',
@@ -161,6 +219,12 @@ const EXPLANATIONS: Record<string, string> = {
   answer_max_tokens: 'Max tokens the final answer completion may generate.',
   answer_history_max_turns: "How many of a conversation's most recent turns are kept.",
   answer_history_ttl_days: 'How long an idle conversation survives before it can be pruned.',
+  answer_autotitle_enabled:
+    "Auto-generate a short conversation title from the first exchange, instead of using the raw first message.",
+  answer_grounding_default:
+    'Trust boundary for /v1/answer: strict = corpus-only, hybrid = may supplement with labeled general knowledge, open = unrestricted assistant.',
+  cors_origins:
+    'Comma-separated origins allowed to call the API cross-origin (the desktop webview needs this; the web UI is always same-origin).',
 }
 
 /** Grouped rendering order — mirrors .env.example's section headings (CLAUDE.md §7/§9). */
@@ -206,6 +270,8 @@ const GROUPS: { label: string; keys: string[] }[] = [
       'answer_max_tokens',
       'answer_history_max_turns',
       'answer_history_ttl_days',
+      'answer_autotitle_enabled',
+      'answer_grounding_default',
     ],
   },
   {
@@ -214,18 +280,26 @@ const GROUPS: { label: string; keys: string[] }[] = [
   },
   {
     label: 'Parsing guards',
-    keys: ['parse_max_xlsx_cells', 'parse_max_chars', 'parse_timeout_s', 'chunk_size', 'chunk_overlap'],
+    keys: [
+      'parse_max_xlsx_cells',
+      'parse_max_chars',
+      'parse_timeout_s',
+      'chunk_size',
+      'chunk_overlap',
+      'chunk_tokenizer',
+      'chunk_min_chars',
+    ],
   },
   {
     label: 'Ingest & auth',
-    keys: ['ingest_token', 'auth_tokens', 'tools_search_k', 'tools_search_max_k'],
+    keys: ['ingest_token', 'auth_tokens', 'tools_search_k', 'tools_search_max_k', 'cors_origins'],
   },
 ]
 
 /** Coerce a raw input string into the JSON value PATCH /settings expects for that key. */
 function coerce(key: string, raw: string): unknown {
   if (key === 'recap_enabled') return raw.trim().toLowerCase() === 'true'
-  if (key === 'rerank_strategy') return raw.trim()
+  if (key === 'rerank_strategy' || key === 'chunk_tokenizer') return raw.trim()
   return Number(raw)
 }
 
@@ -357,6 +431,26 @@ const SystemMenu = forwardRef<
   const [agentSyncOnceBusy, setAgentSyncOnceBusy] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
   const agentSeededRef = useRef(false)
+
+  // Persistent per-file "Files" table (this WP): the sidecar's NDJSON protocol only names a path
+  // for FAILURES and local SKIP decisions (`AgentLine`'s `sync` event carries just aggregate
+  // counts for indexed/replaced/deleted — no per-path list for successful indexes), so this is
+  // built from every `sync` line seen across the WHOLE session log, not just the latest sync —
+  // a later re-run overwrites an earlier entry for the same path, keeping only its most recent
+  // known status. Deliberately not claiming coverage of successfully-indexed files (see the note
+  // rendered alongside it below).
+  const agentFiles = useMemo(() => {
+    const map = new Map<string, { path: string; status: 'failed' | 'skipped'; detail: string }>()
+    for (const line of agentLog) {
+      const parsed = parseAgentLine(line)
+      if (!parsed || parsed.event !== 'sync') continue
+      for (const f of parsed.failures) map.set(f.path, { path: f.path, status: 'failed', detail: f.error })
+      for (const s of parsed.skipped_details) {
+        map.set(s.path, { path: s.path, status: 'skipped', detail: skipReasonLabel(s.reason) })
+      }
+    }
+    return [...map.values()].reverse()
+  }, [agentLog])
 
   useImperativeHandle(ref, () => ({
     scrollToAgent: () => {
@@ -572,6 +666,19 @@ const SystemMenu = forwardRef<
     } finally {
       setModeSwitching(false)
     }
+  }
+
+  /** Gate `handleModeSwitch` behind an explicit confirm (this WP) — switching mode stops whichever
+   * engine is currently running (the local backend, or the connection to a remote one), so it must
+   * never be one accidental click. */
+  function requestModeSwitch(mode: 'local' | 'client') {
+    if (!desktopConfig || desktopConfig.mode === mode || modeSwitching) return
+    const consequence =
+      mode === 'client'
+        ? 'This stops the local engine running on this computer. You will need a base URL and bearer token for the server you connect to.'
+        : 'This disconnects from the remote server and starts the local engine on this computer instead.'
+    if (!window.confirm(`Switch engine mode?\n\n${consequence}`)) return
+    void handleModeSwitch(mode)
   }
 
   async function handleBackendStart() {
@@ -797,6 +904,10 @@ const SystemMenu = forwardRef<
   }
 
   const detectedProvider = detectProvider(llmKeyDraft)
+  // Drives the ONE top-of-drawer restart banner (this WP) — how many of the currently-loaded
+  // settings are restart-only, counted against the actual response rather than the static
+  // `RESTART_REQUIRED` set's size, so it never over-counts a key this build doesn't expose.
+  const restartCount = data ? Object.keys(data.settings).filter((k) => RESTART_REQUIRED.has(k)).length : 0
 
   return (
     <>
@@ -826,6 +937,21 @@ const SystemMenu = forwardRef<
         </div>
 
         <div className="drawer-body">
+          {/* ---- ONE restart banner (this WP), replaces the old per-row floating "restart" tag
+                 that used to drift to the vertical midpoint of a wrapped long value. Each such
+                 row still carries its own small inline chip (see `SettingRow`), on the LABEL
+                 line where its position is deterministic — this banner is just the at-a-glance
+                 total. ------------------------------------------------------------------------ */}
+          {restartCount > 0 && (
+            <div className="sys-restart-banner">
+              <RestartIcon />
+              <span>
+                {restartCount} setting{restartCount === 1 ? '' : 's'} need{restartCount === 1 ? 's' : ''} a
+                restart to apply — edit .env and restart the engine.
+              </span>
+            </div>
+          )}
+
           {/* ---- Desktop (Tauri-only, D60/T2): mode switch + backend + component checks --- */}
           {isTauri && (
             <div className="sys-section">
@@ -835,27 +961,42 @@ const SystemMenu = forwardRef<
                 <p className="sys-muted">Loading…</p>
               ) : (
                 <>
-                  <div className="sys-mode-row">
-                    <span className="sys-label">Mode</span>
-                    <div className="grounding-select">
-                      <button
-                        type="button"
-                        className={`grounding-btn${desktopConfig.mode === 'local' ? ' active' : ''}`}
-                        onClick={() => handleModeSwitch('local')}
-                        disabled={modeSwitching}
-                      >
-                        Local
-                      </button>
-                      <button
-                        type="button"
-                        className={`grounding-btn${desktopConfig.mode === 'client' ? ' active' : ''}`}
-                        onClick={() => handleModeSwitch('client')}
-                        disabled={modeSwitching}
-                      >
-                        Client
-                      </button>
-                    </div>
+                  {/* Mode choice (this WP): reuses the first-run wizard's own card component
+                      (`.wizard-choice`) and wording, rather than the bare "Local"/"Client"
+                      two-word pill this replaces — same seam, same copy, everywhere. Switching
+                      stops a running engine, so it goes through `requestModeSwitch`'s confirm
+                      dialog rather than flipping instantly on click. */}
+                  <div className="sys-mode-select">
+                    <button
+                      type="button"
+                      className={`wizard-choice sys-mode-choice${desktopConfig.mode === 'local' ? ' active' : ''}`}
+                      onClick={() => requestModeSwitch('local')}
+                      disabled={modeSwitching}
+                      aria-pressed={desktopConfig.mode === 'local'}
+                    >
+                      <span className="wizard-choice-title">This computer runs the engine</span>
+                      <span className="wizard-choice-desc">
+                        Runs the backend on this machine — your documents never leave it.
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`wizard-choice sys-mode-choice${desktopConfig.mode === 'client' ? ' active' : ''}`}
+                      onClick={() => requestModeSwitch('client')}
+                      disabled={modeSwitching}
+                      aria-pressed={desktopConfig.mode === 'client'}
+                    >
+                      <span className="wizard-choice-title">Connect to a running engine</span>
+                      <span className="wizard-choice-desc">
+                        Point this app at a Condense server elsewhere — enter its base URL and
+                        token below.
+                      </span>
+                    </button>
                   </div>
+                  <p className="agent-note">
+                    Switching modes stops whichever engine is currently running and asks you to
+                    confirm first.
+                  </p>
 
                   {desktopConfig.mode === 'local' && backend && (
                     <div className="sys-backend-rows">
@@ -1035,8 +1176,22 @@ const SystemMenu = forwardRef<
             </a>
           </div>
 
-          {/* ---- Access tokens: mint/list/revoke per-consumer bearer tokens (master-gated) - */}
-          <AccessTokens token={token} open={open} />
+          {/* ---- Access tokens: mint/list/revoke per-consumer bearer tokens (master-gated).
+                 Collapsed by default (this WP) — a secondary task most sessions never touch,
+                 same disclosure pattern as Advanced/Granularity/Log below it. --------------- */}
+          <div className="sys-section">
+            <details className="sys-access-tokens">
+              <summary className="sys-advanced-summary">
+                <span className="sys-advanced-chevron" aria-hidden="true">
+                  ▸
+                </span>
+                Access tokens
+              </summary>
+              <div className="sys-advanced-body">
+                <AccessTokens token={token} open={open} />
+              </div>
+            </details>
+          </div>
 
           {/* ---- Model: LLM summary + provider auto-detect preview ------------------------ */}
           <div className="sys-section">
@@ -1044,37 +1199,20 @@ const SystemMenu = forwardRef<
 
             {data ? (
               <>
-                <div className="sys-row">
-                  <span className="sys-key">LLM_MODEL</span>
-                  <span className={`sys-val${data.settings.llm_model == null ? ' sys-null' : ''}`}>
-                    {fmt(data.settings.llm_model)}
-                  </span>
-                </div>
-
-                <div className="sys-row sys-row-restart">
-                  <span className="sys-key">
-                    LLM_API_KEY
-                    <span
-                      className="mode-info sys-info"
-                      tabIndex={0}
-                      role="note"
-                      aria-label="Baked in at container startup — restart-only, never editable here."
-                    >
-                      ⓘ
-                      <span className="mode-tip sys-tip" role="tooltip">
-                        Baked in at container startup — restart-only, never editable here.
-                      </span>
-                    </span>
-                  </span>
-                  <span className="sys-row-right">
-                    <span className="sys-restart-badge" title="Requires an engine restart to change">
-                      restart
-                    </span>
-                    <span className={`sys-val${data.settings.llm_api_key == null ? ' sys-null' : ''}`}>
-                      {fmt(data.settings.llm_api_key)}
-                    </span>
-                  </span>
-                </div>
+                <SettingRow
+                  label={LABELS.llm_model}
+                  settingKey="llm_model"
+                  value={data.settings.llm_model}
+                  restart={RESTART_REQUIRED.has('llm_model')}
+                  explanation={EXPLANATIONS.llm_model}
+                />
+                <SettingRow
+                  label={LABELS.llm_api_key}
+                  settingKey="llm_api_key"
+                  value={data.settings.llm_api_key}
+                  restart={RESTART_REQUIRED.has('llm_api_key')}
+                  explanation="Baked in at container startup — restart-only, never editable here."
+                />
 
                 <div className="sys-model-key">
                   <label className="sys-label" htmlFor="llm-api-key-preview">
@@ -1300,6 +1438,46 @@ const SystemMenu = forwardRef<
                   </div>
                 </details>
 
+                {/* Persistent per-file Files table (this WP) — every failed/skipped path seen
+                    across the WHOLE session's log, not just the latest sync, each tagged with a
+                    status badge. Reuses the exact same `.doc-list`/`.doc-item`/`.doc-badge`
+                    markup the "last sync" lists above already use. */}
+                <details className="sys-advanced">
+                  <summary className="sys-advanced-summary">
+                    <span className="sys-advanced-chevron" aria-hidden="true">
+                      ▸
+                    </span>
+                    Files ({agentFiles.length})
+                  </summary>
+                  <div className="sys-advanced-body">
+                    {agentFiles.length === 0 ? (
+                      <p className="sys-muted">No failed or skipped files yet.</p>
+                    ) : (
+                      <ul className="doc-list agent-files-list">
+                        {agentFiles.map((f) => (
+                          <li className={`doc-item${f.status === 'failed' ? ' doc-failed' : ''}`} key={f.path}>
+                            <span className={`doc-badge${f.status === 'skipped' ? ' doc-badge-skip' : ''}`}>
+                              {f.status === 'failed' ? '!' : '–'}
+                            </span>
+                            <span className="doc-meta">
+                              <span className="doc-name" title={f.path}>
+                                {f.path}
+                              </span>
+                              <span className="doc-sub">
+                                {f.status === 'failed' ? 'Failed' : 'Skipped'} · {f.detail}
+                              </span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="agent-note">
+                      Files that indexed successfully aren't listed individually — see the sync
+                      counts above.
+                    </p>
+                  </div>
+                </details>
+
                 <details className="sys-advanced">
                   <summary className="sys-advanced-summary">
                     <span className="sys-advanced-chevron" aria-hidden="true">
@@ -1351,88 +1529,31 @@ const SystemMenu = forwardRef<
                       return (
                         <div className="sys-group" key={group.label}>
                           <div className="sys-group-label">{group.label}</div>
-                          {keys.map((k) => {
-                            const v = data.settings[k]
-                            const editable = EDITABLE.has(k)
-                            const restart = RESTART_REQUIRED.has(k)
-                            const explanation = EXPLANATIONS[k]
-                            return (
-                              <div className={`sys-row${restart ? ' sys-row-restart' : ''}`} key={k}>
-                                <span className="sys-key">
-                                  {k.toUpperCase()}
-                                  {editable && (
-                                    <span
-                                      className="sys-pencil"
-                                      title="Editable — change and press Enter"
-                                    >
-                                      ✎
-                                    </span>
-                                  )}
-                                  {explanation && (
-                                    <span
-                                      className="mode-info sys-info"
-                                      tabIndex={0}
-                                      role="note"
-                                      aria-label={explanation}
-                                    >
-                                      ⓘ
-                                      <span className="mode-tip sys-tip" role="tooltip">
-                                        {explanation}
-                                      </span>
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="sys-row-right">
-                                  {editable ? (
-                                    <>
-                                      {savedKeys.has(k) && <span className="sys-saved">Saved ✓</span>}
-                                      <input
-                                        className="sys-edit"
-                                        defaultValue={fmt(v)}
-                                        spellCheck={false}
-                                        aria-label={`Edit ${k}`}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                                        }}
-                                        onBlur={(e) => {
-                                          if (e.target.value !== fmt(v)) patchSetting(k, e.target.value)
-                                        }}
-                                      />
-                                    </>
-                                  ) : (
-                                    <>
-                                      {restart && (
-                                        <span
-                                          className="sys-restart-badge"
-                                          title="Requires an engine restart to change"
-                                        >
-                                          restart
-                                        </span>
-                                      )}
-                                      <span className={`sys-val${v === null ? ' sys-null' : ''}`}>
-                                        {fmt(v)}
-                                      </span>
-                                    </>
-                                  )}
-                                </span>
-                              </div>
-                            )
-                          })}
+                          {keys.map((k) => (
+                            <SettingRow
+                              key={k}
+                              label={LABELS[k] ?? k.toUpperCase()}
+                              settingKey={k}
+                              value={data.settings[k]}
+                              editable={EDITABLE.has(k)}
+                              restart={RESTART_REQUIRED.has(k)}
+                              explanation={EXPLANATIONS[k]}
+                              saved={savedKeys.has(k)}
+                              onCommit={(raw) => void patchSetting(k, raw)}
+                            />
+                          ))}
                         </div>
                       )
                     })}
                     {leftover.length > 0 && (
                       <div className="sys-group">
+                        {/* True raw escape hatch (this WP) — keys not yet folded into `GROUPS`/
+                            `LABELS` above render with their literal SNAKE_CASE name, exactly as
+                            the whole Advanced list used to, everywhere. */}
                         <div className="sys-group-label">Other</div>
-                        {leftover.map((k) => {
-                          const v = data.settings[k]
-                          return (
-                            <div className="sys-row" key={k}>
-                              <span className="sys-key">{k.toUpperCase()}</span>
-                              <span className={`sys-val${v === null ? ' sys-null' : ''}`}>{fmt(v)}</span>
-                            </div>
-                          )
-                        })}
+                        {leftover.map((k) => (
+                          <SettingRow key={k} label={k.toUpperCase()} settingKey={k} value={data.settings[k]} />
+                        ))}
                       </div>
                     )}
                   </div>

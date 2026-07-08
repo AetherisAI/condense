@@ -135,9 +135,7 @@ export default function AccessTokens({ token, open }: { token: string; open: boo
   }
 
   return (
-    <div className="sys-section">
-      <h3 className="sys-heading">Access tokens</h3>
-
+    <>
       {denied === 403 && <p className="sys-muted">Requires the master (ingest) token.</p>}
       {denied === 401 && (
         <p className="sys-muted">
@@ -247,6 +245,6 @@ export default function AccessTokens({ token, open }: { token: string; open: boo
           )}
         </>
       )}
-    </div>
+    </>
   )
 }
