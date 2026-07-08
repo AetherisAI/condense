@@ -248,6 +248,10 @@ It's a `Reranker` port with two adapters; config picks. **They are not equivalen
 
 ## 8. API surface + config
 
+> **Note (2026-07-08):** this section is the original Step-0 spec (4 routes). The live surface has
+> grown to ~20 routes (`/status`, `/documents`, `/v1/tools/*`, `/v1/answer`, `/v1/conversations/*`,
+> `/v1/tokens/*`) — see [`docs/api-schema.md`](./api-schema.md) for the accurate, current contract.
+
 - `POST /ingest` — bearer auth, multipart. → per-file status (indexed / skipped-dedup / failed).
 - `GET /ingest/manifest?tenant=` — known hashes for the agent's diff; also backs the UI's document list.
 - `GET /search?q=&k=` — embed → retrieve `RETRIEVE_K` → rerank → `FINAL_K` → recap (if LLM set). → `{summary, sources:[{path, page, score}]}`. With `FINAL_K=1`, the single best result + its path.
@@ -267,7 +271,7 @@ EMBED_BATCH_SIZE=64             # texts per embeddings call; keep <= backend's c
 EMBED_TIMEOUT_S=60.0            # read/write budget once connected
 EMBED_CONNECT_TIMEOUT_S=5.0     # fails fast if the backend never answers
 EMBED_RETRY_ATTEMPTS=3          # bounded retry (0.5s/2s/8s) on HTTP 429 only (D34)
-RERANK_STRATEGY=crossencoder    # crossencoder (default) | llm | none
+RERANK_STRATEGY=none            # none (default, code) | llm | crossencoder
 RERANK_BASE_URL=                # TEI, e.g. http://localhost:8080
 RERANK_MODEL=bge-reranker-v2-m3
 RETRIEVE_K=30                   # candidates pulled from vector search

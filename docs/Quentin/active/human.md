@@ -1,4 +1,4 @@
-> **v0.3.0 shipped 2026-07-06** — chat-first workbench UX + agent --json/sidecar + landing page merged to main (42ee516, tag v0.3.0). Previous WP archived at `docs/Quentin/archive/v0.3.0-ux-workbench/`. Next: revise + implement the Tauri desktop shell (`feat/tauri-shell`, D53-amended).
+> **Desktop WP COMPLETE on `feat/desktop-standalone`** (D60–D67), installed for validation 2026-07-08, merge pending Quentin's word → v0.4.0. Interim WP: public-hardening audit wave (PRs #22–#25) — done.
 
 # <Slice> — Human Doc
 
