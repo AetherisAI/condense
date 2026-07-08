@@ -8,6 +8,28 @@ D54) — they are **not** interchangeable, so pick the row that matches what you
 | Desktop GUI download | `sift-agent.spec` | onedir, `console=False`, own Tkinter window, no stdout | a human double-clicking a download (this file, below) |
 | Headless CLI sidecar | `sift-agent-cli.spec` | **onefile**, **`console=True`** | Tauri desktop shell (`bundle.externalBin`) — see "Second target" below — or any script/systemd unit |
 
+## Install (end users)
+`scripts/install.sh` (Linux + macOS, POSIX sh) and `scripts/install-windows.ps1` are the
+one-click installers for whatever these specs (or the desktop app's own CI, `build-desktop.yml`)
+end up producing — they are the consumer-facing counterpart to this build documentation, not
+part of the build itself. From the repo root:
+```bash
+curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh
+```
+- Resolves `--file <path>` → the newest GitHub Release asset (public API, no token/`gh` needed)
+  → a friendly "no release yet, here's the CI path" message. Never half-installs.
+- `--server-only` installs just the headless `condense-server` bundle (the `sift-engine` +
+  `sift-agent-cli` PyInstaller outputs this directory packages, per `build-desktop.yml`'s
+  `server-bundle` job) instead of the desktop app — no Docker, no UI.
+- `--uninstall` reverses either. No sudo, nothing written outside `$HOME`.
+- Windows: `powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1` (same flags).
+- **macOS and Windows are UNTESTED** on real hardware (see each script's header) until a v0.4.0
+  QA pass; Linux (AppImage/.deb) is the verified path today. Naming convention for the assets
+  these scripts look for: `Condense_*.AppImage/.deb/.dmg/.exe` (desktop) and
+  `condense-server-<target-triple>.tar.gz`/`.zip` (server-only), stable from `v0.4.0` on.
+- Landing-page equivalent: `site/index.html`'s Download section links the same assets, with a
+  small JS check against the Releases API so the buttons never look dead before `v0.4.0` ships.
+
 ## Target 1: the Tkinter desktop download
 
 Builds the `agent/` Tkinter watcher into self-contained, ready-to-run downloads (no Python/pip on

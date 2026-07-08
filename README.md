@@ -67,6 +67,19 @@ way, your documents stay on your infrastructure and you bring your own LLM key.
 
 ## Install
 
+### ⚡ Quick install (recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh
+```
+Detects Linux/macOS, grabs the right asset from the [latest release](https://github.com/AetherisAI/condense/releases/latest),
+and installs the desktop app (no sudo, nothing outside `$HOME`). Or download a specific
+platform button from [Releases](https://github.com/AetherisAI/condense/releases/latest) /
+the landing page — see per-OS detail below. Add `--server-only` to install just the headless
+`condense-server` bundle (engine + agent CLI, no UI, no Docker) instead; `--uninstall` reverses
+either. Windows: `scripts/install-windows.ps1` (same flags, PowerShell). **macOS and Windows
+installers are untested on real hardware until v0.4.0 QA** — Linux is the verified path today;
+see the per-OS notes below.
+
 ### 🐧 Linux (Ubuntu 22.04+)
 - **AppImage:** download `Condense_<version>_amd64.AppImage` from
   [Releases](https://github.com/AetherisAI/condense/releases), then:

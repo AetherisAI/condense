@@ -235,6 +235,107 @@
         margin-top: 16px;
       }
 
+      /* -------------------- Download section -------------------- */
+      @media (prefers-reduced-motion: no-preference) {
+        html {
+          scroll-behavior: smooth;
+        }
+      }
+      .install-cmd {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 13px 16px;
+        font-family: var(--mono);
+        font-size: 13px;
+        overflow-x: auto;
+      }
+      .install-cmd code {
+        flex: 1;
+        white-space: pre;
+        color: var(--text-h);
+      }
+      .copy-btn {
+        flex-shrink: 0;
+        font: inherit;
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--accent-strong);
+        background: var(--accent-bg);
+        border: 1px solid var(--accent-border);
+        border-radius: var(--radius-sm);
+        padding: 6px 10px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+      .copy-btn:hover {
+        background: var(--accent-border);
+      }
+      .copy-btn.copied {
+        color: #fff;
+        background: var(--btn);
+        border-color: var(--btn);
+      }
+      .platform-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .platform-btn {
+        position: relative;
+        flex-direction: column;
+        gap: 3px;
+        text-align: center;
+      }
+      .platform-btn .platform-main {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .platform-btn .asset-note {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--muted);
+      }
+      .platform-btn .platform-badge {
+        display: none;
+      }
+      .platform-btn.soon {
+        opacity: 0.55;
+        cursor: default;
+        pointer-events: none;
+      }
+      .platform-btn.soon .platform-badge {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--page-bg);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 1px 6px;
+        position: absolute;
+        top: -9px;
+        right: 10px;
+      }
+      .server-row-wrap {
+        margin-top: 30px;
+        padding-top: 22px;
+        border-top: 1px dashed var(--border);
+      }
+      .server-row-wrap .platform-btn {
+        padding: 9px 14px;
+      }
+
       /* -------------------- How it works - step cards -------------------- */
       .steps {
         display: grid;
@@ -428,7 +529,8 @@
           font-size: 44px;
         }
         .steps,
-        .features {
+        .features,
+        .platform-row {
           grid-template-columns: 1fr;
         }
         .cta-row {
@@ -608,7 +710,7 @@
             </svg>
             View on GitHub
           </a>
-          <a class="btn btn-secondary" href="https://github.com/AetherisAI/condense/releases">
+          <a class="btn btn-secondary" href="#download">
             <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M8 1.5v8.5" />
               <path d="M4.5 6.5 8 10l3.5-3.5" />
@@ -619,6 +721,71 @@
         </div>
         <p class="download-note">macOS · Windows · Linux · one installer, runs locally.</p>
       </header>
+
+      <!-- =========================== DOWNLOAD =========================== -->
+      <section id="download">
+        <div class="section-label">Download</div>
+        <h2 class="section-title">One command, or pick your platform</h2>
+        <p class="section-sub">
+          Installs the desktop app to your machine — no Docker, no account. Prefer the API only?
+          Grab the server bundle below and run it standalone.
+        </p>
+
+        <div class="install-cmd" style="margin-top: 28px">
+          <code id="install-oneliner">curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh</code>
+          <button class="copy-btn" type="button" data-copy-target="install-oneliner" aria-label="Copy install command">Copy</button>
+        </div>
+
+        <div class="platform-row" id="platform-row" style="margin-top: 16px">
+          <a class="btn btn-secondary platform-btn" data-os="linux"
+             href="https://github.com/AetherisAI/condense/releases/latest/download/Condense_amd64.AppImage">
+            <span class="platform-badge">soon</span>
+            <span class="platform-main">🐧 Linux</span>
+            <span class="asset-note">.AppImage · .deb</span>
+          </a>
+          <a class="btn btn-secondary platform-btn" data-os="macos"
+             href="https://github.com/AetherisAI/condense/releases/latest/download/Condense_aarch64.dmg">
+            <span class="platform-badge">soon</span>
+            <span class="platform-main">🍎 macOS</span>
+            <span class="asset-note">.dmg</span>
+          </a>
+          <a class="btn btn-secondary platform-btn" data-os="windows"
+             href="https://github.com/AetherisAI/condense/releases/latest/download/Condense_x64-setup.exe">
+            <span class="platform-badge">soon</span>
+            <span class="platform-main">🪟 Windows</span>
+            <span class="asset-note">.exe</span>
+          </a>
+        </div>
+        <p class="download-note" id="download-availability">Checking the latest release…</p>
+
+        <div class="server-row-wrap">
+          <div class="section-label" style="margin-bottom: 12px">Server only · API, no UI</div>
+          <div class="platform-row" id="server-row">
+            <a class="btn btn-secondary platform-btn" data-os="linux" data-server="1"
+               href="https://github.com/AetherisAI/condense/releases/latest/download/condense-server-x86_64-unknown-linux-gnu.tar.gz">
+              <span class="platform-badge">soon</span>
+              <span class="platform-main">🐧 Linux</span>
+              <span class="asset-note">.tar.gz</span>
+            </a>
+            <a class="btn btn-secondary platform-btn" data-os="macos" data-server="1"
+               href="https://github.com/AetherisAI/condense/releases/latest/download/condense-server-aarch64-apple-darwin.tar.gz">
+              <span class="platform-badge">soon</span>
+              <span class="platform-main">🍎 macOS</span>
+              <span class="asset-note">.tar.gz</span>
+            </a>
+            <a class="btn btn-secondary platform-btn" data-os="windows" data-server="1"
+               href="https://github.com/AetherisAI/condense/releases/latest/download/condense-server-x86_64-pc-windows-msvc.zip">
+              <span class="platform-badge">soon</span>
+              <span class="platform-main">🪟 Windows</span>
+              <span class="asset-note">.zip</span>
+            </a>
+          </div>
+          <p class="section-sub" style="margin-top: 12px">
+            No installer, no Docker — unpack and run the engine + agent CLI directly. Or use
+            <a href="https://github.com/AetherisAI/condense#readme">docker compose</a> instead.
+          </p>
+        </div>
+      </section>
 
       <!-- ======================= HOW IT WORKS ======================= -->
       <section id="how">
@@ -775,7 +942,7 @@
         </div>
         <nav class="foot-links">
           <a href="https://github.com/AetherisAI/condense">GitHub</a>
-          <a href="https://github.com/AetherisAI/condense/releases">Download</a>
+          <a href="#download">Download</a>
           <a href="https://github.com/AetherisAI/condense#readme">Docs</a>
         </nav>
       </footer>
@@ -868,6 +1035,143 @@
         resize();
         window.addEventListener('resize', resize);
         if (!reduced) window.addEventListener('mousemove', onMove, { passive: true });
+      })();
+    </script>
+
+    <script>
+      /* -----------------------------------------------------------------
+         Copy-to-clipboard for the install one-liner.
+      ----------------------------------------------------------------- */
+      (function () {
+        var btn = document.querySelector('.copy-btn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+          var code = document.getElementById(btn.getAttribute('data-copy-target'));
+          if (!code) return;
+          var text = code.textContent;
+
+          function flash() {
+            var original = btn.textContent;
+            btn.textContent = 'Copied';
+            btn.classList.add('copied');
+            setTimeout(function () {
+              btn.textContent = original;
+              btn.classList.remove('copied');
+            }, 1600);
+          }
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(flash, flash);
+            return;
+          }
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand('copy');
+          } catch (e) {
+            /* clipboard unavailable -- the one-liner is still selectable/copyable by hand */
+          }
+          document.body.removeChild(ta);
+          flash();
+        });
+      })();
+    </script>
+
+    <script>
+      /* -----------------------------------------------------------------
+         Release-availability check. The three platform buttons (and the
+         "server only" row) link straight at
+         releases/latest/download/<asset>, which 404s until v0.4.0 ships.
+         Rather than guess exact filenames and risk a dead-feeling link, this
+         asks the public releases API what's actually there: matched assets
+         get their real download URL wired in; anything not (yet) published
+         gets a "soon" badge and falls back to the Releases page instead of
+         a broken link. The one-liner above needs none of this -- it always
+         resolves itself against whatever exists when it's actually run.
+      ----------------------------------------------------------------- */
+      (function () {
+        var REPO = 'AetherisAI/condense';
+        var API_URL = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+        var RELEASES_URL = 'https://github.com/' + REPO + '/releases';
+        var note = document.getElementById('download-availability');
+
+        var targets = [
+          { sel: '#platform-row [data-os="linux"]', re: /^Condense[_-].*\.(AppImage|deb)$/i },
+          { sel: '#platform-row [data-os="macos"]', re: /^Condense[_-].*\.dmg$/i },
+          { sel: '#platform-row [data-os="windows"]', re: /^Condense[_-].*\.exe$/i },
+          { sel: '#server-row [data-os="linux"]', re: /condense-server-.*linux.*\.tar\.gz$/i },
+          { sel: '#server-row [data-os="macos"]', re: /condense-server-.*apple-darwin.*\.tar\.gz$/i },
+          { sel: '#server-row [data-os="windows"]', re: /condense-server-.*windows.*\.zip$/i }
+        ];
+
+        function markSoon(el) {
+          el.classList.add('soon');
+          el.setAttribute('href', RELEASES_URL);
+          el.setAttribute('aria-disabled', 'true');
+        }
+
+        function markAvailable(el, url) {
+          el.classList.remove('soon');
+          el.removeAttribute('aria-disabled');
+          el.setAttribute('href', url);
+        }
+
+        function allSoon() {
+          targets.forEach(function (t) {
+            document.querySelectorAll(t.sel).forEach(markSoon);
+          });
+          if (note) {
+            note.textContent =
+              'First release coming with v0.4.0 — the one-liner above will start working the moment it ships. Meanwhile, see ';
+            var a = document.createElement('a');
+            a.href = RELEASES_URL;
+            a.textContent = 'Releases';
+            note.appendChild(a);
+            note.appendChild(document.createTextNode('.'));
+          }
+        }
+
+        if (!window.fetch) {
+          allSoon();
+          return;
+        }
+
+        fetch(API_URL, { headers: { Accept: 'application/vnd.github+json' } })
+          .then(function (res) {
+            if (!res.ok) throw new Error('no release yet');
+            return res.json();
+          })
+          .then(function (release) {
+            var assets = release.assets || [];
+            var anyFound = false;
+            targets.forEach(function (t) {
+              var match = null;
+              for (var i = 0; i < assets.length; i++) {
+                if (t.re.test(assets[i].name)) {
+                  match = assets[i];
+                  break;
+                }
+              }
+              document.querySelectorAll(t.sel).forEach(function (el) {
+                if (match) {
+                  markAvailable(el, match.browser_download_url);
+                  anyFound = true;
+                } else {
+                  markSoon(el);
+                }
+              });
+            });
+            if (note) {
+              note.textContent = anyFound
+                ? (release.tag_name || 'Latest') + ' is out — click a platform above to download.'
+                : 'First release coming with v0.4.0 — pick a platform above once it lands.';
+            }
+          })
+          .catch(allSoon);
       })();
     </script>
   </body>
