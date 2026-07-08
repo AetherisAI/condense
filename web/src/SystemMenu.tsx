@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import AccessTokens from './AccessTokens'
 import { apiFetch, apiUrl, getApiBase, setApiBase } from './api'
 import { detectProvider } from './provider'
+import { openExternal } from './lib/openExternal'
 import { isTauri } from './platform'
 import {
   agentStart,
@@ -926,7 +927,19 @@ const SystemMenu = forwardRef<
               </div>
             )}
 
-            <a className="sys-docs" href={apiUrl('/docs')} target="_blank" rel="noreferrer">
+            <a
+              className="sys-docs"
+              href={apiUrl('/docs')}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                // `target="_blank"` is a no-op inside the Tauri WebView (the click is swallowed,
+                // nothing opens) — `openExternal` routes to the OS browser there, and falls back
+                // to this anchor's own default `target="_blank"` behavior in an ordinary tab.
+                e.preventDefault()
+                void openExternal(apiUrl('/docs'))
+              }}
+            >
               API documentation
               <span aria-hidden="true">↗</span>
             </a>

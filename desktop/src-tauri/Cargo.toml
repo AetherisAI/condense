@@ -22,6 +22,13 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
+# External links (System drawer's "API documentation", any future landing/GitHub link): the
+# WebView never lets `window.open`/`target="_blank"` reach the OS browser, and `tauri-plugin-shell`'s
+# own `open` command was split out into this dedicated plugin (Tauri 2.1+) specifically so a
+# capability can grant "open http(s)/mailto/tel URLs in the default app" WITHOUT also granting
+# shell command execution — a much tighter scope than `shell:allow-open`, and the actively
+# maintained path going forward (see capabilities/default.json).
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # T5 (provisioning + backend/agent supervision) additions:
