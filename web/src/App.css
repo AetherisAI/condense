@@ -2932,16 +2932,64 @@ button:disabled {
   margin-top: 8px;
 }
 
+.agent-skipped-details {
+  margin-top: 8px;
+}
+
+.doc-badge-skip {
+  color: var(--muted);
+}
+
+.agent-exclude-dir-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.agent-exclude-dir-add .sys-token-input {
+  flex: 1;
+}
+
 .agent-log-tail {
   max-width: 100%;
   overflow-x: auto;
 }
 
-.agent-log-pre {
+/* ---- Structured Log entries (this WP) — one <li> per NDJSON line, parsed when possible into a
+   per-sync tally + named failure/skip lines, else shown as a plain (e.g. non-JSON/traceback)
+   line — replaces the old single <pre> dump of raw JSON. */
+.agent-log-entries {
+  list-style: none;
   margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.agent-log-line {
   color: var(--text);
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-log-raw {
+  color: var(--muted);
+}
+
+.agent-log-sync-summary {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.agent-log-detail {
+  padding-left: 12px;
+  color: var(--muted);
+}
+
+.agent-log-failure {
+  color: var(--error);
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main window: core defaults, dialog defaults (folder picker for the ingest agent), and shell access scoped to the sift-agent-cli sidecar the app supervises — no unscoped shell execute/open.",
+  "description": "Default capability for the main window: core defaults, dialog defaults (folder picker for the ingest agent), shell access scoped to the sift-agent-cli sidecar the app supervises (no unscoped execute), and `shell:open` for escaping external links (System drawer's API docs / Downloads section) out of the webview into the OS's default handler — scoped by tauri.conf.json's `plugins.shell.open` regex to https:// and the local loopback engine only, never an arbitrary file:// or custom scheme.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -10,6 +10,7 @@
       "identifier": "shell:allow-spawn",
       "allow": [{ "name": "binaries/sift-agent-cli", "sidecar": true, "args": true }]
     },
-    "shell:allow-kill"
+    "shell:allow-kill",
+    "shell:allow-open"
   ]
 }

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import AccessTokens from './AccessTokens'
+import AgentDownloads from './AgentDownloads'
 import { apiFetch, apiUrl, getApiBase, setApiBase } from './api'
 import { detectProvider } from './provider'
 import { isTauri } from './platform'
@@ -7,6 +8,7 @@ import {
   agentStart,
   agentStatus,
   agentStop,
+  agentSyncOnce,
   appConfigGet,
   appConfigSet,
   backendStart,
@@ -14,6 +16,8 @@ import {
   backendStateKind,
   backendStatus,
   backendStop,
+  DEFAULT_EXCLUDE_DIRS_SUMMARY,
+  DEFAULT_INCLUDE_EXTENSIONS_SUMMARY,
   listenEvent,
   parseAgentLine,
   pickFolders,
@@ -23,6 +27,7 @@ import {
   type AgentEventPayload,
   type AgentLine,
   type AgentStatus,
+  type AgentSyncOnceDoneEvent,
   type AgentTerminatedEvent,
   type AppConfig,
   type BackendStateEvent,
@@ -224,57 +229,65 @@ function coerce(key: string, raw: string): unknown {
   return Number(raw)
 }
 
-/** One downloadable build of the desktop ingestion agent (absorbed from the retired
- * `AgentMenu.tsx`, D57/Task U6 — its own topbar chip/drawer are gone, these rows now live in the
- * System drawer's "Folder agent" section, styling untouched). */
-type Build = {
-  os: string
-  hint: string
-  href?: string // absent → "coming soon"
-  note?: string // extra line under the row (e.g. the unsigned-app caveat)
-  icon: React.ReactNode
+/** Human copy for one `SkipDetail.reason` (agent/sync.py) — a short, plain-English "why". */
+function skipReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'oversized':
+      return 'too large (over the max file size)'
+    case 'excluded_dir':
+      return 'inside an excluded directory'
+    case 'excluded_file':
+      return 'excluded filename'
+    case 'unsupported_extension':
+      return 'unsupported file type'
+    default:
+      return reason
+  }
 }
 
-const APPLE = (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-    <path d="M16.365 12.9c.02 2.16 1.9 2.88 1.92 2.89-.015.05-.3 1.03-.99 2.04-.6.88-1.22 1.75-2.2 1.77-.96.02-1.27-.57-2.37-.57-1.1 0-1.45.55-2.36.59-.95.03-1.67-.95-2.27-1.83-1.24-1.8-2.18-5.08-.91-7.3.63-1.1 1.76-1.8 2.98-1.82.93-.02 1.81.63 2.38.63.57 0 1.64-.78 2.76-.66.47.02 1.79.19 2.63 1.43-.07.04-1.57.92-1.55 2.73M14.6 6.3c.5-.6.84-1.45.75-2.3-.72.03-1.6.48-2.12 1.08-.47.53-.88 1.4-.77 2.22.8.06 1.63-.41 2.14-1"/>
-  </svg>
-)
+/** One `Log` entry: a raw NDJSON line from the sidecar, rendered structured when it parses as a
+ * known `AgentLine` shape (a `sync` event becomes a one-line tally plus a named line per failure
+ * and per local skip decision — the whole point of this WP's per-file visibility) or as plain
+ * text otherwise (a stray non-JSON line, e.g. a Python traceback, must still be visible, not
+ * swallowed). */
+function AgentLogEntry({ line }: { line: string }) {
+  const parsed = parseAgentLine(line)
+  if (!parsed) return <li className="agent-log-line agent-log-raw">{line}</li>
 
-const UBUNTU = (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-    <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m0 3.2a6.8 6.8 0 0 1 6.06 3.72 2.02 2.02 0 0 0-.4 3.03 6.8 6.8 0 0 1 0 .1 2.02 2.02 0 0 0 .4 3.03 6.8 6.8 0 0 1-11.03 1.9 2.02 2.02 0 0 0-2.5-1.72A6.8 6.8 0 0 1 4 12a6.8 6.8 0 0 1 .53-2.65 2.02 2.02 0 0 0 2.5-1.72A6.77 6.77 0 0 1 12 5.2m0 3.1a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4"/>
-  </svg>
-)
-
-const WINDOWS = (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-    <path d="M3 5.4 10.5 4.3v7.2H3zM11.5 4.15 21 2.8v8.7h-9.5zM3 12.5h7.5v7.2L3 18.6zM11.5 12.5H21v8.7l-9.5-1.35z"/>
-  </svg>
-)
-
-const BUILDS: Build[] = [
-  {
-    os: 'macOS',
-    hint: 'Apple silicon & Intel · unzip and open',
-    href: '/downloads/sift-agent-macos.zip',
-    note: 'Unsigned build — first launch: right-click the app → Open.',
-    icon: APPLE,
-  },
-  {
-    os: 'Ubuntu / Linux',
-    hint: 'AppImage · chmod +x, then run — no install',
-    href: '/downloads/sift-agent-ubuntu.AppImage',
-    icon: UBUNTU,
-  },
-  {
-    os: 'Windows',
-    hint: 'unzip and run',
-    href: 'https://github.com/AetherisAI/condense/releases/latest/download/sift-agent-windows.zip',
-    note: 'Published to the latest GitHub release (built by the build-agent workflow).',
-    icon: WINDOWS,
-  },
-]
+  if (parsed.event === 'sync') {
+    return (
+      <li className="agent-log-line agent-log-sync">
+        <div className="agent-log-sync-summary">
+          {`+${parsed.indexed} indexed · ${parsed.replaced} replaced · ${parsed.deleted} deleted · ` +
+            `${parsed.skipped} skipped · ${parsed.failed} failed`}
+        </div>
+        {parsed.error && <div className="sys-error">{parsed.error}</div>}
+        {parsed.failures.map((f, i) => (
+          <div className="agent-log-detail agent-log-failure" key={`f-${i}`}>
+            ! {f.path} — {f.error}
+          </div>
+        ))}
+        {parsed.skipped_details.map((s, i) => (
+          <div className="agent-log-detail agent-log-skip" key={`s-${i}`}>
+            – {s.path} — {skipReasonLabel(s.reason)}
+          </div>
+        ))}
+      </li>
+    )
+  }
+  if (parsed.event === 'watch_started') {
+    return (
+      <li className="agent-log-line">
+        Watching {parsed.paths.join(', ')}
+        {parsed.delete_removed ? ' (delete-removed on)' : ''}
+      </li>
+    )
+  }
+  if (parsed.event === 'fatal') {
+    return <li className="agent-log-line sys-error">Fatal: {parsed.error}</li>
+  }
+  return <li className="agent-log-line">Stopped</li>
+}
 
 /** Imperative surface exposed to the workbench shell (`App.tsx`, D57/Task U6) — the empty-corpus
  * nudge's "Get the agent" button lives in `Chat.tsx`, outside this drawer's own tree, so it opens
@@ -332,10 +345,16 @@ const SystemMenu = forwardRef<
   // ---- Folder agent live controls (Tauri-only) -----------------------------------------------
   const [agentPaths, setAgentPaths] = useState<string[]>([])
   const [agentDeleteRemoved, setAgentDeleteRemoved] = useState(false)
+  // Granularity knobs (this WP): per-file size guard + EXTRA excluded directories, on top of the
+  // sidecar's own built-ins (`DEFAULT_EXCLUDE_DIRS_SUMMARY`, view-only below).
+  const [agentMaxFileSizeMb, setAgentMaxFileSizeMb] = useState(100)
+  const [agentExcludeDirs, setAgentExcludeDirs] = useState<string[]>([])
+  const [agentExcludeDirDraft, setAgentExcludeDirDraft] = useState('')
   const [agentStatusState, setAgentStatusState] = useState<AgentStatus | null>(null)
   const [agentLastSync, setAgentLastSync] = useState<AgentSyncLine | null>(null)
   const [agentLog, setAgentLog] = useState<string[]>([])
   const [agentBusy, setAgentBusy] = useState(false)
+  const [agentSyncOnceBusy, setAgentSyncOnceBusy] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
   const agentSeededRef = useRef(false)
 
@@ -479,18 +498,29 @@ const SystemMenu = forwardRef<
     if (!desktopConfig || agentSeededRef.current) return
     setAgentPaths(desktopConfig.agent.paths)
     setAgentDeleteRemoved(desktopConfig.agent.delete_removed)
+    setAgentMaxFileSizeMb(desktopConfig.agent.max_file_size_mb)
+    setAgentExcludeDirs(desktopConfig.agent.exclude_dirs)
     agentSeededRef.current = true
   }, [desktopConfig])
 
-  // Folder agent: status once, then live NDJSON lines + termination notices for as long as the
-  // drawer stays open.
+  // Folder agent: status once (hydrating BOTH the running/restarts state AND the log from the
+  // Rust side's own bounded buffer, see `AgentStatus.log`), then live NDJSON lines + termination
+  // notices for the REST OF THE APP'S LIFETIME — deliberately NOT gated on `open` (unlike most
+  // other Tauri-only effects in this file, which reconnect each time the drawer opens). Gating
+  // this one on `open` was the root cause of the "Log (0)" bug: a sync that fired while the
+  // drawer happened to be closed had no listener attached to see it, so it just vanished — this
+  // subscribes once on mount (`SystemMenu` itself is always mounted, per `App.tsx`) and never
+  // misses an event again, regardless of whether the drawer is open when it arrives.
   useEffect(() => {
-    if (!isTauri || !open) return
+    if (!isTauri) return
     let disposed = false
     const disposers: Unlisten[] = []
     async function subscribe() {
       try {
-        setAgentStatusState(await agentStatus())
+        const status = await agentStatus()
+        if (disposed) return
+        setAgentStatusState(status)
+        setAgentLog(status.log)
       } catch {
         // best-effort — the live event stream below is the real source of truth
       }
@@ -514,13 +544,21 @@ const SystemMenu = forwardRef<
         return
       }
       disposers.push(unTerm)
+      const unSyncOnce = await listenEvent<AgentSyncOnceDoneEvent>('agent-sync-once-done', () => {
+        setAgentSyncOnceBusy(false)
+      })
+      if (disposed) {
+        unSyncOnce()
+        return
+      }
+      disposers.push(unSyncOnce)
     }
     void subscribe()
     return () => {
       disposed = true
       disposers.forEach((fn) => fn())
     }
-  }, [open])
+  }, [])
 
   async function handleModeSwitch(mode: 'local' | 'client') {
     if (!desktopConfig || desktopConfig.mode === mode || modeSwitching) return
@@ -599,10 +637,23 @@ const SystemMenu = forwardRef<
     }
   }
 
-  async function persistAgentConfig(paths: string[], deleteRemoved: boolean) {
+  async function persistAgentConfig(
+    paths: string[],
+    deleteRemoved: boolean,
+    maxFileSizeMb: number,
+    excludeDirs: string[],
+  ) {
     if (!desktopConfig) return
     try {
-      const saved = await appConfigSet({ ...desktopConfig, agent: { paths, delete_removed: deleteRemoved } })
+      const saved = await appConfigSet({
+        ...desktopConfig,
+        agent: {
+          paths,
+          delete_removed: deleteRemoved,
+          max_file_size_mb: maxFileSizeMb,
+          exclude_dirs: excludeDirs,
+        },
+      })
       setDesktopConfig(saved)
     } catch (err) {
       setAgentError(err instanceof Error ? err.message : String(err))
@@ -614,36 +665,71 @@ const SystemMenu = forwardRef<
     if (picked.length === 0) return
     const next = [...new Set([...agentPaths, ...picked])]
     setAgentPaths(next)
-    void persistAgentConfig(next, agentDeleteRemoved)
+    void persistAgentConfig(next, agentDeleteRemoved, agentMaxFileSizeMb, agentExcludeDirs)
   }
 
   function handleRemoveFolder(path: string) {
     const next = agentPaths.filter((p) => p !== path)
     setAgentPaths(next)
-    void persistAgentConfig(next, agentDeleteRemoved)
+    void persistAgentConfig(next, agentDeleteRemoved, agentMaxFileSizeMb, agentExcludeDirs)
   }
 
   function handleDeleteRemovedChange(checked: boolean) {
     setAgentDeleteRemoved(checked)
-    void persistAgentConfig(agentPaths, checked)
+    void persistAgentConfig(agentPaths, checked, agentMaxFileSizeMb, agentExcludeDirs)
+  }
+
+  function handleMaxFileSizeChange(raw: string) {
+    const mb = Number(raw)
+    if (!Number.isFinite(mb) || mb <= 0) return
+    setAgentMaxFileSizeMb(mb)
+    void persistAgentConfig(agentPaths, agentDeleteRemoved, mb, agentExcludeDirs)
+  }
+
+  function handleAddExcludeDir() {
+    const dir = agentExcludeDirDraft.trim()
+    if (!dir || agentExcludeDirs.includes(dir)) {
+      setAgentExcludeDirDraft('')
+      return
+    }
+    const next = [...agentExcludeDirs, dir]
+    setAgentExcludeDirs(next)
+    setAgentExcludeDirDraft('')
+    void persistAgentConfig(agentPaths, agentDeleteRemoved, agentMaxFileSizeMb, next)
+  }
+
+  function handleRemoveExcludeDir(dir: string) {
+    const next = agentExcludeDirs.filter((d) => d !== dir)
+    setAgentExcludeDirs(next)
+    void persistAgentConfig(agentPaths, agentDeleteRemoved, agentMaxFileSizeMb, next)
+  }
+
+  /** Shared by `handleAgentStart` (continuous `--watch`) and `handleSyncNow` (one-shot) so both
+   * resolve the server/token the exact same way (T6): local mode points the sidecar at the
+   * supervised engine with the app's generated ingest token; client mode points it at whatever
+   * server/bearer token this drawer is currently connected with. */
+  function buildAgentConfig(): AgentConfig {
+    const cfg: AgentConfig = {
+      paths: agentPaths,
+      delete_removed: agentDeleteRemoved,
+      max_file_size_mb: agentMaxFileSizeMb,
+      exclude_dirs: agentExcludeDirs,
+    }
+    if (desktopConfig?.mode === 'local') {
+      cfg.server = `http://127.0.0.1:${desktopConfig.engine_port}`
+      cfg.token = desktopConfig.ingest_token
+    } else {
+      cfg.server = getApiBase()
+      cfg.token = token
+    }
+    return cfg
   }
 
   async function handleAgentStart() {
     setAgentBusy(true)
     setAgentError(null)
     try {
-      // Always pass server/token explicitly (T6) — local mode points the sidecar at the
-      // supervised engine with the app's generated ingest token; client mode points it at
-      // whatever server/bearer token this drawer is currently connected with.
-      const cfg: AgentConfig = { paths: agentPaths, delete_removed: agentDeleteRemoved }
-      if (desktopConfig?.mode === 'local') {
-        cfg.server = `http://127.0.0.1:${desktopConfig.engine_port}`
-        cfg.token = desktopConfig.ingest_token
-      } else {
-        cfg.server = getApiBase()
-        cfg.token = token
-      }
-      await agentStart(cfg)
+      await agentStart(buildAgentConfig())
       setAgentStatusState(await agentStatus())
     } catch (err) {
       setAgentError(err instanceof Error ? err.message : String(err))
@@ -662,6 +748,23 @@ const SystemMenu = forwardRef<
       setAgentError(err instanceof Error ? err.message : String(err))
     } finally {
       setAgentBusy(false)
+    }
+  }
+
+  /** One-shot "Sync now" — runs a single collect→diff→upload pass independent of the continuous
+   * agent's own running/stopped state (works whether or not Start was ever clicked). Its own
+   * "busy" clears on the `agent-sync-once-done` event (see the subscription effect above) rather
+   * than immediately after the `agentSyncOnce` call returns, since that call only confirms the
+   * sidecar was SPAWNED, not that the pass finished. */
+  async function handleSyncNow() {
+    if (agentPaths.length === 0) return
+    setAgentSyncOnceBusy(true)
+    setAgentError(null)
+    try {
+      await agentSyncOnce(buildAgentConfig())
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : String(err))
+      setAgentSyncOnceBusy(false)
     }
   }
 
@@ -1001,7 +1104,9 @@ const SystemMenu = forwardRef<
           </div>
 
           {/* ---- Folder agent: absorbed from the retired AgentMenu.tsx (D57/Task U6); live
-                 controls replace the download links in Tauri (D60/T2) ----------------------- */}
+                 controls replace the download links in Tauri (D60/T2). Granularity knobs +
+                 per-event log (this WP) close the "Log (0)" gap and expose why a file was
+                 skipped/excluded, not just that something was. ------------------------------- */}
           <div className="sys-section" ref={agentSectionRef}>
             <h3 className="sys-heading">Folder agent</h3>
 
@@ -1063,6 +1168,15 @@ const SystemMenu = forwardRef<
                   >
                     Stop
                   </button>
+                  <button
+                    type="button"
+                    className="wizard-secondary-btn"
+                    onClick={() => void handleSyncNow()}
+                    disabled={agentSyncOnceBusy || agentPaths.length === 0}
+                    title="Run one collect→diff→upload pass right now, independent of Start/Stop"
+                  >
+                    {agentSyncOnceBusy ? 'Syncing…' : 'Sync now'}
+                  </button>
                 </div>
 
                 {agentStatusState && (
@@ -1099,7 +1213,92 @@ const SystemMenu = forwardRef<
                   </ul>
                 )}
 
+                {agentLastSync && agentLastSync.skipped_details.length > 0 && (
+                  <ul className="doc-list agent-skipped-details">
+                    {agentLastSync.skipped_details.map((s, i) => (
+                      <li className="doc-item" key={`${s.path}-${i}`}>
+                        <span className="doc-badge doc-badge-skip">–</span>
+                        <span className="doc-meta">
+                          <span className="doc-name">{s.path}</span>
+                          <span className="doc-sub">{skipReasonLabel(s.reason)}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
                 {agentError && <p className="sys-error">{agentError}</p>}
+
+                <details className="sys-advanced">
+                  <summary className="sys-advanced-summary">
+                    <span className="sys-advanced-chevron" aria-hidden="true">
+                      ▸
+                    </span>
+                    Granularity
+                  </summary>
+                  <div className="sys-advanced-body">
+                    <div className="sys-token">
+                      <label className="sys-label" htmlFor="agent-max-file-size">
+                        Max file size (MB)
+                      </label>
+                      <input
+                        id="agent-max-file-size"
+                        type="number"
+                        min={1}
+                        className="sys-token-input"
+                        defaultValue={agentMaxFileSizeMb}
+                        key={agentMaxFileSizeMb}
+                        onBlur={(e) => handleMaxFileSizeChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleMaxFileSizeChange(e.currentTarget.value)
+                        }}
+                      />
+                    </div>
+                    <p className="agent-note">
+                      A file larger than this is skipped entirely — never hashed, never uploaded.
+                    </p>
+
+                    <div className="sys-label">Excluded directories</div>
+                    <p className="agent-note">
+                      Always pruned: {DEFAULT_EXCLUDE_DIRS_SUMMARY.join(', ')}
+                    </p>
+                    {agentExcludeDirs.length > 0 && (
+                      <ul className="agent-folder-list">
+                        {agentExcludeDirs.map((dir) => (
+                          <li className="agent-folder-row" key={dir}>
+                            <span className="agent-folder-path">{dir}</span>
+                            <button
+                              type="button"
+                              className="drawer-del"
+                              onClick={() => handleRemoveExcludeDir(dir)}
+                              aria-label={`Stop excluding ${dir}`}
+                            >
+                              ✕
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="agent-exclude-dir-add">
+                      <input
+                        type="text"
+                        className="sys-token-input"
+                        placeholder="e.g. Drafts"
+                        value={agentExcludeDirDraft}
+                        onChange={(e) => setAgentExcludeDirDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleAddExcludeDir()
+                        }}
+                      />
+                      <button type="button" className="wizard-secondary-btn" onClick={handleAddExcludeDir}>
+                        Add
+                      </button>
+                    </div>
+
+                    <div className="sys-label">Included file types</div>
+                    <p className="agent-note">{DEFAULT_INCLUDE_EXTENSIONS_SUMMARY.join(', ')}</p>
+                  </div>
+                </details>
 
                 <details className="sys-advanced">
                   <summary className="sys-advanced-summary">
@@ -1112,40 +1311,24 @@ const SystemMenu = forwardRef<
                     {agentLog.length === 0 ? (
                       <p className="sys-muted">No log lines yet.</p>
                     ) : (
-                      <pre className="agent-log-pre">{agentLog.join('\n')}</pre>
+                      <ul className="agent-log-entries">
+                        {agentLog.map((line, i) => (
+                          <AgentLogEntry line={line} key={i} />
+                        ))}
+                      </ul>
                     )}
                   </div>
                 </details>
               </>
             ) : (
-              <>
-                <p className="agent-intro">
-                  Run the ingestion agent on your machine — point it at folders and it keeps them
-                  indexed in Condense, automatically.
-                </p>
-
-                {BUILDS.map((b) => (
-                  <div className="agent-dl-row" key={b.os}>
-                    <span className="agent-dl-icon">{b.icon}</span>
-                    <span className="agent-dl-meta">
-                      <span className="agent-dl-os">{b.os}</span>
-                      <span className="agent-dl-hint">{b.hint}</span>
-                      {b.note && <span className="agent-note">{b.note}</span>}
-                    </span>
-                    {b.href ? (
-                      <a className="agent-dl-btn" href={b.href} download>
-                        Download
-                      </a>
-                    ) : (
-                      <span className="agent-dl-btn is-soon" aria-disabled="true">
-                        Soon
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </>
+              <p className="agent-intro">
+                Run the ingestion agent on your machine — point it at folders and it keeps them
+                indexed in Condense, automatically. Grab a standalone build below.
+              </p>
             )}
           </div>
+
+          <AgentDownloads />
 
           {/* ---- Advanced: the ENTIRE original raw settings table, unchanged, just demoted -- */}
           {data &&

@@ -33,12 +33,39 @@ impl Default for LlmConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Default per-file size guard (MB) — mirrors `agent.sync.DEFAULT_MAX_FILE_SIZE_MB` (Python).
+/// A plain fn (not a `const`) because `#[serde(default = "...")]` needs a path to a function.
+fn default_max_file_size_mb() -> u32 {
+    100
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSettings {
     #[serde(default)]
     pub paths: Vec<String>,
     #[serde(default)]
     pub delete_removed: bool,
+    /// Per-file size guard in MB, passed to the sidecar as `--max-file-size-mb` (agent/cli.py).
+    /// Defaults to the same 100MB the CLI itself defaults to when the flag is omitted.
+    #[serde(default = "default_max_file_size_mb")]
+    pub max_file_size_mb: u32,
+    /// EXTRA directory names to prune from the walk, on top of (never instead of) the CLI's own
+    /// built-in vendored/tooling set (`agent.sync.DEFAULT_EXCLUDE_DIRS`) — passed through as
+    /// repeated `--exclude-dir` args. Never includes the built-ins themselves, so this list stays
+    /// short and doesn't need to track the CLI's defaults as they evolve.
+    #[serde(default)]
+    pub exclude_dirs: Vec<String>,
+}
+
+impl Default for AgentSettings {
+    fn default() -> Self {
+        Self {
+            paths: Vec::new(),
+            delete_removed: false,
+            max_file_size_mb: default_max_file_size_mb(),
+            exclude_dirs: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

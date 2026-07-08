@@ -124,6 +124,7 @@ pub fn run() {
             agent::agent_start,
             agent::agent_stop,
             agent::agent_status,
+            agent::agent_sync_once,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

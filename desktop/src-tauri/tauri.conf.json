@@ -23,6 +23,11 @@
       "csp": null
     }
   },
+  "plugins": {
+    "shell": {
+      "open": "^(https://.+|http://127\\.0\\.0\\.1(:\\d+)?/.*)$"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage", "dmg", "nsis"],

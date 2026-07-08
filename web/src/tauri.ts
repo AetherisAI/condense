@@ -27,7 +27,15 @@ export type AppConfig = {
   ingest_token: string
   llm: { base_url: string; model: string; api_key: string }
   manifest_url: string | null
-  agent: { paths: string[]; delete_removed: boolean }
+  agent: {
+    paths: string[]
+    delete_removed: boolean
+    /** Per-file size guard (MB) forwarded to the sidecar as `--max-file-size-mb`. */
+    max_file_size_mb: number
+    /** EXTRA directory names pruned from the walk, on top of (never instead of) the sidecar's
+     * own built-in vendored/tooling set — see `DEFAULT_EXCLUDE_DIRS_SUMMARY` below for that set. */
+    exclude_dirs: string[]
+  }
 }
 
 export type ComponentId = 'engine' | 'embedder' | 'model'
@@ -61,18 +69,64 @@ export type BackendStatus = {
   embedder: BackendComponentStatus
 }
 
-export type AgentStatus = { running: boolean; user_stopped: boolean; restarts: number }
+/** `log` is the Rust side's bounded ring buffer of recent raw stdout/stderr lines (last 200,
+ * shared by the continuous agent and any one-shot `agent_sync_once` run) — calling `agentStatus()`
+ * hydrates a freshly-(re)opened panel with real history instead of nothing, closing the "Log (0)
+ * despite real activity" gap that a live-events-only subscription (only active while the drawer
+ * is open) used to leave. */
+export type AgentStatus = { running: boolean; user_stopped: boolean; restarts: number; log: string[] }
 
 /** Mirrors the Rust `AgentConfig` (desktop/src-tauri/src/agent.rs) — `server`/`token` are optional
  * there (the Rust side falls back to local-mode values when absent), but every caller in this
  * codebase passes them explicitly per-mode (T6) so the sidecar is never accidentally pointed at
- * the wrong backend. */
+ * the wrong backend. `max_file_size_mb`/`exclude_dirs` are the granularity knobs surfaced in the
+ * Folder agent panel — both optional/empty-default, forwarded to the sidecar as
+ * `--max-file-size-mb`/repeated `--exclude-dir` only when present. */
 export type AgentConfig = {
   paths: string[]
   delete_removed: boolean
   server?: string
   token?: string
+  max_file_size_mb?: number
+  exclude_dirs?: string[]
 }
+
+/** The sidecar's own built-in vendored/tooling directory exclusions (`agent.sync.
+ * DEFAULT_EXCLUDE_DIRS`) — display-only, so the Folder agent panel can show "always excluded"
+ * alongside the user's own extra `exclude_dirs`. Duplicated here (not fetched at runtime) because
+ * it's a small, rarely-changing constant and the desktop app has no existing channel to query the
+ * sidecar's Python-side defaults directly; keep in sync with `agent/sync.py`'s own list by hand. */
+export const DEFAULT_EXCLUDE_DIRS_SUMMARY = [
+  '.git',
+  '.venv',
+  'venv',
+  'node_modules',
+  '__pycache__',
+  '.mypy_cache',
+  '.ruff_cache',
+  'site-packages',
+] as const
+
+/** The sidecar's own built-in include-extension set (`agent.sync.DEFAULT_INCLUDE`) — display-only,
+ * same duplication rationale as `DEFAULT_EXCLUDE_DIRS_SUMMARY` above. Not currently editable from
+ * the desktop app (no `--include` plumbing wired to `AgentConfig` yet); shown as a read-only
+ * summary in the Folder agent panel. */
+export const DEFAULT_INCLUDE_EXTENSIONS_SUMMARY = [
+  '.txt',
+  '.md',
+  '.pdf',
+  '.docx',
+  '.xlsx',
+  '.pptx',
+  '.html',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.bmp',
+  '.tiff',
+] as const
 
 // ---- Event payloads -----------------------------------------------------------------------
 
@@ -91,9 +145,17 @@ export type AgentEventPayload = { line: string }
 
 export type AgentTerminatedEvent = { code: number | null; will_restart: boolean }
 
-/** One parsed NDJSON line from the agent CLI's `--json` mode (`agent/cli.py`, D54) — the exact
- * shapes `emit()` prints there. `dry_run` is real but never emitted in `--watch` mode (which is
- * all the desktop supervisor ever runs), so it's omitted from this union on purpose. */
+/** Emitted once when a one-shot `agent_sync_once` ("Sync now") run exits — distinct from
+ * `agent-terminated`, which is the CONTINUOUS `--watch` agent's own lifecycle signal. The run's
+ * own sync results still arrive as a normal `agent-event` NDJSON `sync` line first; this is only
+ * "the one-shot process itself is done" so the UI can clear a busy/spinner state. */
+export type AgentSyncOnceDoneEvent = { code: number | null }
+
+/** One parsed NDJSON line from the agent CLI's `--json` mode (`agent/cli.py`, D54). The exact
+ * shapes `emit()` prints there — including `skipped_details`, every local skip decision (over-
+ * sized/excluded dir/excluded file/unsupported extension) the agent made on its own, distinct
+ * from `failures` (server-rejected uploads). `dry_run` is real but never emitted in `--watch` or
+ * one-shot mode (both always upload rather than preview), so it's omitted from this union. */
 export type AgentLine =
   | {
       event: 'sync'
@@ -103,6 +165,7 @@ export type AgentLine =
       skipped: number
       failed: number
       failures: { path: string; error: string }[]
+      skipped_details: { path: string; reason: string }[]
       error?: string
     }
   | { event: 'watch_started'; paths: string[]; delete_removed: boolean }
@@ -181,7 +244,7 @@ function freshConfig(): AppConfig {
     ingest_token: crypto.randomUUID().replace(/-/g, ''),
     llm: { base_url: '', model: '', api_key: '' },
     manifest_url: null,
-    agent: { paths: [], delete_removed: false },
+    agent: { paths: [], delete_removed: false, max_file_size_mb: 100, exclude_dirs: [] },
   }
 }
 
@@ -202,8 +265,16 @@ let mockBackendState: { engine: BackendStateString; embedder: BackendStateString
   embedder: 'stopped',
 }
 
-let mockAgentStatus: AgentStatus = { running: false, user_stopped: false, restarts: 0 }
+let mockAgentStatus: AgentStatus = { running: false, user_stopped: false, restarts: 0, log: [] }
 let mockFolderCounter = 0
+
+/** Push one line into the mock's own bounded log buffer (mirrors the Rust `AgentInner.log` ring
+ * buffer) before emitting it live — so `agentStatus()` hydrates the same way the real command's
+ * response does, and the mock is a faithful stand-in for the "Log (0)" fix in Chrome QA. */
+function mockPushLog(line: string): void {
+  mockAgentStatus = { ...mockAgentStatus, log: [...mockAgentStatus.log, line].slice(-200) }
+  mockEmit<AgentEventPayload>('agent-event', { line })
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -338,20 +409,20 @@ export async function agentStart(cfg: AgentConfig): Promise<void> {
     await invoke('agent_start', { cfg })
     return
   }
-  mockAgentStatus = { running: true, user_stopped: false, restarts: mockAgentStatus.restarts }
+  mockAgentStatus = { ...mockAgentStatus, running: true, user_stopped: false }
   void mockAgentRun(cfg)
 }
 
 async function mockAgentRun(cfg: AgentConfig): Promise<void> {
   await sleep(400)
   if (!mockAgentStatus.running) return
-  mockEmit<AgentEventPayload>('agent-event', {
-    line: JSON.stringify({ event: 'watch_started', paths: cfg.paths, delete_removed: cfg.delete_removed }),
-  })
+  mockPushLog(
+    JSON.stringify({ event: 'watch_started', paths: cfg.paths, delete_removed: cfg.delete_removed }),
+  )
   await sleep(900)
   if (!mockAgentStatus.running) return
-  mockEmit<AgentEventPayload>('agent-event', {
-    line: JSON.stringify({
+  mockPushLog(
+    JSON.stringify({
       event: 'sync',
       indexed: 3,
       replaced: 0,
@@ -359,13 +430,15 @@ async function mockAgentRun(cfg: AgentConfig): Promise<void> {
       skipped: 1,
       failed: 0,
       failures: [],
+      skipped_details: [{ path: 'recording.m4a', reason: 'unsupported_extension' }],
     }),
-  })
+  )
   await sleep(900)
   if (!mockAgentStatus.running) return
-  // One failure entry on purpose (D60/T2 spec) — exercises the failures-list UI without a real backend.
-  mockEmit<AgentEventPayload>('agent-event', {
-    line: JSON.stringify({
+  // One failure + one skipped_details entry on purpose (D60/T2 spec, extended for skipped_details)
+  // — exercises the failures-list AND local-skip UI without a real backend.
+  mockPushLog(
+    JSON.stringify({
       event: 'sync',
       indexed: 1,
       replaced: 0,
@@ -373,8 +446,36 @@ async function mockAgentRun(cfg: AgentConfig): Promise<void> {
       skipped: 0,
       failed: 1,
       failures: [{ path: 'notes/broken-scan.pdf', error: 'unsupported or corrupt file' }],
+      skipped_details: [{ path: 'archive/.venv', reason: 'excluded_dir' }],
     }),
-  })
+  )
+}
+
+// ---- agent_sync_once ("Sync now") ----------------------------------------------------------
+
+export async function agentSyncOnce(cfg: AgentConfig): Promise<void> {
+  if (isRealTauri) {
+    await invoke('agent_sync_once', { cfg })
+    return
+  }
+  void mockAgentSyncOnce(cfg)
+}
+
+async function mockAgentSyncOnce(cfg: AgentConfig): Promise<void> {
+  await sleep(500)
+  mockPushLog(
+    JSON.stringify({
+      event: 'sync',
+      indexed: cfg.paths.length > 0 ? 2 : 0,
+      replaced: 0,
+      deleted: 0,
+      skipped: 1,
+      failed: 0,
+      failures: [],
+      skipped_details: [],
+    }),
+  )
+  mockEmit<AgentSyncOnceDoneEvent>('agent-sync-once-done', { code: 0 })
 }
 
 export async function agentStop(): Promise<void> {
@@ -382,8 +483,8 @@ export async function agentStop(): Promise<void> {
     await invoke('agent_stop')
     return
   }
-  mockAgentStatus = { running: false, user_stopped: true, restarts: mockAgentStatus.restarts }
-  mockEmit<AgentEventPayload>('agent-event', { line: JSON.stringify({ event: 'stopped' }) })
+  mockAgentStatus = { ...mockAgentStatus, running: false, user_stopped: true }
+  mockPushLog(JSON.stringify({ event: 'stopped' }))
   mockEmit<AgentTerminatedEvent>('agent-terminated', { code: 0, will_restart: false })
 }
 
