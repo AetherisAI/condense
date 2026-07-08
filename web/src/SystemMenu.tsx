@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import AccessTokens from './AccessTokens'
 import { apiFetch, apiUrl, getApiBase, setApiBase } from './api'
 import { detectProvider } from './provider'
 
@@ -463,6 +464,9 @@ const SystemMenu = forwardRef<
               <span aria-hidden="true">↗</span>
             </a>
           </div>
+
+          {/* ---- Access tokens: mint/list/revoke per-consumer bearer tokens (master-gated) - */}
+          <AccessTokens token={token} open={open} />
 
           {/* ---- Model: LLM summary + provider auto-detect preview ------------------------ */}
           <div className="sys-section">
