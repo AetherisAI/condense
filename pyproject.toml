@@ -9,25 +9,28 @@ description = "Knowledge ingestion & retrieval service — RAG as a Lego block"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic>=2",
-    "pydantic-settings>=2",
-    "fastapi",
-    "uvicorn[standard]",
-    "python-multipart",          # required by FastAPI for the multipart /ingest UploadFile route
+    "pydantic>=2.13,<3",
+    "pydantic-settings>=2.14,<3",
+    "fastapi>=0.139,<1",
+    "uvicorn[standard]>=0.51,<1",
+    "python-multipart>=0.0.32,<1",          # required by FastAPI for the multipart /ingest UploadFile route
 ]
 
 # Heavy/optional inference + storage deps stay out of the base install so Step-0 CI
 # (base + dev) installs fast and needs no Turso/Ollama/TEI. Adapters opt in per group.
+#
+# Bounds below are lower-pinned to the versions that resolved when the bounds were added and
+# upper-capped at the next major (no lockfile yet — see docs/Quentin/DECISIONS.md).
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "ruff", "pyright"]
-store = ["libsql"]            # the current SDK; libsql-client/-experimental are deprecated
-parsing = ["markitdown[pdf,docx,pptx,xlsx]", "charset-normalizer"]  # converters + explicit charset sniff (real .txt/.md aren't all ASCII)
-chunking = ["tokenizers", "huggingface-hub", "tiktoken"]  # bge-m3 tokenizer (default) + tiktoken fallback
-inference = ["httpx"]
+dev = ["pytest>=9.1,<10", "pytest-asyncio>=1.4,<2", "ruff>=0.15,<1", "pyright>=1.1.411,<2"]
+store = ["libsql>=0.1.11,<1"]            # the current SDK; libsql-client/-experimental are deprecated
+parsing = ["markitdown[pdf,docx,pptx,xlsx]>=0.1.6,<1", "charset-normalizer>=3.4,<4"]  # converters + explicit charset sniff (real .txt/.md aren't all ASCII)
+chunking = ["tokenizers>=0.23,<1", "huggingface-hub>=1.22,<2", "tiktoken>=0.13,<1"]  # bge-m3 tokenizer (default) + tiktoken fallback
+inference = ["httpx>=0.28,<1"]
 # The standalone ingestion agent: HTTP client + cross-platform file watching + per-user config.
 # The desktop app's UI is stdlib Tkinter (no pip dep; on Ubuntu install the `python3-tk` package).
-agent = ["httpx", "watchdog", "platformdirs"]
-packaging = ["pyinstaller"]  # build the desktop agent into self-contained downloads (see packaging/)
+agent = ["httpx>=0.28,<1", "watchdog>=6,<7", "platformdirs>=4.10,<5"]
+packaging = ["pyinstaller>=6.21,<7"]  # build the desktop agent into self-contained downloads (see packaging/)
 
 [project.scripts]
 sift-agent = "agent.app:main"     # the small always-on desktop watcher (Tkinter)

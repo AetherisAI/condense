@@ -10,21 +10,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # appimagetool matching the image arch (so the image is self-consistent whether built as amd64 or
-# arm64). Run with --appimage-extract-and-run so it needs no FUSE inside the container.
+# arm64). Pinned to a numbered release (AppImage/appimagetool — the maintained successor to the
+# archived AppImageKit's rolling "continuous" tag) and verified by sha256 before it's ever executed,
+# so a compromised/mismatched download fails the build instead of running. Run with
+# --appimage-extract-and-run so it needs no FUSE inside the container.
 RUN set -eux; \
+    version=1.9.1; \
     case "$(uname -m)" in \
-      x86_64)  tool=appimagetool-x86_64.AppImage ;; \
-      aarch64) tool=appimagetool-aarch64.AppImage ;; \
+      x86_64)  tool=appimagetool-x86_64.AppImage;  sha256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0 ;; \
+      aarch64) tool=appimagetool-aarch64.AppImage; sha256=f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158 ;; \
       *) echo "unsupported build arch: $(uname -m)" >&2; exit 1 ;; \
     esac; \
     wget -q -O /usr/local/bin/appimagetool \
-      "https://github.com/AppImage/AppImageKit/releases/download/continuous/$tool"; \
+      "https://github.com/AppImage/appimagetool/releases/download/${version}/${tool}"; \
+    echo "${sha256}  /usr/local/bin/appimagetool" | sha256sum -c -; \
     chmod +x /usr/local/bin/appimagetool
 
 # Bake the agent's runtime deps + PyInstaller into a venv (the source is mounted at build time).
 RUN python3 -m venv /venv \
  && /venv/bin/pip install --upgrade pip \
- && /venv/bin/pip install httpx watchdog platformdirs pyinstaller
+ && /venv/bin/pip install 'httpx>=0.28,<1' 'watchdog>=6,<7' 'platformdirs>=4.10,<5' 'pyinstaller>=6.21,<7'
 
 COPY build_linux_in_container.sh /usr/local/bin/build_linux_in_container.sh
 RUN chmod +x /usr/local/bin/build_linux_in_container.sh
