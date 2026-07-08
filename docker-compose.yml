@@ -35,6 +35,8 @@ services:
       EMBED_TIMEOUT_S: ${EMBED_TIMEOUT_S:-60.0}
       EMBED_CONNECT_TIMEOUT_S: ${EMBED_CONNECT_TIMEOUT_S:-5.0}
       EMBED_RETRY_ATTEMPTS: ${EMBED_RETRY_ATTEMPTS:-3}
+      # Per-input safety cap (D73) — see .env.example.
+      EMBED_MAX_INPUT_TOKENS: ${EMBED_MAX_INPUT_TOKENS:-0}
       RERANK_STRATEGY: ${RERANK_STRATEGY:-llm}
       RERANK_BASE_URL: ${RERANK_BASE_URL:-http://tei:80}
       RERANK_MODEL: ${RERANK_MODEL:-bge-reranker-v2-m3}

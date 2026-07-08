@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     # ge=1: a 0-attempt budget isn't "no retry", it's a config value the embedder's retry loop
     # can't handle (D36 — reached an ``AssertionError`` mid-request instead of failing fast here).
     embed_retry_attempts: int = Field(default=3, ge=1)
+    # Hard per-input safety cap (D73): an input whose ESTIMATED token count exceeds this is
+    # truncated (tail) before ever being sent, with a logged warning. 0 (default) = no cap. This
+    # is a last-resort belt-and-braces guard for a deployment whose embed backend's physical
+    # batch (llama.cpp's `-ub`/`n_ubatch`, TEI's max-input-length, ...) is smaller than
+    # `CHUNK_SIZE` plus whatever special-token overhead the backend adds on re-tokenization
+    # (llama-server was observed adding +2 BOS/EOS, turning a full 512-token chunk into 514 and
+    # tripping its default 512 ubatch) — the batch-bisection/single-input-shrink behavior in
+    # `adapters/embedding/openai_compat.py` already isolates and reactively shrinks a poison
+    # input either way, so this cap is optional, proactive defense-in-depth, not the only guard.
+    # The estimate is a cheap, dependency-free char-based heuristic (`len(text) // 2`) rather
+    # than the real tokenizer: `adapters/` must never import `pipelines`/`adapters.chunking`
+    # (the dependency rule, `tests/contract/test_layering.py`), so an exact token count isn't
+    # available at this layer — good enough to catch a grossly oversized input, not exact.
+    embed_max_input_tokens: int = Field(default=0, ge=0)
 
     rerank_strategy: Literal["none", "llm", "crossencoder"] = "none"
     rerank_base_url: str | None = None

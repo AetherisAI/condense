@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from sift.adapters.embedding.openai_compat import OpenAICompatEmbedder
+from sift.core.errors import EmbedInputError
 
 DIM = 1024
 
@@ -223,14 +224,189 @@ async def test_retry_attempts_is_configurable(monkeypatch: pytest.MonkeyPatch) -
     assert len(seen) == 1
 
 
-async def test_non_429_error_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_non_429_error_is_not_retried_with_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-429 failure never enters the 429 backoff-retry loop (only one attempt at the
+    ORIGINAL text) — it falls straight to the single-input shrink path (D73) instead, which is
+    covered by its own dedicated tests below."""
+
     def server_error(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": "boom"})
 
     seen = _patch_transport(monkeypatch, server_error)
     embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3")
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(EmbedInputError):
         await embedder.embed(["alpha"])
 
-    assert len(seen) == 1  # no retry on a non-429 failure
+    # First attempt at "alpha", then exactly one shrink-and-retry attempt — no 429-style backoff
+    # loop (which would have been up to `retry_attempts` requests).
+    assert len(seen) == 2
+    assert json.loads(seen[0].content)["input"] == ["alpha"]
+
+
+# --- Poison-input isolation (DECISIONS.md D73) ---------------------------------------------
+
+# A long-enough marker that a poison input is still recognizable by its prefix after the
+# single-input shrink path's ~10% tail truncation (dropping the last few chars of a 60+-char
+# string never removes this prefix) — a bare `"poison" in inputs` equality check would stop
+# matching the moment the shrink attempt truncates it, making these tests flaky w.r.t. D73's
+# reactive shrink retry.
+_POISON = "poison-marker-input-that-stays-recognizable-after-any-single-truncation-attempt"
+
+
+def _poison_or_ok(request: httpx.Request) -> httpx.Response:
+    payload = json.loads(request.content)
+    inputs = payload["input"]
+    if any(text.startswith("poison-marker") for text in inputs):
+        return httpx.Response(500, json={"error": "input too large to process"})
+    return httpx.Response(200, json={"data": [{"embedding": [0.0] * DIM} for _ in inputs]})
+
+
+async def test_mixed_batch_isolates_poison_input_via_bisection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A batch with one poison input among many good ones must not sacrifice the good ones: a
+    500 on the whole batch triggers bisection down to exactly the poison input, order-
+    independent. The good inputs are lost too in THIS call (the port still returns
+    ``list[Vector]`` for a fully successful call only) — recovering them is
+    ``pipelines/ingest.py``'s job, covered in ``tests/pipelines/test_ingest.py``. This test locks
+    in that the poison input is correctly *identified* (by index + server message) regardless of
+    where it sits in the batch."""
+    seen = _patch_transport(monkeypatch, _poison_or_ok)
+    texts = [f"good{i}" for i in range(9)] + [_POISON]
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3", batch_size=10)
+
+    with pytest.raises(EmbedInputError) as exc_info:
+        await embedder.embed(texts)
+
+    assert exc_info.value.index == 9
+    assert "input too large to process" in exc_info.value.message
+    # Bisection actually happened: more than the single initial whole-batch POST.
+    assert len(seen) > 1
+
+
+async def test_mixed_batch_poison_isolated_regardless_of_position(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same guarantee as above, poison-first instead of poison-last — order-independent."""
+    _patch_transport(monkeypatch, _poison_or_ok)
+    texts = [_POISON] + [f"good{i}" for i in range(9)]
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3", batch_size=10)
+
+    with pytest.raises(EmbedInputError) as exc_info:
+        await embedder.embed(texts)
+
+    assert exc_info.value.index == 0
+    assert "input too large to process" in exc_info.value.message
+
+
+async def test_single_input_failure_gets_shrink_retry_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single input rejected once (e.g. too many tokens) gets exactly one truncated-tail retry;
+    if the shrunk version is accepted, the caller sees a normal, successful embed — no exception,
+    no signal that a retry happened beyond the logged warning."""
+    long_text = "x" * 100
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        (text,) = payload["input"]
+        if len(text) == 100:
+            return httpx.Response(500, json={"error": "input too large to process"})
+        return httpx.Response(200, json={"data": [{"embedding": [0.0] * DIM}]})
+
+    seen = _patch_transport(monkeypatch, handler)
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3")
+
+    out = await embedder.embed([long_text])
+
+    assert len(out) == 1
+    assert len(seen) == 2
+    # The retry sent a truncated (~10% shorter) version of the same input.
+    retried_text = json.loads(seen[1].content)["input"][0]
+    assert len(retried_text) == 90
+    assert retried_text == long_text[:90]
+
+
+async def test_single_input_failure_raises_embed_input_error_with_index_and_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When even the shrunk retry fails, the caller gets a typed, per-input error carrying the
+    input's index and the backend's own message — never a bare httpx status string."""
+    seen = _patch_transport(
+        monkeypatch, lambda request: httpx.Response(500, json={"error": "still too large"})
+    )
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3", batch_size=2)
+
+    with pytest.raises(EmbedInputError) as exc_info:
+        await embedder.embed(["alpha", "beta"])
+
+    # Bisected down to size-1 batches; the left half is always awaited (and so raises) before the
+    # right half is ever attempted, so this deterministically surfaces index 0 first.
+    assert exc_info.value.index == 0
+    assert exc_info.value.message == "still too large"
+    # Whole-batch attempt + left-half single-input attempt + its one shrink retry.
+    assert len(seen) == 3
+
+
+async def test_429_is_never_bisected_or_shrunk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 429 (even on a single-input batch, even past the retry budget) must never fall into the
+    bisection/shrink path — it is a retryable concurrency limit, not a bad input. Regression
+    guard: the 429 path's request count and exception type stay exactly what they were before
+    D73 (see ``test_429_retries_are_exhausted_then_raises`` above, unchanged)."""
+    seen = _patch_transport(
+        monkeypatch, lambda request: httpx.Response(429, json={"error": "Model is overloaded"})
+    )
+
+    async def _fake_sleep(seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", _fake_sleep)
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3")
+
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        await embedder.embed(["alpha"])
+
+    assert exc_info.value.response.status_code == 429
+    assert len(seen) == 3  # exactly the 429 retry budget — no extra shrink attempt
+
+
+# --- Proactive per-input cap (D73, EMBED_MAX_INPUT_TOKENS) ----------------------------------
+
+
+async def test_max_input_tokens_zero_means_no_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _patch_transport(monkeypatch, _ok)
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3", max_input_tokens=0)
+    long_text = "word " * 1000
+
+    await embedder.embed([long_text])
+
+    assert json.loads(seen[0].content)["input"] == [long_text]
+
+
+async def test_max_input_tokens_truncates_oversized_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An input whose estimated token count exceeds the cap is truncated BEFORE ever being sent
+    — proactive defense-in-depth alongside the reactive bisection/shrink path."""
+    seen = _patch_transport(monkeypatch, _ok)
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3", max_input_tokens=10)
+    long_text = "x" * 1000  # estimated ~500 tokens at the 2-chars/token heuristic
+
+    out = await embedder.embed([long_text])
+
+    assert len(out) == 1
+    sent_text = json.loads(seen[0].content)["input"][0]
+    assert len(sent_text) == 20  # 10 tokens * 2 chars/token
+    assert sent_text == long_text[:20]
+
+
+async def test_max_input_tokens_leaves_short_input_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _patch_transport(monkeypatch, _ok)
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3", max_input_tokens=1000)
+
+    await embedder.embed(["short"])
+
+    assert json.loads(seen[0].content)["input"] == ["short"]

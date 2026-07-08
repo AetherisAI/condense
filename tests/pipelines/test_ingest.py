@@ -15,7 +15,7 @@ import pytest
 
 from sift.adapters.embedding.fake import FakeEmbedder
 from sift.adapters.store.fake import FakeVectorStore
-from sift.core.errors import ModelPinMismatch
+from sift.core.errors import EmbedInputError, ModelPinMismatch
 from sift.core.hashing import content_hash
 from sift.core.types import Chunk, Document, Page, Vector
 from sift.pipelines.ingest import IngestOutcome, IngestPipeline, SupportsIngest
@@ -69,6 +69,27 @@ class CountingEmbedder:
 
     async def embed(self, texts: Sequence[str]) -> list[Vector]:
         self.calls += 1
+        return await self._inner.embed(texts)
+
+
+class PoisonEmbedder:
+    """Wraps a ``FakeEmbedder`` but raises :class:`~sift.core.errors.EmbedInputError` for any
+    text in ``poison_texts`` the FIRST time it's seen in a given ``embed()`` call — mimicking a
+    real embedding backend rejecting one oversized/rejected input after
+    ``adapters/embedding/openai_compat.py``'s own bisection/shrink already gave up on it (D73).
+    Once ``IngestPipeline`` drops that chunk and retries with a smaller list, the poison text is
+    no longer present, so a later call embeds the survivors normally."""
+
+    def __init__(self, inner: FakeEmbedder, poison_texts: set[str]) -> None:
+        self._inner = inner
+        self._poison = set(poison_texts)
+        self.calls = 0
+
+    async def embed(self, texts: Sequence[str]) -> list[Vector]:
+        self.calls += 1
+        for i, text in enumerate(texts):
+            if text in self._poison:
+                raise EmbedInputError(index=i, message=f"input rejected: {text!r} too large")
         return await self._inner.embed(texts)
 
 
@@ -193,6 +214,59 @@ async def test_per_file_failure_is_isolated() -> None:
     assert [o.status for o in outcomes] == ["indexed", "failed", "indexed"]
     assert outcomes[1].detail is not None
     assert "bad.md" in outcomes[1].detail
+
+
+async def test_one_poison_chunk_is_skipped_and_the_rest_still_index() -> None:
+    """A single chunk the embedder rejects (D73's ``EmbedInputError``) must not fail the whole
+    document — the file still indexes with its good chunks, and the outcome's ``detail`` names
+    how many were skipped and why."""
+    store = FakeVectorStore()
+    embedder = PoisonEmbedder(FakeEmbedder(dim=DIM), poison_texts={"gamma delta"})
+    pipeline = _pipeline(store, embedder)
+    data = b"alpha beta\ngamma delta\nepsilon zeta"
+
+    outcomes = await pipeline.ingest([("doc.md", data)], TENANT)
+
+    assert len(outcomes) == 1
+    out = outcomes[0]
+    assert out.status == "indexed"
+    assert out.content_hash == content_hash(data)
+    assert out.chunks == 2  # 3 chunked lines minus the 1 poison one
+    assert out.detail is not None
+    assert out.detail.startswith("1 chunks skipped")
+    assert "too large" in out.detail
+    # Retried once with the poison chunk dropped, rather than giving up after the first failure.
+    assert embedder.calls == 2
+
+    plain_embedder = FakeEmbedder(dim=DIM)
+    (good_query,) = await plain_embedder.embed(["alpha beta"])
+    hits = await store.search(good_query, 5, TENANT)
+    assert hits and hits[0].text == "alpha beta"
+    # The file's hash is recorded even though one chunk was skipped — a re-ingest of the exact
+    # same bytes is dedup'd, not retried forever.
+    assert await store.known_hashes(TENANT) == {content_hash(data)}
+
+
+async def test_all_chunks_failing_to_embed_marks_file_failed_with_real_message() -> None:
+    """When EVERY chunk is rejected, nothing is left to index — the file becomes ``failed`` with
+    the embedder's own message as detail (never a bare httpx status string, never a silent
+    empty index)."""
+    store = FakeVectorStore()
+    embedder = PoisonEmbedder(FakeEmbedder(dim=DIM), poison_texts={"alpha beta", "gamma delta"})
+    pipeline = _pipeline(store, embedder)
+    data = b"alpha beta\ngamma delta"
+
+    outcomes = await pipeline.ingest([("doc.md", data)], TENANT)
+
+    assert len(outcomes) == 1
+    out = outcomes[0]
+    assert out.status == "failed"
+    assert out.detail is not None
+    assert "all 2 chunks failed to embed" in out.detail
+    assert "too large" in out.detail
+    # Never indexed — a retry of the same bytes should try again, not be dedup'd as if it had
+    # succeeded.
+    assert await store.known_hashes(TENANT) == set()
 
 
 async def test_model_pin_mismatch_is_fatal() -> None:

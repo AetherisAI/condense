@@ -137,6 +137,7 @@ def _build_embedder(settings: Settings) -> Embedder:
             timeout_s=settings.embed_timeout_s,
             connect_timeout_s=settings.embed_connect_timeout_s,
             retry_attempts=settings.embed_retry_attempts,
+            max_input_tokens=settings.embed_max_input_tokens,
         )
     return FakeEmbedder(settings.embed_dim)
 

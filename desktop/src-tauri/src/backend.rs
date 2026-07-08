@@ -393,6 +393,18 @@ async fn start_embedder(
 
     // Flags verified empirically against llama.cpp b9878 tonight (D61): OpenAI-compat
     // /v1/embeddings, dim 1024, L2-normalized, ~342MB RSS.
+    //
+    // Physical batch sizing (D73 — fixes the "input (514 tokens) is too large to process"
+    // HTTP 500 every document long enough to produce one full chunk hit): with neither -b nor
+    // -ub passed, llama-server clamps n_batch=n_ubatch=512, and an embeddings-mode request must
+    // fit in ONE ubatch. The engine's chunker (CHUNK_SIZE=512,
+    // src/sift/adapters/chunking/token.py) emits windows of up to exactly 512 raw tokenizer ids
+    // — but llama-server re-tokenizes each input and adds its own BOS/EOS (+2 special tokens),
+    // so a full 512-token chunk arrives as 514 tokens and tripped the implicit 512 default.
+    // -ub 1024 gives 512+2 (and the engine's own reactive single-input shrink-retry, D73)
+    // comfortable headroom; -b 2048 keeps the logical batch a clean multiple of -ub;
+    // --parallel 4 lets up to 4 requests share the physical batch concurrently instead of
+    // serializing, matching the engine's EMBED_BATCH_SIZE fan-out. -c 8192 (context) unchanged.
     let args: Vec<String> = vec![
         "-m".into(),
         model_path_str,
@@ -401,6 +413,12 @@ async fn start_embedder(
         "cls".into(),
         "-c".into(),
         "8192".into(),
+        "-ub".into(),
+        "1024".into(),
+        "-b".into(),
+        "2048".into(),
+        "--parallel".into(),
+        "4".into(),
         "--host".into(),
         "127.0.0.1".into(),
         "--port".into(),
