@@ -67,7 +67,10 @@ def _seed_dir(root: Path) -> dict[str, bytes]:
     return {
         "a.txt": b"alpha",
         "b.md": b"bravo",
-        str(Path("sub") / "c.txt"): b"charlie",
+        # collect() keys are POSIX (upload_name -> as_posix, D45) so the same file maps to the
+        # same server path on every OS — a literal forward slash, never str(Path(...)) which is
+        # os.sep-dependent and yields "sub\\c.txt" on Windows.
+        "sub/c.txt": b"charlie",
     }
 
 
@@ -513,7 +516,8 @@ def test_collect_normal_folders_unaffected_by_exclusion(tmp_path: Path) -> None:
     got = collect(str(tmp_path), {".txt"})
 
     rels = {rel for rel, _h, _loader, _m in got}
-    assert rels == {str(Path("events") / "venvoyage" / "notes.txt")}
+    # POSIX key regardless of host OS (upload_name -> as_posix, D45), not str(Path(...)).
+    assert rels == {"events/venvoyage/notes.txt"}
 
 
 def test_collect_prunes_hidden_directories_by_default(tmp_path: Path) -> None:

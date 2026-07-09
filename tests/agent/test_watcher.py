@@ -9,6 +9,8 @@ forever, see D29) and previously had zero automated coverage.
 
 from __future__ import annotations
 
+import os
+
 from agent.watcher import _CHANGE_EVENTS, _Handler
 from watchdog.events import FileSystemEvent
 
@@ -39,9 +41,17 @@ class _Ev(FileSystemEvent):
 
 
 def _handler(only: str | None = None) -> tuple[list[int], _Handler]:
-    """A fresh ``_Handler`` wired to a call counter, so tests assert exact arm counts."""
+    """A fresh ``_Handler`` wired to a call counter, so tests assert exact arm counts.
+
+    ``only`` is abspath-normalised exactly as ``Watcher.start()`` does in production (it schedules
+    ``_Handler`` with an already-``os.path.abspath``'d path). The handler compares each event path
+    through ``os.path.abspath`` too, so on Windows a bare POSIX ``/x/a.pdf`` (which
+    ``os.path.abspath`` turns into ``C:\\x\\a.pdf``) must be normalised on both sides or it never
+    matches itself — hence normalise here rather than pass the raw string.
+    """
     calls = [0]
-    handler = _Handler(lambda: calls.__setitem__(0, calls[0] + 1), only)
+    normalised = os.path.abspath(only) if only is not None else None
+    handler = _Handler(lambda: calls.__setitem__(0, calls[0] + 1), normalised)
     return calls, handler
 
 

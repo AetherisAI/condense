@@ -217,6 +217,15 @@ def test_dry_run_without_json_against_unreachable_server_still_raises(tmp_path: 
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGTERM"), reason="SIGTERM unsupported on this platform")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows has no catchable external SIGTERM: Popen.send_signal(SIGTERM) maps to "
+        "TerminateProcess (a hard kill), so the graceful stop_event handler never runs and the "
+        "process exits non-zero. The D54 SIGTERM-to-exit-0 path is POSIX-only (a Tauri sidecar on "
+        "Windows hard-terminates the watcher anyway; watch mode holds no unflushed state)."
+    ),
+)
 def test_sigterm_stops_watch_mode_cleanly_within_5s(tmp_path: Path) -> None:
     """A real SIGTERM (what a supervisor's ``kill()`` sends — never SIGINT) exits 0 quickly.
 
