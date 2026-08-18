@@ -10,6 +10,7 @@ and ``format="json"`` (incl. the one-retry repair path).
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import pytest
@@ -17,6 +18,7 @@ import pytest
 from sift.adapters.conversation.fake import FakeConversationStore
 from sift.adapters.embedding.fake import FakeEmbedder
 from sift.adapters.llm.fake import FakeCompleter, FakeToolCompleter
+from sift.adapters.llm.openai_compat import parse_prompted_response
 from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
 from sift.core.types import Chunk, ToolCall, ToolCompletion
@@ -1233,3 +1235,189 @@ async def test_autotitle_skipped_entirely_when_disabled(settings, embedder, stor
     detail = await conversations.get_conversation(TENANT, conversation_id)
     assert detail is not None
     assert detail.meta.title is None
+
+
+# --- postmortem follow-up redesign (2026-08-18 live-demo postmortem, FAILURE A) --------------
+#
+# The original fix here was a pipeline-level text-shape guard (`_looks_like_tool_protocol`,
+# now deleted — see the module docstring's "Provenance, not sniffing" paragraph). A follow-up
+# audit found it simultaneously too narrow (every new way a model could mangle the JSON slipped
+# past it) and too broad (it destroyed genuine answers that merely resembled protocol). The fix
+# now lives at the SOURCE: the prompted-mode parser tags a reply it cannot confidently classify
+# as `ToolCompletion.malformed=True` instead of guessing from text shape, and `run()` reacts to
+# that flag with one corrective retry, never by re-sniffing already-settled text.
+
+
+async def test_malformed_completion_gets_one_corrective_retry_and_recovers(
+    settings, embedder, store
+) -> None:
+    """A `malformed` completion is not shown to the user directly — `run()` gives it ONE
+    corrective nudge; when the retry comes back clean, THAT is what the user sees. The raw
+    garbled first attempt never reaches `answer_delta`, and no tool-call budget is spent on it
+    (this was never a tool call)."""
+    garbled = '{"args": {"query": "x"}, "tool": "sea'  # D2-shaped truncated fragment
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(content=garbled, malformed=True),
+            ToolCompletion(content="Here is the real answer."),
+        ]
+    )
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "two-part question")
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    assert answer_delta.data["text"] == "Here is the real answer."
+    assert garbled not in answer_delta.data["text"]
+    assert not any(e.type in ("tool_call", "tool_result") for e in events)  # budget untouched
+    done = events[-1]
+    assert done.data["truncated"] is False
+
+    # The nudge landed in the SECOND call's transcript right after the model's own malformed
+    # reply, so the model sees exactly what it said and exactly what shape is required next.
+    second_call_messages = completer.calls[1]
+    assert second_call_messages[-2] == {"role": "assistant", "content": garbled}
+    assert second_call_messages[-1]["role"] == "user"
+    assert "final" in second_call_messages[-1]["content"]
+
+
+async def test_malformed_completion_still_malformed_after_retry_ends_with_truthful_message(
+    settings, embedder, store
+) -> None:
+    """When even the ONE corrective retry stays malformed, the turn ends with a TRUTHFUL
+    message and `truncated=True` — never the false "ran out of budget" wording (that would
+    claim the model exhausted its tool-call budget, which never happened here)."""
+    garbled = "{'tool': 'search', 'args': {'query': 'x'}}"  # D3-shaped single-quoted
+    # FakeToolCompleter repeats its one scripted entry forever, so the corrective retry gets the
+    # SAME malformed reply back — exactly "stays malformed after the nudge".
+    completer = FakeToolCompleter([ToolCompletion(content=garbled, malformed=True)])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "two-part question")
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    text = answer_delta.data["text"]
+    assert garbled not in text
+    assert "malformed" in text.lower()
+    assert "ran out of" not in text.lower()
+    done = events[-1]
+    assert done.data["truncated"] is True
+    assert len(completer.calls) == 2  # original attempt + exactly one corrective retry, no more
+
+
+async def test_prose_that_quotes_the_protocol_is_delivered_intact(
+    settings, embedder, store
+) -> None:
+    """D7: a real answer that merely QUOTES the tool-call wire format while explaining something
+    (e.g. "how do I call a tool manually?") is never a leak — `ToolCompletion.malformed` is only
+    ever set by the prompted-mode PARSER (never by a native completion, and never guessed from
+    this pipeline re-reading the text), so with `malformed=False` this is delivered verbatim.
+    The deleted pipeline-level guard used to replace this exact answer with the false "I ran
+    out of budget..." message."""
+    quoting_answer = 'To call a tool, POST {"tool": "search", "args": {...}} to /v1/answer.'
+    completer = FakeToolCompleter([ToolCompletion(content=quoting_answer)])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "how do I call a tool manually?")
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    assert answer_delta.data["text"] == quoting_answer
+    assert "ran out of budget" not in answer_delta.data["text"]
+    done = events[-1]
+    assert done.data["truncated"] is False
+
+
+async def test_pathologically_nested_reply_from_the_real_parser_still_reaches_done(
+    settings, embedder, store
+) -> None:
+    """D4: a reply that would trigger `RecursionError` in the OLD unbounded scanner, run through
+    the REAL adapter parser (not just a hand-built `ToolCompletion`), must never crash the SSE
+    stream — the loop always reaches a terminal "done" event."""
+    pathological = '{"a":' * 8000
+    completion = parse_prompted_response(pathological, known_tools=frozenset({"search"}))
+    completer = FakeToolCompleter([completion])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "trigger")
+
+    assert events[-1].type == "done"
+
+
+async def test_json_mode_never_lets_pure_protocol_json_bypass_the_schema_guard(
+    settings, embedder, store
+) -> None:
+    """D1: `_coerce_json`'s acceptance check for `schema=None` used to short-circuit to
+    accepting ANY parseable dict verbatim — the exact incident payload,
+    `{"tool": "search", "args": {...}}`, parsed as valid JSON and streamed to the user as if it
+    were a real, schema-conforming `format="json"` answer, completely unguarded."""
+    leaked = json.dumps({"tool": "search", "args": {"query": "x", "k": 3}})
+    completer = FakeToolCompleter([ToolCompletion(content=leaked)])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "give me json", format="json")
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    text = answer_delta.data["text"]
+    assert text != leaked
+    parsed = json.loads(text)
+    assert "tool" not in parsed  # never a bare top-level control object reaching the user
+    assert "error" in parsed
+    done = events[-1]
+    assert done.data["truncated"] is False
+    # One repair retry was attempted (FakeToolCompleter replays the same leaked shape, which is
+    # correctly rejected again too) before falling back to the safe error envelope.
+    assert len(completer.calls) == 2
+
+
+async def test_json_mode_legitimate_answer_using_tool_as_a_schema_field_is_not_rejected(
+    settings, embedder, store
+) -> None:
+    """D8: a legitimate `format="json"` answer whose OWN schema requires a field literally
+    named "tool" (e.g. routing a support ticket to a system) must not be mistaken for leaked
+    protocol JSON just because it has that key — accepted verbatim, first try, no repair."""
+    real_answer = json.dumps({"tool": "Jira", "owner": "IT"})
+    completer = FakeToolCompleter([ToolCompletion(content=real_answer)])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(
+        pipeline,
+        "route this ticket",
+        format="json",
+        json_schema={"type": "object", "required": ["tool", "owner"]},
+    )
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    assert answer_delta.data["text"] == real_answer
+    assert len(completer.calls) == 1  # no repair retry needed
+
+
+async def test_a_normal_answer_that_happens_to_start_with_a_brace_is_not_flagged(
+    settings, embedder, store
+) -> None:
+    """The guard must not false-positive on a real answer that is JSON-shaped but carries none
+    of the protocol's `tool`/`final` keys (e.g. a `format="json"` answer with a user schema)."""
+    real_json_answer = '{"name": "Alice", "role": "engineer"}'
+    completer = FakeToolCompleter([ToolCompletion(content=real_json_answer)])
+    pipeline = _pipeline(completer, embedder, store, settings)
+
+    events = await _collect(pipeline, "give me json", format="json")
+
+    answer_delta = next(e for e in events if e.type == "answer_delta")
+    assert answer_delta.data["text"] == real_json_answer
+    done = events[-1]
+    assert done.data["truncated"] is False
+
+
+# --- third-pass audit: json-mode protocol guard is registry-aware ----------------------------
+
+
+def test_json_mode_rejects_a_registered_tool_object_even_with_extra_keys() -> None:
+    from sift.pipelines.answer import _accepts_json_mode_output
+
+    known = ["search", "list_documents"]
+    assert not _accepts_json_mode_output({"tool": "search", "args": {}, "reason": "x"}, None, known)
+    assert not _accepts_json_mode_output({"tool": "search", "args": {}}, None, known)
+    assert not _accepts_json_mode_output({"final": "x", "note": "y"}, None, known)
+    # A legitimate JSON answer whose own field is called "tool" (D8) is untouched.
+    assert _accepts_json_mode_output({"tool": "Jira", "owner": "IT"}, None, known)
+    assert _accepts_json_mode_output({"answer": "42"}, None, known)

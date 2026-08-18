@@ -77,6 +77,30 @@ load-bearing on its own since (1)/(2) make correctness independent of the model 
 it. D51's strict OUTPUT guard now matches the SAME tolerant variant set (was the exact bracket
 literal only) — a variant that would have leaked real ungrounded prose past strict mode
 undetected now still triggers the abstention.
+
+**Provenance, not sniffing, against leaked tool-protocol JSON (D73, postmortem follow-up
+redesign):** 2026-08-18 live-demo postmortem, FAILURE A — a prompted-mode completer's reply
+carrying raw `{"tool": ...}` control-channel JSON (one or more, glued back-to-back) was, on a
+parser edge case, accepted as `completion.content` with ZERO shape validation and streamed to
+the user verbatim instead of being executed as tool calls. The FIRST fix added a belt-and-
+braces text-shape guard (`_looks_like_tool_protocol`) here in `run()`, re-sniffing `final_text`
+right before treating it as a real answer — a follow-up audit found this guard was
+simultaneously too NARROW (every new way a model could mangle the JSON slipped past it — a
+truncated args-first fragment, single-quote style, an interior markdown fence gluing two
+fragments together) and too BROAD (it destroyed a genuine answer that merely quoted the
+protocol in prose, or a legitimate `format="json"` answer whose OWN schema happens to use the
+word "tool" as a field name) — sniffing finished text can never reliably tell "this IS leaked
+protocol" apart from "this LOOKS LIKE protocol but isn't", because both produce the identical
+string. `_looks_like_tool_protocol` is deleted. The fix now lives at the SOURCE instead: the
+prompted-mode parser (`adapters/llm/openai_compat.py`'s `parse_prompted_response`) decides by
+PROVENANCE — a genuine `{"tool": ...}` naming a REGISTERED tool becomes a real `tool_calls`
+entry (executed, never treated as text, regardless of what prose surrounds it); a reply that
+looks like an ATTEMPTED control message but never parsed into one is tagged
+`ToolCompletion.malformed=True` instead of being returned as if it were prose. `run()` reacts to
+that flag (see the malformed-completion handling below) rather than re-deriving it from the
+text's shape. NATIVE mode is untouched by any of this — a native reply's `content` is whatever
+the model said, never sniffed, which is what actually fixes the false-positive quote-the-
+protocol case: there is no guard left to trip.
 """
 
 from __future__ import annotations
@@ -88,7 +112,7 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -672,6 +696,47 @@ def _best_effort_answer(tool_results: Sequence[str]) -> str:
     )
 
 
+# The corrective system nudge sent ONCE when a completion comes back `ToolCompletion.malformed
+# =True` (postmortem follow-up redesign — see the module docstring's provenance paragraph and
+# `run`'s handling below). Phrased as a plain instruction rather than an apology: the model is
+# not told it "failed", just told exactly what shape is acceptable, mirroring `_coerce_json`'s
+# `repair_note` below (a proven pattern already used for the SAME kind of "reply again, but
+# cleanly" correction).
+_MALFORMED_REPLY_NUDGE = (
+    "Your previous reply mixed prose with tool JSON, used the wrong quoting, named a tool that "
+    "does not exist, or was cut off. "
+    'Reply with EITHER one {"final": ...} object OR one-or-more {"tool": ...} objects, nothing '
+    "else. The ONLY tools that exist are: __TOOLS__."
+)
+
+
+def _malformed_nudge(tool_names: Sequence[str]) -> str:
+    """The nudge with the real registry spelled out: the most common malformed reply in the
+    wild is a call to a tool that does not exist (a hallucinated or misspelled name), and the
+    fix for that is to tell the model what does exist, not just to ask for cleaner JSON."""
+    # str.replace, not str.format: the nudge text itself contains literal {"final"} braces.
+    return _MALFORMED_REPLY_NUDGE.replace("__TOOLS__", ", ".join(tool_names) or "(none)")
+
+
+def _malformed_answer(tool_results: Sequence[str]) -> str:
+    """Truthful degrade for a prompted-mode reply that STAYED malformed even after the one
+    corrective nudge above (postmortem follow-up redesign) — never
+    :func:`_best_effort_answer`'s "ran out of budget" wording, which would be false here: the
+    model was not out of budget, its reply simply could not be safely shown to the user as
+    either a real answer or a tool call.
+    """
+    if not tool_results:
+        return (
+            "The model's reply was malformed and could not be shown safely, and no information "
+            "had been gathered yet — please try rephrasing your question."
+        )
+    joined = "; ".join(tool_results)
+    return (
+        "The model's reply was malformed and could not be shown safely; here is what was "
+        f"gathered so far: {joined}."
+    )
+
+
 def _try_parse_json(text: str) -> Any | None:
     try:
         return json.loads(text)
@@ -695,6 +760,74 @@ def _loosely_matches_schema(value: Any, schema: Mapping[str, Any]) -> bool:
     if schema_type == "array":
         return isinstance(value, list)
     return True
+
+
+def _is_pure_protocol_json(parsed: Any) -> bool:
+    """Whether a parsed JSON value is PURE tool-protocol control shape and nothing else (D1,
+    postmortem follow-up audit) — a dict naming a tool (key set a non-empty subset of
+    ``{"tool", "args"}``, with ``"tool"`` present) or exactly ``{"final": ...}``.
+
+    ``_coerce_json`` (below) only has a REAL structural check when the caller supplied a
+    ``schema``; with ``schema=None`` its guard used to be ``schema is None or
+    _loosely_matches_schema(...)``, which short-circuits to accepting ANY dict verbatim — this
+    is the D1 bug: the exact 2026-08-18 incident payload, `{"tool": "search", "args": {...}}`,
+    parses as perfectly valid JSON and sailed straight through as if it were a real,
+    schema-conforming `format="json"` answer. This predicate is the guard `_coerce_json` checks
+    instead whenever ``schema is None``.
+
+    Deliberately narrow so it does NOT catch D8's `{"tool": "Jira", "owner": "IT"}` — a
+    legitimate answer whose OWN schema happens to use "tool" as a field name: that dict has an
+    extra key ("owner") outside `{"tool", "args"}`, so it is not a subset and is correctly left
+    alone. An object with ONLY "args" and no "tool" is not identifiable as a tool call at all
+    (just some args-shaped data) and is likewise left alone.
+    """
+    if not isinstance(parsed, dict) or not parsed:
+        return False
+    keys = frozenset(parsed.keys())
+    if keys == {"final"}:
+        return True
+    return "tool" in keys and keys <= {"tool", "args"}
+
+
+def _is_protocol_json(parsed: Any, known_tools: Collection[str]) -> bool:
+    """The registry-aware superset of :func:`_is_pure_protocol_json` (third-pass audit): a dict
+    whose ``tool`` names a REGISTERED tool is protocol no matter what other keys ride along
+    (``{"tool": "search", "args": {}, "reason": "x"}`` was accepted by the pure-shape check and
+    streamed verbatim), and a dict whose ``final`` is a string with only ``final``-adjacent
+    chatter keys is protocol too. ``{"tool": "Jira", "owner": "IT"}`` stays an answer because
+    ``Jira`` is not registered. Mirrors ``_is_control_shaped`` in the LLM adapter, restated here
+    because ``pipelines/`` may not import ``adapters/``.
+    """
+    if _is_pure_protocol_json(parsed):
+        return True
+    if not isinstance(parsed, dict):
+        return False
+    tool = parsed.get("tool")
+    if tool is not None:
+        wanted = str(tool).strip().casefold()
+        return any(str(name).strip().casefold() == wanted for name in known_tools)
+    return isinstance(parsed.get("final"), str) and set(parsed) <= {
+        "final",
+        "note",
+        "reason",
+        "thought",
+    }
+
+
+def _accepts_json_mode_output(
+    parsed: Any, schema: Mapping[str, Any] | None, known_tools: Collection[str] = ()
+) -> bool:
+    """Whether a parsed ``format="json"`` candidate is acceptable to return to the user (D1).
+
+    With a real ``schema``, that schema alone governs (``_loosely_matches_schema``) — a dict
+    that happens to also look like tool protocol but satisfies the user's OWN schema (D8's
+    `{"tool": "Jira", "owner": "IT"}`) is a legitimate answer, not a leak. With NO schema, there
+    is nothing else to reject pure protocol shape, so `_is_pure_protocol_json` is the only guard
+    (D1's incident case: `{"tool": "search", "args": {...}}`, format="json", no schema).
+    """
+    if schema is None:
+        return not _is_protocol_json(parsed, known_tools)
+    return _loosely_matches_schema(parsed, schema)
 
 
 class AnswerPipeline:
@@ -780,6 +913,11 @@ class AnswerPipeline:
         corpus_evidence_used = False
         deadline = time.monotonic() + settings.answer_timeout_s
         budget = settings.answer_max_tool_calls
+        # Postmortem follow-up redesign: whether the ONE corrective nudge for a `malformed`
+        # completion (see below) has already been used this turn — at most once, so a completer
+        # that keeps producing broken control messages cannot loop forever burning wall-clock
+        # budget on retries that never touch a real tool call.
+        malformed_retried = False
 
         # BUG-1/D48 fix: the ONLY previously-caught failure here was `TimeoutError` — any OTHER
         # exception from the tool-completer (a provider 429/5xx, a dropped connection, a
@@ -802,6 +940,25 @@ class AnswerPipeline:
                 except TimeoutError:
                     truncated = True
                     break
+
+                # Postmortem follow-up redesign (D73 provenance fix): a `malformed` completion
+                # is NOT a final answer and NOT a tool call — the prompted-mode parser could not
+                # confidently classify it (a truncated/garbled control message). Give it exactly
+                # ONE corrective nudge, appended to the transcript like `_coerce_json`'s repair
+                # note below, WITHOUT touching `executed`/`budget` (this is not a tool call) and
+                # without breaking the loop, so the very next iteration re-asks the same
+                # completer with the nudge in context. A SECOND malformed reply in a row ends
+                # the turn with a truthful message instead of looping forever.
+                if completion.malformed and not completion.tool_calls:
+                    if malformed_retried:
+                        truncated = True
+                        final_text = _malformed_answer(gathered)
+                        break
+                    malformed_retried = True
+                    messages.append({"role": "assistant", "content": completion.content or ""})
+                    tool_names = [str(spec.get("function", spec).get("name", "")) for spec in tools]
+                    messages.append({"role": "user", "content": _malformed_nudge(tool_names)})
+                    continue
 
                 if not completion.tool_calls:
                     final_text = completion.content or ""
@@ -948,9 +1105,21 @@ class AnswerPipeline:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> str:
-        """Ensure the final answer parses as JSON (and loosely matches ``schema``), one retry."""
+        """Ensure the final answer parses as JSON (and loosely matches ``schema``), one retry.
+
+        D1 (postmortem follow-up audit): with ``schema=None`` the acceptance check used to be
+        ``schema is None or _loosely_matches_schema(...)`` — a short-circuit that accepted ANY
+        parseable dict verbatim, including pure tool-protocol control JSON (the exact incident
+        payload). ``_is_pure_protocol_json`` closes that gap at BOTH acceptance points below (the
+        pre-repair ``text`` and the post-repair ``candidate``) without narrowing what a
+        legitimate ``format="json"`` answer can look like (D8 — a dict with any OTHER key, like
+        `{"tool": "Jira", "owner": "IT"}`, is untouched by this guard either way). When a real
+        ``schema`` IS supplied, `_loosely_matches_schema` alone governs acceptance as before —
+        the pure-protocol guard only ever fires when there is no schema to already reject it.
+        """
+        tool_names = [str(spec.get("function", spec).get("name", "")) for spec in tools]
         parsed = _try_parse_json(text)
-        if parsed is not None and (schema is None or _loosely_matches_schema(parsed, schema)):
+        if parsed is not None and _accepts_json_mode_output(parsed, schema, tool_names):
             return text
         repair_note = (
             "Your previous reply was not valid JSON"
@@ -967,10 +1136,19 @@ class AnswerPipeline:
         except Exception:
             logger.warning("json-mode repair retry failed", exc_info=True)
             completion = None
-        candidate = completion.content if completion and not completion.tool_calls else None
+        # The repair call above goes through the SAME `complete_with_tools` as every other turn
+        # in this loop, so `completion.malformed` is directly available here (unlike `text`
+        # above, which by this point is already a bare `str` with no provenance attached) — a
+        # malformed repair reply is rejected outright rather than attempting to json.loads() a
+        # reply the parser itself could not confidently classify.
+        candidate = (
+            completion.content
+            if completion and not completion.tool_calls and not completion.malformed
+            else None
+        )
         if candidate is not None:
             parsed = _try_parse_json(candidate)
-            if parsed is not None and (schema is None or _loosely_matches_schema(parsed, schema)):
+            if parsed is not None and _accepts_json_mode_output(parsed, schema, tool_names):
                 return candidate
         return json.dumps({"error": "failed to produce schema-conforming JSON", "raw": text})
 

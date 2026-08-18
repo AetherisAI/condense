@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     rerank_strategy: Literal["none", "llm", "crossencoder"] = "none"
     rerank_base_url: str | None = None
     rerank_model: str = "bge-reranker-v2-m3"
+    # Same two-phase bound as the embeddings adapter, for the same reason. The
+    # cross-encoder scores every retrieved candidate in one call, so its latency grows
+    # with ``retrieve_k``: a CPU TEI on bge-reranker-v2-m3 measures ~0.2 s per candidate,
+    # so the default retrieve_k=30 needs ~6 s and blew straight through httpx's implicit
+    # 5 s default, which is what this adapter used to inherit for want of any timeout.
+    rerank_timeout_s: float = 60.0
+    rerank_connect_timeout_s: float = 5.0
 
     retrieve_k: int = 30
     final_k: int = 1
@@ -136,15 +143,38 @@ class Settings(BaseSettings):
     auth_tokens: str = ""
 
     # `/v1/answer` reference agent (WP v0.2.0 T3, D40): `auto` tries native OpenAI-style
-    # function-calling once per process and falls back to a prompted strict-JSON ReAct loop on
-    # any error, sticking with whichever path worked for the rest of the process's lifetime;
-    # `native`/`prompted` force one path with no fallback (debugging/tests). Hard budgets keep a
-    # runaway tool loop or a slow model from hanging a request: `answer_max_tool_calls` caps how
-    # many tool executions one `/v1/answer` call may make; `answer_timeout_s` is the whole loop's
-    # wall-clock ceiling; `answer_max_tokens` bounds the final completion the same way
-    # `recap_max_tokens` bounds the recap. Both are graceful-degrade budgets (a best-effort
-    # answer + `truncated: true`), never a raw timeout/500 — see `pipelines/answer.py`.
+    # function-calling, retrying a transient error (HTTP 429/5xx, a timeout/dropped connection,
+    # or a 2xx with a garbled body) with backoff before falling back to a prompted strict-JSON
+    # ReAct loop for that one call; only a GENUINE capability failure (a 400/404/422 the backend
+    # uses to reject the `tools` param) falls back AND sticks with prompted for
+    # `answer_native_unsupported_ttl_s` seconds (D73 amendment — see `answer_native_retry_
+    # attempts` and `adapters/llm/openai_compat.py`'s `_is_retryable_error`: a live-demo
+    # postmortem found a transient 429 wrongly treated as "no tool-calling support" and stuck
+    # for the whole session). `native`/`prompted` force one path with no fallback (debugging/
+    # tests). Hard budgets keep a runaway tool loop or a slow model from hanging a request:
+    # `answer_max_tool_calls` caps how many tool executions one `/v1/answer` call may make;
+    # `answer_timeout_s` is the whole loop's wall-clock ceiling; `answer_max_tokens` bounds the
+    # final completion the same way `recap_max_tokens` bounds the recap. Both are graceful-
+    # degrade budgets (a best-effort answer + `truncated: true`), never a raw timeout/500 — see
+    # `pipelines/answer.py`.
     answer_tool_mode: Literal["auto", "native", "prompted"] = "auto"
+    # D73 amendment: total attempts (first try + retries) `auto` mode gives one native call that
+    # keeps failing with a retryable error before falling back to prompted for THAT call only
+    # (never sticky for a retryable error — see `answer_tool_mode`'s comment above). Same
+    # ge=1 rationale as `embed_retry_attempts`: a 0-attempt budget isn't "no retry", it's a
+    # config value the retry loop can't express — fail fast at construction instead (D36-style).
+    answer_native_retry_attempts: int = Field(default=3, ge=1)
+    # 2026-08-18 postmortem follow-up audit: how long "auto" mode's sticky prompted-fallback
+    # verdict lasts once native has failed with a GENUINE capability error, before native is
+    # tried again from scratch. Was an unconditional bool ("sticks for the rest of the process's
+    # lifetime") — a WRONG verdict (a backend that starts supporting `tools` mid-deployment, or
+    # a condition this module didn't yet know to classify as retryable) degraded an entire
+    # long-lived process forever with no recovery short of a restart. 30 minutes balances "don't
+    # keep re-paying a doomed native attempt's latency every turn" against "don't stay wrong
+    # indefinitely". gt=0: a non-positive TTL isn't "never sticky", it's a value the deadline
+    # arithmetic (`time.monotonic() + ttl`) can't express as a real future deadline — fail fast
+    # at construction instead (D36-style).
+    answer_native_unsupported_ttl_s: float = Field(default=1800.0, gt=0)
     # D40 amendment: 6 -> 10. Observed on the Acme E2E acceptance pass: a per-document
     # deep-dive strategy (list_documents, then get_document_chunks per candidate) exhausts a
     # budget of 6 well before 14 people are covered, truncating the answer early.

@@ -38,6 +38,8 @@ services:
       RERANK_STRATEGY: ${RERANK_STRATEGY:-llm}
       RERANK_BASE_URL: ${RERANK_BASE_URL:-http://tei:80}
       RERANK_MODEL: ${RERANK_MODEL:-bge-reranker-v2-m3}
+      RERANK_TIMEOUT_S: ${RERANK_TIMEOUT_S:-60.0}
+      RERANK_CONNECT_TIMEOUT_S: ${RERANK_CONNECT_TIMEOUT_S:-5.0}
       RETRIEVE_K: ${RETRIEVE_K:-30}
       FINAL_K: ${FINAL_K:-1}
       VERSION_COLLAPSE_ENABLED: ${VERSION_COLLAPSE_ENABLED:-true}
@@ -52,6 +54,8 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       # /v1/answer reference agent (D40) — see .env.example for what each knob does.
       ANSWER_TOOL_MODE: ${ANSWER_TOOL_MODE:-auto}
+      ANSWER_NATIVE_RETRY_ATTEMPTS: ${ANSWER_NATIVE_RETRY_ATTEMPTS:-3}
+      ANSWER_NATIVE_UNSUPPORTED_TTL_S: ${ANSWER_NATIVE_UNSUPPORTED_TTL_S:-1800.0}
       ANSWER_MAX_TOOL_CALLS: ${ANSWER_MAX_TOOL_CALLS:-10}
       ANSWER_TIMEOUT_S: ${ANSWER_TIMEOUT_S:-120.0}
       ANSWER_MAX_TOKENS: ${ANSWER_MAX_TOKENS:-1024}
@@ -131,10 +135,29 @@ services:
     # 8080 for Dev B's web/nginx.
     profiles: ["tei"]
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
-    command: ["--model-id", "${RERANK_HF_MODEL:-BAAI/bge-reranker-v2-m3}"]
     ports:
       # Loopback by default; set TEI_HOST=0.0.0.0 (or a LAN IP) to expose beyond this host.
       - "${TEI_HOST:-127.0.0.1}:${TEI_PORT:-8081}:80"
+    volumes:
+      # TEI caches HF model artifacts under /data. Without this the ~2.3 GB safetensors
+      # download is discarded on every `docker compose down`, costing ~3.5 min per start.
+      - tei-models:/data
+    environment:
+      # Where TEI puts the cache inside the volume (its own default, made explicit).
+      HUGGINGFACE_HUB_CACHE: /data
+    # Warmup allocates activation buffers proportional to max-batch-tokens. The stock
+    # 16384 spiked to 6.4 GB RSS on this 16 GB host and tripped the system OOM killer,
+    # which then shot eight VS Code processes before reaching this container. Bounding
+    # the batch keeps warmup near 2 GB; mem_limit makes the container's own cgroup the
+    # thing that dies if it ever regresses, instead of the desktop session.
+    command:
+      - "--model-id"
+      - "${RERANK_HF_MODEL:-BAAI/bge-reranker-v2-m3}"
+      - "--max-batch-tokens"
+      - "${TEI_MAX_BATCH_TOKENS:-4096}"
+      - "--max-client-batch-size"
+      - "${TEI_MAX_CLIENT_BATCH_SIZE:-32}"
+    mem_limit: ${TEI_MEM_LIMIT:-4g}
 
   # Optional local LLM for recap. Alternatively point LLM_BASE_URL at host Ollama.
   # local-llm:
@@ -146,3 +169,5 @@ volumes:
   # Backs the `api` service's default embedded-replica TURSO_DATABASE_URL (D39) — a fresh
   # `docker compose up` gets a working, persistent store with zero manual setup.
   sift-data:
+  # HF model cache for the `tei` reranker, so bge-reranker-v2-m3 downloads once.
+  tei-models:

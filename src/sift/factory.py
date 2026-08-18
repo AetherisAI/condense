@@ -236,6 +236,8 @@ def _build_completer(settings: Settings) -> Completer:
             temperature=settings.recap_temperature,
             tool_mode=settings.answer_tool_mode,
             answer_max_tokens=settings.answer_max_tokens,
+            native_retry_attempts=settings.answer_native_retry_attempts,
+            native_unsupported_ttl_s=settings.answer_native_unsupported_ttl_s,
         )
     return NullCompleter()
 
@@ -263,6 +265,10 @@ def _build_reranker(settings: Settings, completer: Completer) -> Reranker:
                 raise ValueError("RERANK_STRATEGY='crossencoder' requires RERANK_BASE_URL")
             # TEI's /rerank endpoint serves a single model and takes no model param, so
             # rerank_model is intentionally not forwarded here (it pins the deployed TEI image).
-            return CrossEncoderReranker(settings.rerank_base_url)
+            return CrossEncoderReranker(
+                settings.rerank_base_url,
+                timeout_s=settings.rerank_timeout_s,
+                connect_timeout_s=settings.rerank_connect_timeout_s,
+            )
         case "none":
             return NullReranker()

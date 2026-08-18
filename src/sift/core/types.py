@@ -161,11 +161,23 @@ class ToolCompletion:
 
     Exactly one of the two is meaningful per turn: non-empty ``tool_calls`` means "run these
     and give me the results"; an empty ``tool_calls`` means ``content`` is the model's final
-    answer for this loop.
+    answer for this loop -- UNLESS ``malformed`` is set (below), in which case ``content`` is
+    NOT a real answer at all.
+
+    ``malformed`` (2026-08-18 live-demo postmortem redesign): the prompted-mode parser
+    (``adapters/llm/openai_compat.py``'s ``parse_prompted_response``) could not turn this reply
+    into either a clean final answer or tool calls -- e.g. a truncated/single-quoted/otherwise
+    garbled control object, the exact shape a prompted-mode model produces when it tried to
+    speak the tool protocol and failed partway through. ``content`` holds the raw reply for
+    diagnostics ONLY and must not be shown to a user as an answer; ``pipelines/answer.py``
+    reacts to this flag with one corrective retry rather than trusting the text's shape. Always
+    ``False`` for native mode (see ``_complete_native``): a native reply's ``content`` is
+    whatever the model said and is never sniffed or reclassified after the fact.
     """
 
     tool_calls: tuple[ToolCall, ...] = ()
     content: str | None = None
+    malformed: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

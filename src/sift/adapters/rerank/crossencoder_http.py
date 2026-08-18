@@ -19,14 +19,24 @@ from sift.core.types import Hit
 class CrossEncoderReranker:
     """Reranker backed by a TEI ``/rerank`` HTTP endpoint."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout_s: float = 60.0,
+        connect_timeout_s: float = 5.0,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
+        # Without this the client inherited httpx's implicit 5 s default, which a CPU
+        # cross-encoder exceeds at any realistic retrieve_k. Connect is bounded separately
+        # so an unreachable TEI still fails fast rather than waiting out the read budget.
+        self._timeout = httpx.Timeout(timeout_s, connect=connect_timeout_s)
 
     async def rerank(self, query: str, candidates: list[Hit]) -> list[Hit]:
         if not candidates:
             return []
         payload = {"query": query, "texts": [candidate.text for candidate in candidates]}
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(f"{self._base_url}/rerank", json=payload)
             response.raise_for_status()
             ranked = response.json()
