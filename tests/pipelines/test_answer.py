@@ -417,6 +417,56 @@ async def test_sources_are_persisted_on_the_assistant_turn_only(settings, embedd
     assert turns[1].sources  # the assistant turn does
 
 
+async def test_search_hit_metadata_threads_into_sources_event_and_persisted_turn(
+    settings, embedder, store
+) -> None:
+    """F2 (clickable-citations dead-end audit): ``Hit.metadata`` — the reserved per-file tags
+    set at ingest (D28), e.g. ``source_url`` the citation card deep-links to — must survive
+    ``_merge_sources`` into both the live ``sources`` SSE event AND the persisted
+    ``ConversationTurn.sources`` a reopened conversation reads back through
+    ``ConversationStore.get_conversation`` (the exact method ``GET /v1/conversations/{id}``
+    calls, ``api/v1.py``). Before this fix ``_merge_sources`` built
+    ``{path, page, score, snippet}`` only and silently dropped ``metadata`` even though
+    ``GET /search`` (``pipelines/search.py``) already threaded the identical ``Hit.metadata``
+    onto its own ``Source`` — every ``/v1/answer`` citation card lost the deep link ``GET
+    /search`` kept for the same hit, with no test ever exercising this path end to end.
+    """
+    await store.ensure_ready(settings.embed_model, settings.embed_dim, TENANT)
+    chunk = Chunk(
+        text="Alice CV with a deep link",
+        source_path="alice.pdf",
+        page=1,
+        source_hash="h-meta",
+        index=0,
+        metadata={"source_url": "https://x/y.pdf"},
+    )
+    (vector,) = await embedder.embed([chunk.text])
+    await store.upsert([replace(chunk, vector=vector)], TENANT)
+
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(tool_calls=(ToolCall(name="search", arguments={"query": "cv"}),)),
+            ToolCompletion(content="Alice's CV (alice.pdf, p.1)."),
+        ]
+    )
+    conversations = FakeConversationStore()
+    registry = build_tool_registry(embedder, store, settings)
+    pipeline = AnswerPipeline(completer, registry, conversations, settings)
+
+    events = await _collect(pipeline, "who has a deep link?")
+
+    sources = next(e for e in events if e.type == "sources")
+    (item,) = sources.data["items"]
+    assert item["metadata"] == {"source_url": "https://x/y.pdf"}
+
+    done = next(e for e in events if e.type == "done")
+    detail = await conversations.get_conversation(TENANT, done.data["conversation_id"])
+    assert detail is not None
+    assistant_turn = next(turn for turn in detail.turns if turn.role == "assistant")
+    assert assistant_turn.sources
+    assert assistant_turn.sources[0]["metadata"] == {"source_url": "https://x/y.pdf"}
+
+
 # --- auto-title: one extra small Completer call after the first answer (WP v0.2.0 T6, D42) --
 
 

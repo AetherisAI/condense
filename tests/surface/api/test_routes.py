@@ -338,6 +338,181 @@ def test_ingest_wires_modified_at_into_stored_chunks() -> None:
     assert asyncio.run(_stored_mtime("beta content")) is None  # invalid value dropped, not stored
 
 
+def test_ingest_metadata_threads_into_search_sources() -> None:
+    """The new ``metadata`` form field (D28's per-file map, keyed like ``modified_at``) must
+    reach the stored chunk and come back on the citation ``Source`` returned by ``GET /search``
+    — the seam the clickable-citation feature's ``metadata.source_url`` deep-link relies on.
+
+    Builds ingest and search off the SAME store double (mirroring
+    ``test_ingest_wires_modified_at_into_stored_chunks``, plus a live ``SearchPipeline`` here so
+    the round trip is exercised through the real ``/search`` HTTP route, not just a direct store
+    read) — the default ``client`` fixture's container can't be reused for this because its
+    ``ingest`` is the no-op ``_StubIngest`` (no Turso URL configured) and its ``search`` is
+    wired to a separate, unrelated ``FakeVectorStore`` instance.
+    """
+    settings = Settings(ingest_token=_TOKEN)
+    store = FakeVectorStore()
+    embedder = FakeEmbedder(settings.embed_dim)
+    pipeline = IngestPipeline(
+        _WholeFileParser(),
+        _WholeFileChunker(),
+        embedder,
+        store,
+        model=settings.embed_model,
+        dim=settings.embed_dim,
+    )
+    search = SearchPipeline(embedder, store, NullReranker(), NullCompleter(), settings)
+    container = replace(build_container(settings), ingest=pipeline, store=store, search=search)
+    app.dependency_overrides[get_container] = lambda: container
+
+    payload = json.dumps(
+        {"zeta.md": {"source_url": "https://gesdoc.example/view/42", "codigo": "P-01"}}
+    )
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.post(
+                "/ingest",
+                files=[("files", ("zeta.md", b"unique zeta passage about dogs", "text/plain"))],
+                data={"metadata": payload},
+                headers=_AUTH,
+            )
+            assert response.status_code == 200
+            assert response.json()["results"][0]["status"] == "indexed"
+
+            search_response = test_client.get(
+                "/search",
+                params={"q": "unique zeta passage about dogs", "recap": "false"},
+                headers=_AUTH,
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert search_response.status_code == 200
+    (source,) = search_response.json()["sources"]
+    assert source["path"] == "zeta.md"
+    assert source["metadata"] == {"source_url": "https://gesdoc.example/view/42", "codigo": "P-01"}
+
+
+def test_ingest_metadata_malformed_json_rejected_with_422(client: TestClient) -> None:
+    response = client.post(
+        "/ingest",
+        files=[("files", ("notes.txt", b"hello world", "text/plain"))],
+        data={"metadata": "{not valid json"},
+        headers=_AUTH,
+    )
+
+    assert response.status_code == 422
+    assert "not valid JSON" in response.json()["detail"]
+
+
+def test_ingest_metadata_non_object_envelope_rejected_with_422(client: TestClient) -> None:
+    """The envelope itself must be ``{upload_name: {...}}`` — a bare JSON array (or any other
+    non-object top level) is a client error, not silently ignored like ``modified_at`` junk."""
+    response = client.post(
+        "/ingest",
+        files=[("files", ("notes.txt", b"hello world", "text/plain"))],
+        data={"metadata": json.dumps(["not", "an", "object"])},
+        headers=_AUTH,
+    )
+
+    assert response.status_code == 422
+    assert "JSON object" in response.json()["detail"]
+
+
+def test_ingest_metadata_non_string_value_rejected_with_422(client: TestClient) -> None:
+    response = client.post(
+        "/ingest",
+        files=[("files", ("notes.txt", b"hello world", "text/plain"))],
+        data={"metadata": json.dumps({"notes.txt": {"count": 5}})},
+        headers=_AUTH,
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "notes.txt" in detail
+    assert "count" in detail
+
+
+def test_ingest_metadata_per_file_tags_non_object_rejected_with_422(client: TestClient) -> None:
+    """Each per-file value under ``metadata`` must itself be an object of tags, not e.g. a
+    bare string."""
+    response = client.post(
+        "/ingest",
+        files=[("files", ("notes.txt", b"hello world", "text/plain"))],
+        data={"metadata": json.dumps({"notes.txt": "not-an-object"})},
+        headers=_AUTH,
+    )
+
+    assert response.status_code == 422
+    assert "notes.txt" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "unsafe_url",
+    [
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "data:text/html,<script>alert(1)</script>",
+        "//evil.example/steal",
+    ],
+    ids=["javascript-scheme", "file-scheme", "data-scheme", "protocol-relative"],
+)
+def test_ingest_metadata_source_url_rejects_unsafe_scheme(
+    client: TestClient, unsafe_url: str
+) -> None:
+    """F4 (clickable-citations audit, security): the reserved ``source_url`` metadata key is
+    rendered by the web client as a clickable ``<a href>`` deep link
+    (``web/src/sourceLink.ts``) — ``javascript:``/``file:``/``data:`` schemes and a bare
+    ``//host`` protocol-relative URL (which inherits the page's OWN scheme, so it is just as
+    dangerous as an explicit ``javascript:`` when the page itself is compromised) must all be
+    rejected with 422 naming the file and key, never silently ingested and later rendered live.
+    """
+    response = client.post(
+        "/ingest",
+        files=[("files", ("notes.txt", b"hello world", "text/plain"))],
+        data={"metadata": json.dumps({"notes.txt": {"source_url": unsafe_url}})},
+        headers=_AUTH,
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "notes.txt" in detail
+    assert "source_url" in detail
+
+
+def test_ingest_metadata_source_url_accepts_https(client: TestClient) -> None:
+    """The happy path the rejection tests above guard: a real ``https://`` URL with a host is
+    still accepted and the file still indexes — F4 must not become a false-positive regression
+    on the legitimate deep links D28/round-1 already tests via ``GET /search``."""
+    response = client.post(
+        "/ingest",
+        files=[("files", ("notes.txt", b"hello world", "text/plain"))],
+        data={"metadata": json.dumps({"notes.txt": {"source_url": "https://example.com/doc"}})},
+        headers=_AUTH,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["status"] == "indexed"
+
+
+def test_ingest_metadata_value_oversize_rejected_with_422(client: TestClient) -> None:
+    """F4: every metadata value (any key, not just ``source_url``) is bounded to
+    ``_MAX_METADATA_VALUE_CHARS`` so a caller can't smuggle an arbitrarily large blob into a
+    citation card's stored tags."""
+    response = client.post(
+        "/ingest",
+        files=[("files", ("notes.txt", b"hello world", "text/plain"))],
+        data={"metadata": json.dumps({"notes.txt": {"codigo": "x" * 2049}})},
+        headers=_AUTH,
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "notes.txt" in detail
+    assert "codigo" in detail
+
+
 def test_manifest_returns_known_hashes(client: TestClient) -> None:
     response = client.get("/ingest/manifest", headers=_AUTH)
 
@@ -358,6 +533,7 @@ class _CannedIngest:
         files: Sequence[tuple[str, bytes]],
         tenant: str,
         modified_at: Mapping[str, str] | None = None,
+        metadata: Mapping[str, dict[str, str]] | None = None,
     ) -> list[IngestOutcome]:
         return self._outcomes
 
@@ -454,3 +630,27 @@ async def test_healthz_stays_responsive_while_embedder_is_slow() -> None:
             assert search_response.status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+# --- third-pass audit: POST /v1/documents shares the multipart route's metadata validation ---
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "javascript:alert(1)",
+        "vbscript:msgbox(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "file:///etc/passwd",
+        "//evil.example/x.pdf",
+        "https://" + "a" * 3000 + ".example/x.pdf",
+    ],
+)
+def test_v1_documents_rejects_hostile_or_oversize_source_url(client, bad_url: str) -> None:
+    resp = client.post(
+        "/v1/documents",
+        json={"text": "hello", "filename": "x.txt", "metadata": {"source_url": bad_url}},
+        headers=_AUTH,
+    )
+    assert resp.status_code == 422, resp.text
+    assert "source_url" in resp.text

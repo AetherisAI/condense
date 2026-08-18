@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from sift.api.deps import get_container, resolve_tenant
-from sift.api.routes import _log_ingest_outcomes
+from sift.api.routes import _log_ingest_outcomes, validate_file_metadata
 from sift.api.schemas import (
     AnswerRequest,
     AnswerResponse,
@@ -103,7 +103,11 @@ async def ingest_json_document(
     filename = body.filename or f"note-{content_hash(data)[:8]}.txt"
     mtime = _validate_modified_at(body.modified_at, filename)
     mtimes = {filename: mtime} if mtime is not None else None
-    metadata = {filename: body.metadata} if body.metadata else None
+    # Same validation as the multipart route (value length, source_url scheme/host); this JSON
+    # surface used to store anything, javascript: URLs included.
+    metadata = (
+        {filename: validate_file_metadata(filename, body.metadata)} if body.metadata else None
+    )
     try:
         (outcome,) = await container.ingest.ingest(
             [(filename, data)], tenant, modified_at=mtimes, metadata=metadata

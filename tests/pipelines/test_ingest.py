@@ -265,6 +265,35 @@ async def test_metadata_threads_into_stored_chunks() -> None:
     assert plain_hit.metadata is None
 
 
+async def test_dedup_skip_does_not_update_metadata_on_identical_bytes() -> None:
+    """Pins the exact dedup/metadata interaction (WP: clickable citations, backend prep): the
+    hash check in :meth:`IngestPipeline.ingest` runs BEFORE parse/chunk/embed/``store.upsert``,
+    so a re-ingest of byte-identical content short-circuits to ``skipped_dedup`` and never
+    reaches ``upsert`` at all — even though the store's own ``ON CONFLICT ... DO UPDATE SET
+    metadata = excluded.metadata`` (libsql.py) WOULD apply a new metadata value if upsert were
+    called. Re-ingesting the same bytes with a *new* tag must NOT silently change the stored
+    tag; a caller who needs the tag changed without changing the bytes has to delete the
+    document first (documented on the ``/ingest`` route)."""
+    store = FakeVectorStore()
+    embedder = FakeEmbedder(dim=DIM)
+    data = b"hello world"
+
+    pipeline = _pipeline(store, embedder)
+    first = await pipeline.ingest(
+        [("doc.md", data)], TENANT, metadata={"doc.md": {"source_url": "https://old.example"}}
+    )
+    assert first[0].status == "indexed"
+
+    second = await pipeline.ingest(
+        [("doc.md", data)], TENANT, metadata={"doc.md": {"source_url": "https://new.example"}}
+    )
+    assert second[0].status == "skipped_dedup"
+
+    (query,) = await embedder.embed(["hello world"])
+    (hit,) = await store.search(query, 1, TENANT)
+    assert hit.metadata == {"source_url": "https://old.example"}  # unchanged by the re-ingest
+
+
 async def test_ensure_ready_called_once_per_batch() -> None:
     spy = SpyStore()
     pipeline = _pipeline(spy, FakeEmbedder(dim=DIM))

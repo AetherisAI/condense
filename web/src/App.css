@@ -984,6 +984,140 @@ button:disabled {
   text-decoration: underline;
 }
 
+/* ---- Sources: deep links + copy passage (front-end task) -------------------- */
+/* `.source-actions` replaces `.source-expand`'s old bare placement — a row so "Show more/less"
+   (when the snippet is long enough to clamp) and "Copy passage" (always present, the honest
+   fallback for source types no viewer can deep-link into) sit side by side. */
+.source-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.source-copy {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.source-copy:hover {
+  color: var(--accent-strong);
+}
+
+/* The filename becomes a link once a card's source carries `metadata.source_url`
+   (`sourceLink.ts`) — same look as `.source-path` (inherited) plus an underline-on-hover so it
+   still reads as plain text, not a link, until interacted with. */
+.source-path-link {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.source-path-link:hover {
+  text-decoration: underline;
+}
+
+/* The small external-link "Open" affordance next to the badges — same href as the filename
+   link, just a second, always-visible target that doesn't depend on noticing the filename is
+   clickable. */
+.source-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--muted);
+  border-radius: 999px;
+}
+
+.source-open:hover {
+  color: var(--accent-ui-strong);
+  background: var(--accent-bg);
+}
+
+.source-open-glyph {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+/* `<a>` isn't covered by the global `button:focus-visible` rule below — same ring, by hand. */
+.source-path-link:focus-visible,
+.source-open:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-ui) 22%, transparent);
+}
+
+/* An inline citation "(file.pdf, p.3)" in the answer text, once `ChatMarkdown` has confirmed it
+   matches one of this turn's own source cards — reads as part of the sentence (`font: inherit`),
+   dotted rather than solid underline so it doesn't get mistaken for a real hyperlink (it never
+   navigates anywhere). A citation with no matching card is never wrapped in this at all — see
+   `citations.ts`/`ChatMarkdown`'s `resolveCitation`. */
+.citation-link {
+  font: inherit;
+  color: var(--accent-ui);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.citation-link:hover {
+  color: var(--accent-ui-strong);
+  text-decoration-style: solid;
+}
+
+/* An inline citation with no matching source card (F1/F5 audit) — the LLM wrote it, retrieval
+   didn't back it, and that should stay visibly honest rather than reading as plain confident
+   prose or silently disappearing into it. Dashed (not dotted, so it reads as visually distinct
+   from `.citation-link`'s "this one works" underline) and muted rather than accent-colored — it
+   is deliberately NOT a call to action, just a flagged span; the `title` attribute carries the
+   actual explanation on hover/focus. Never clickable, never an `a`/`button`. */
+.citation-unverified {
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* The brief highlight a source card gets when an inline citation click just scrolled it into
+   view — pulses the accent tint then settles back to the card's normal `.source` background over
+   the same ~1.5s the click handler keeps `flashIndex` set for, so the class removal and the
+   animation's own end line up. */
+.source-flash {
+  animation: source-flash 1.5s ease;
+}
+
+@keyframes source-flash {
+  0% {
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
+  }
+  100% {
+    background: var(--page-bg);
+    border-color: var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No pulse — a flat, non-animated highlight for the same duration still marks the card. */
+  .source-flash {
+    animation: none;
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
+  }
+}
+
 /* ---- States ---------------------------------------------------------------- */
 .error {
   color: var(--error);

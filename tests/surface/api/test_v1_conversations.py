@@ -6,6 +6,7 @@ one built on a scripted ``FakeToolCompleter``, injected via ``app.dependency_ove
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from dataclasses import replace
 
@@ -13,13 +14,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sift.adapters.conversation.fake import FakeConversationStore
+from sift.adapters.embedding.fake import FakeEmbedder
 from sift.adapters.llm.fake import FakeToolCompleter
+from sift.adapters.store.fake import FakeVectorStore
 from sift.api.deps import get_container
 from sift.api.main import app
 from sift.config import Settings, get_settings
-from sift.core.types import ToolCompletion
+from sift.core.types import Chunk, ToolCall, ToolCompletion
 from sift.factory import Container, build_container
 from sift.pipelines.answer import AnswerPipeline
+from sift.pipelines.tools import build_tool_registry
 
 _TOKEN = "t"
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
@@ -136,6 +140,69 @@ def test_get_conversation_returns_turns_incl_persisted_grounding(client: TestCli
     assert assistant_turn["grounding_used"] == "strict"  # Settings default
     assert assistant_turn["from_general_knowledge"] is False
     assert assistant_turn["grounding_segments"] == [{"text": "An answer.", "kind": "grounded"}]
+
+
+def test_answer_and_conversation_sources_carry_hit_metadata() -> None:
+    """F2 (clickable-citations dead-end audit) end to end through the real HTTP surface: a
+    ``search`` hit whose ingested chunk carries ``metadata`` (e.g. ``source_url``, the citation
+    deep-link, D28) must show up on BOTH the non-stream ``POST /v1/answer`` response's
+    ``sources`` AND a reopened conversation's ``GET /v1/conversations/{id}`` turn ``sources`` —
+    the same ``Source`` pydantic model (``api/schemas.py``) both routes build via
+    ``Source(**item)`` from the pipeline's ``sources`` event/persisted-turn dicts. Before the
+    fix ``pipelines/answer.py::_merge_sources`` dropped ``metadata`` entirely, so this key was
+    silently absent (``None``) on both responses despite ``GET /search`` carrying it correctly
+    for the identical hit.
+    """
+    settings = Settings(ingest_token=_TOKEN, embed_dim=16)
+    store = FakeVectorStore()
+    embedder = FakeEmbedder(dim=16)
+
+    async def _seed() -> None:
+        await store.ensure_ready(settings.embed_model, settings.embed_dim, "default")
+        chunk = Chunk(
+            text="Alice CV with a deep link",
+            source_path="alice.pdf",
+            page=1,
+            source_hash="h-meta",
+            index=0,
+            metadata={"source_url": "https://x/y.pdf"},
+        )
+        (vector,) = await embedder.embed([chunk.text])
+        await store.upsert([replace(chunk, vector=vector)], "default")
+
+    asyncio.run(_seed())
+
+    registry = build_tool_registry(embedder, store, settings)
+    completer = FakeToolCompleter(
+        [
+            ToolCompletion(tool_calls=(ToolCall(name="search", arguments={"query": "cv"}),)),
+            ToolCompletion(content="Alice's CV (alice.pdf, p.1)."),
+        ]
+    )
+    conversations = FakeConversationStore()
+    base = build_container(settings)
+    container = replace(
+        base,
+        answer=AnswerPipeline(completer, registry, conversations, settings),
+        conversations=conversations,
+    )
+
+    app.dependency_overrides[get_container] = lambda: container
+    try:
+        with TestClient(app) as test_client:
+            answer = test_client.post(
+                "/v1/answer", json={"message": "who has a deep link?"}, headers=_AUTH
+            ).json()
+            assert answer["sources"]
+            assert answer["sources"][0]["metadata"] == {"source_url": "https://x/y.pdf"}
+
+            conversation_id = answer["conversation_id"]
+            detail = test_client.get(f"/v1/conversations/{conversation_id}", headers=_AUTH).json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assistant_turn = next(t for t in detail["turns"] if t["role"] == "assistant")
+    assert assistant_turn["sources"][0]["metadata"] == {"source_url": "https://x/y.pdf"}
 
 
 def test_delete_conversation_requires_auth(client: TestClient) -> None:

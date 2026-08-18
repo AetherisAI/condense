@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 
@@ -192,17 +193,129 @@ def _parse_modified_at(raw: str | None) -> dict[str, str] | None:
     return mtimes
 
 
+# F4 (clickable-citations dead-end audit, security): a per-file ``metadata`` value is stored
+# verbatim and, for the reserved ``source_url`` key, rendered by the web client as a clickable
+# ``<a href>`` deep link (``web/src/sourceLink.ts``) — an unvalidated scheme there
+# (``javascript:``, ``file:``, ``data:``, a bare ``//evil`` protocol-relative URL, ...) becomes
+# an XSS/open-redirect vector the moment a citation card is clicked, and an unbounded value is
+# a cheap way to bloat every citation payload. ``_MAX_METADATA_VALUE_CHARS`` bounds every
+# metadata value (not just ``source_url``) at ingest — the one place malformed caller intent is
+# still cheap to reject outright (see the docstring below) rather than truncate silently.
+_MAX_METADATA_VALUE_CHARS = 2048
+_URL_METADATA_KEY = "source_url"
+_URL_METADATA_SCHEMES = frozenset({"http", "https"})
+
+
+def _validate_url_metadata_value(filename: str, key: str, value: str) -> None:
+    """Reject a ``source_url``-keyed metadata value that isn't a real ``http``/``https`` URL
+    with a host (F4). ``urlsplit`` alone is intentionally permissive (a bare ``//evil/x`` parses
+    with an empty ``scheme``, ``javascript:alert(1)`` parses with an empty ``netloc``) so both
+    checks are required together — same 422-naming-file-and-key style as every other malformed-
+    metadata rejection in :func:`_parse_metadata`.
+    """
+    parsed = urlsplit(value)
+    if parsed.scheme not in _URL_METADATA_SCHEMES or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"metadata[{filename!r}][{key!r}] must be an http:// or https:// URL with a "
+                f"host, got {value!r}"
+            ),
+        )
+
+
+def validate_file_metadata(filename: str, tags: Mapping[str, Any]) -> dict[str, str]:
+    """Validate ONE file's metadata dict the same way for every ingest surface: string values
+    only, each at most ``_MAX_METADATA_VALUE_CHARS``, and a ``source_url`` that is a real
+    http(s) URL with a host. Shared by the multipart ``POST /ingest`` (via
+    :func:`_parse_metadata`) and the JSON ``POST /v1/documents`` (third-pass audit: that route
+    validated nothing, so ``javascript:`` and ``file:`` URLs and 3000-char values went straight
+    into the store, and it is exactly the route the desktop re-ingest uses). Returns the tags
+    as ``dict[str, str]``; raises the same 422 shape either way.
+    """
+    out: dict[str, str] = {}
+    for key, value in tags.items():
+        if not isinstance(value, str):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"metadata[{filename!r}][{key!r}] must be a string value "
+                    f"(got {type(value).__name__})"
+                ),
+            )
+        if len(value) > _MAX_METADATA_VALUE_CHARS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"metadata[{filename!r}][{key!r}] exceeds {_MAX_METADATA_VALUE_CHARS} chars"
+                ),
+            )
+        if key == _URL_METADATA_KEY:
+            _validate_url_metadata_value(filename, key, value)
+        out[str(key)] = value
+    return out
+
+
+def _parse_metadata(raw: str | None) -> dict[str, dict[str, str]] | None:
+    """Parse the optional ``metadata`` form field: a JSON object ``{upload_name: {key: value}}``
+    of per-file string tags (D28's per-file map, the same shape ``POST /v1/documents`` already
+    accepts as ``DocumentIngestRequest.metadata``, keyed here to every file in the batch instead
+    of just one). Reserved keys like ``source_url`` (the citation deep-link) live in here — its
+    value is additionally scheme/host-validated (F4, see :func:`_validate_url_metadata_value`)
+    since the web client renders it as a clickable link. Every value (any key) is also bounded
+    to ``_MAX_METADATA_VALUE_CHARS``.
+
+    Unlike ``modified_at`` (a best-effort recency hint that silently drops a bad value),
+    ``metadata`` is explicit caller intent, so malformed input is a real client error: this
+    raises HTTP 422 naming exactly what's wrong rather than silently ingesting the file with
+    the tag dropped.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"metadata is not valid JSON: {exc}",
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="metadata must be a JSON object of {upload_name: {key: value}}",
+        )
+    result: dict[str, dict[str, str]] = {}
+    for filename, tags in parsed.items():
+        if not isinstance(tags, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"metadata[{filename!r}] must be an object of string key/value tags",
+            )
+        result[str(filename)] = validate_file_metadata(str(filename), tags)
+    return result
+
+
 @router.post("/ingest")
 async def ingest(
     files: list[UploadFile],
     container: Annotated[Container, Depends(get_container)],
     tenant: Annotated[str, Depends(resolve_tenant)],
     modified_at: Annotated[str | None, Form()] = None,
+    metadata: Annotated[str | None, Form()] = None,
 ) -> IngestResponse:
     """Parse → chunk → embed → upsert each uploaded file; 409 on a model-pin mismatch.
 
     ``modified_at`` is an optional JSON object ``{upload_name: iso8601}`` of each file's
     last-modified time, sent by the agent so version-collapse can prefer the newest copy.
+
+    ``metadata`` is an optional JSON object ``{upload_name: {key: value}}`` of per-file string
+    tags (D28) — e.g. the ``source_url`` a citation card deep-links to. Values must be strings;
+    a malformed envelope or a non-string value 422s the whole request (see ``_parse_metadata``)
+    rather than silently dropping the tag, since a caller who sent metadata clearly wanted it
+    stored. Note the store's dedup short-circuits on content hash BEFORE the upsert that would
+    apply new metadata (see ``pipelines.ingest.IngestPipeline.ingest``): re-ingesting identical
+    bytes with new metadata is reported as ``skipped_dedup`` and does NOT update the stored tags
+    — delete the document first if the metadata must change without changing the bytes.
 
     Files are streamed to the pipeline one at a time (read → hand off → release) rather than all
     read into a single in-memory list, so a large multi-file upload doesn't spike RAM to the sum of
@@ -213,6 +326,7 @@ async def ingest(
     plus one INFO summary of the whole batch's indexed/skipped/failed counts.
     """
     mtimes = _parse_modified_at(modified_at)
+    file_metadata = _parse_metadata(metadata)
 
     async def _stream() -> AsyncIterator[tuple[str, bytes]]:
         for file in files:
@@ -223,7 +337,9 @@ async def ingest(
                 await file.close()  # release the spooled upload before reading the next
 
     try:
-        outcomes = await container.ingest.ingest(_stream(), tenant, modified_at=mtimes)
+        outcomes = await container.ingest.ingest(
+            _stream(), tenant, modified_at=mtimes, metadata=file_metadata
+        )
     except ModelPinMismatch as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     results = [

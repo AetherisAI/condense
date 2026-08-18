@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import ChatHistory from './ChatHistory'
 import ChatMarkdown from './markdown/ChatMarkdown'
 import Logo from './Logo'
@@ -8,6 +8,8 @@ import Composer, { IngestTurnCard, type IngestFileEntry, type IngestTurn } from 
 import { FindTurnCard, type FindHit, type FindTurn } from './FindTurn'
 import { loadStoredGrounding, type ComposerGroundingMode } from './grounding'
 import { fetchDocuments } from './documents'
+import { resolveCitationTarget, type CitationEntry } from './citations'
+import { buildSourceHref } from './sourceLink'
 
 /** Grounding mode (D46) — the trust boundary between the corpus and the model's own general
  * knowledge. Mirrors ``api.schemas.AnswerRequest.grounding``/``Settings.answer_grounding_
@@ -51,8 +53,14 @@ type TimelineEntry = {
   expanded: boolean
 }
 
-/** The compact shape the backend's ``sources`` event/field carries (WP v0.2.0 T6, D42). */
-type RawSource = { path: string; page: number; score: number; snippet: string }
+/** The compact shape the backend's ``sources`` event/field carries (WP v0.2.0 T6, D42).
+ * ``metadata`` mirrors ``api.schemas.Source.metadata``: per-file tags carried from
+ * ``Hit.metadata`` through ``pipelines/answer.py::_merge_sources`` into the ``/v1/answer`` SSE
+ * ``sources`` event and the persisted turn (clickable-citations work), of which only the
+ * reserved ``source_url`` key means anything to this UI (see ``sourceLink.ts``). Optional/
+ * nullable because a document ingested without metadata simply has none; such a card renders
+ * with no "Open" affordance. */
+type RawSource = { path: string; page: number; score: number; snippet: string; metadata?: Record<string, string> | null }
 
 /** A citation surfaced from the ``sources`` event — same shape the Search panel renders, plus
  * its own per-card clamp/expand state. */
@@ -177,6 +185,24 @@ function SparkleGlyph() {
   return (
     <svg className="tl-glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
       <path d="M8 1.4l1.5 4.1 4.1 1.5-4.1 1.5L8 12.6 6.5 8.5 2.4 7l4.1-1.5z" />
+    </svg>
+  )
+}
+
+/** A small external-link glyph for a source card's "Open" affordance — same 16x16/`currentColor`
+ * convention as the timeline glyphs above. */
+function ExternalLinkGlyph() {
+  return (
+    <svg className="source-open-glyph" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M6.6 3.6H3.9A1.3 1.3 0 0 0 2.6 4.9v7.4a1.3 1.3 0 0 0 1.3 1.3h7.4a1.3 1.3 0 0 0 1.3-1.3V9.6"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M9 2.6h4.4V7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13.4 2.6 7.7 8.3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   )
 }
@@ -315,6 +341,108 @@ function TimelineLine({ entry, onToggle }: { entry: TimelineEntry; onToggle: () 
   )
 }
 
+/** The DOM id one source card renders under — the anchor inline-citation click handling (below)
+ * scrolls to (`document.getElementById`, deliberately not a ref threaded across the citation ↔
+ * card component boundary — the two live in different parts of the tree and this is far simpler
+ * than plumbing refs through). Namespaced by `turnId` since every assistant turn has its own
+ * independent card list, indices and all. */
+function sourceCardDomId(turnId: string, index: number): string {
+  return `source-card-${turnId}-${index}`
+}
+
+/** One citation card: filename/page/match badges, the clamped snippet, and its two actions —
+ * "Show more/less" (unchanged) and "Copy passage" (front-end task: the honest fallback for
+ * source types — docx/xlsx/pptx — no viewer can deep-link into). When the source carries a
+ * `metadata.source_url` (`sourceLink.ts`), the filename itself becomes a link and a small
+ * external-link "Open" affordance appears next to the badges; both point at the same
+ * `buildSourceHref` result and open in a new tab. `flashActive` toggles a brief highlight class
+ * when an inline citation (`ChatMarkdown`) just scrolled this card into view. A separate
+ * component (not inlined in `SourcesPanel`'s `.map`) purely so it can hold its own "Copied ✓"
+ * state via `useState` — hooks can't be called from inside a `.map` callback. */
+const SourceCard = memo(function SourceCard({
+  source,
+  index,
+  turnId,
+  query,
+  flashActive,
+  onToggleExpand,
+}: {
+  source: ChatSource
+  index: number
+  turnId: string
+  /** The question these sources answer — used only to bold the query terms it matches within
+   * each snippet (D49); never sent anywhere, purely a display concern. */
+  query: string
+  flashActive: boolean
+  onToggleExpand: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  const snippet = collapseWhitespace(source.snippet)
+  const href = buildSourceHref({ metadata: source.metadata, page: source.page, snippet: source.snippet })
+
+  function copyPassage() {
+    // Same copy/"Copied ✓" pattern as `CodeBlock.tsx`'s code copy button.
+    void navigator.clipboard.writeText(snippet).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <div
+      id={sourceCardDomId(turnId, index)}
+      className={`source source-compact${flashActive ? ' source-flash' : ''}`}
+    >
+      <div className="source-head">
+        {href ? (
+          <a
+            className="source-path source-path-link"
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={source.path}
+          >
+            {fileName(source.path)}
+          </a>
+        ) : (
+          <span className="source-path" title={source.path}>
+            {fileName(source.path)}
+          </span>
+        )}
+        {href && (
+          <a
+            className="source-open"
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open source document"
+            title="Open source document"
+          >
+            <ExternalLinkGlyph />
+          </a>
+        )}
+        {showPageBadge(source.page) && <span className="badge badge-page">p. {source.page}</span>}
+        <span className="badge badge-score">{(source.score * 100).toFixed(0)}% match</span>
+      </div>
+      {snippet && (
+        <blockquote className={`snippet${source.expanded ? '' : ' snippet-clamp'}`}>
+          “{highlightQueryTerms(snippet, query)}”
+        </blockquote>
+      )}
+      <div className="source-actions">
+        {snippet.length > 140 && (
+          <button type="button" className="source-expand" onClick={onToggleExpand}>
+            {source.expanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
+        <button type="button" className="source-copy" onClick={copyPassage}>
+          {copied ? 'Copied ✓' : 'Copy passage'}
+        </button>
+      </div>
+    </div>
+  )
+})
+
 /** A collapsed-by-default "N sources · expand" pill (styled like the activity timeline's own
  * summary pill) that opens into compact citation cards — filename, page, match %, snippet
  * clamped to ~3 lines with its own per-card expand. Never a full source wall by default. */
@@ -322,6 +450,8 @@ function SourcesPanel({
   sources,
   query,
   open,
+  turnId,
+  flashIndex,
   onToggleOpen,
   onToggleCard,
 }: {
@@ -330,6 +460,10 @@ function SourcesPanel({
    * each snippet (D49); never sent anywhere, purely a display concern. */
   query: string
   open: boolean
+  turnId: string
+  /** Which card (by index) an inline citation click just scrolled to, for its brief highlight —
+   * `null` when nothing is flashing. */
+  flashIndex: number | null
   onToggleOpen: () => void
   onToggleCard: (index: number) => void
 }) {
@@ -347,33 +481,176 @@ function SourcesPanel({
         {sources.length} source{sources.length === 1 ? '' : 's'}
         <span className="tl-summary-more">collapse</span>
       </button>
-      {sources.map((s, i) => {
-        const snippet = collapseWhitespace(s.snippet)
-        return (
-          <div className="source source-compact" key={`${s.path}-${s.page}-${i}`}>
-            <div className="source-head">
-              <span className="source-path" title={s.path}>
-                {fileName(s.path)}
-              </span>
-              {showPageBadge(s.page) && <span className="badge badge-page">p. {s.page}</span>}
-              <span className="badge badge-score">{(s.score * 100).toFixed(0)}% match</span>
-            </div>
-            {snippet && (
-              <blockquote className={`snippet${s.expanded ? '' : ' snippet-clamp'}`}>
-                “{highlightQueryTerms(snippet, query)}”
-              </blockquote>
-            )}
-            {snippet.length > 140 && (
-              <button type="button" className="source-expand" onClick={() => onToggleCard(i)}>
-                {s.expanded ? 'Show less' : 'Show more'}
-              </button>
-            )}
-          </div>
-        )
-      })}
+      {sources.map((s, i) => (
+        <SourceCard
+          key={`${s.path}-${s.page}-${i}`}
+          source={s}
+          index={i}
+          turnId={turnId}
+          query={query}
+          flashActive={flashIndex === i}
+          onToggleExpand={() => onToggleCard(i)}
+        />
+      ))}
     </div>
   )
 }
+
+/** One assistant turn's whole body — loader, answer text (D48 grounding segments intact), the
+ * general-knowledge chip, the sources pill/cards, and the activity timeline. Extracted out of
+ * `Chat`'s own `turns.map` (front-end task: clickable citations) specifically so it can hold its
+ * own per-turn hook state: which source card an inline citation click should scroll to and
+ * briefly highlight. Hooks can't be called conditionally/per-iteration from inside a `.map`
+ * callback in the parent, so this state has to live in a real component instance of its own —
+ * `key={turn.id}` in `Chat`'s render gives each turn a stable one.
+ *
+ * `React.memo`'d: `turn` is the SAME object reference across renders for every turn `patchAssistant`
+ * didn't just touch (`prev.map((t) => (t.id === id ? fn(t) : t))`), so this — like `ChatMarkdown`'s
+ * own memo — skips re-rendering entirely for every turn except the one actively streaming. The
+ * four `onToggle*` props must stay referentially stable for that to hold (see the `useCallback`
+ * wrapping them in `Chat`). */
+const AssistantTurnView = memo(function AssistantTurnView({
+  turn,
+  onToggleSourcesOpen,
+  onToggleSourceCard,
+  onToggleEntry,
+  onToggleTimelineOpen,
+}: {
+  turn: AssistantTurn
+  onToggleSourcesOpen: (turnId: string) => void
+  onToggleSourceCard: (turnId: string, index: number) => void
+  onToggleEntry: (turnId: string, entryId: string) => void
+  onToggleTimelineOpen: (turnId: string) => void
+}) {
+  // Which card an inline citation click should scroll to + flash, and a monotonic "request"
+  // object (not just the index) so clicking the SAME citation twice in a row still re-triggers
+  // the scroll/flash effect below even though the index didn't change.
+  const [scrollRequest, setScrollRequest] = useState<{ index: number } | null>(null)
+  const [flashIndex, setFlashIndex] = useState<number | null>(null)
+  const flashTimeoutRef = useRef<number | null>(null)
+
+  // Pure "does this citation's entries match one of THIS turn's own source cards" check — passed
+  // to `ChatMarkdown` as `resolveCitation` for its render-time plain-text-vs-clickable decision.
+  // `useCallback` keyed on `turn.sources` (not `turn` itself) so it stays referentially stable for
+  // every re-render that doesn't change the sources list — the vast majority, since sources only
+  // update once (the `sources` SSE event) and never again for a given turn.
+  const resolveCitation = useCallback(
+    (entries: CitationEntry[]) => resolveCitationTarget(turn.sources, entries),
+    [turn.sources],
+  )
+
+  const handleCitationClick = useCallback(
+    (index: number) => {
+      if (!turn.sourcesOpen) onToggleSourcesOpen(turn.id)
+      setScrollRequest({ index })
+    },
+    [turn.sourcesOpen, turn.id, onToggleSourcesOpen],
+  )
+
+  // Performs the actual scroll + flash once the target card is (or already was) in the DOM — a
+  // plain effect rather than doing this inline in the click handler because opening the panel
+  // (when it was collapsed) is an async state update; the card doesn't exist in the DOM until
+  // AFTER that re-render commits, which is exactly what an effect naturally waits for.
+  useEffect(() => {
+    if (!scrollRequest) return
+    const el = document.getElementById(sourceCardDomId(turn.id, scrollRequest.index))
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setFlashIndex(scrollRequest.index)
+    if (flashTimeoutRef.current != null) window.clearTimeout(flashTimeoutRef.current)
+    flashTimeoutRef.current = window.setTimeout(() => setFlashIndex(null), 1500)
+  }, [scrollRequest, turn.id])
+
+  useEffect(
+    () => () => {
+      if (flashTimeoutRef.current != null) window.clearTimeout(flashTimeoutRef.current)
+    },
+    [],
+  )
+
+  return (
+    <div className="chat-turn chat-assistant">
+      {turn.streaming && !turn.text && (
+        // The inline answer-loading mark (D57 follow-up) — stands in at the exact spot the
+        // answer text will land for as long as this turn is streaming with no `answer_delta`
+        // yet, whether that's the pre-tool-call "thinking" gap or while tool calls are actively
+        // running (the timeline below keeps rendering its own "Searching: … · result" lines the
+        // whole time; this sits above them rather than duplicating their wording). Vanishes the
+        // instant `turn.text` starts accumulating — the streamed markdown itself then shows
+        // progress.
+        <div className="chat-loader mark-busy" role="status" aria-label="Answering">
+          <Logo />
+        </div>
+      )}
+
+      {turn.error && <p className="error">{turn.error}</p>}
+
+      {turn.text && (
+        <div className="recap chat-answer">
+          {turn.groundingSegments.length > 0 ? (
+            turn.groundingSegments.map((segment, index) =>
+              segment.kind === 'general_knowledge' ? (
+                <div className="gk-segment" key={index}>
+                  <span className="gk-segment-tag">general knowledge</span>
+                  <ChatMarkdown
+                    text={segment.text}
+                    resolveCitation={resolveCitation}
+                    onCitationClick={handleCitationClick}
+                  />
+                </div>
+              ) : (
+                <ChatMarkdown
+                  text={segment.text}
+                  key={index}
+                  resolveCitation={resolveCitation}
+                  onCitationClick={handleCitationClick}
+                />
+              ),
+            )
+          ) : (
+            <ChatMarkdown text={turn.text} resolveCitation={resolveCitation} onCitationClick={handleCitationClick} />
+          )}
+        </div>
+      )}
+
+      {turn.fromGeneralKnowledge && (
+        <span
+          className="gk-chip"
+          title="This answer contains content the assistant drew from its own general knowledge, not your ingested documents."
+        >
+          from general knowledge — not your documents
+        </span>
+      )}
+
+      {turn.truncated && <p className="chat-truncated">Stopped early — ran out of tool-call budget.</p>}
+
+      {turn.sources.length > 0 && (
+        <SourcesPanel
+          sources={turn.sources}
+          query={turn.question}
+          open={turn.sourcesOpen}
+          turnId={turn.id}
+          flashIndex={flashIndex}
+          onToggleOpen={() => onToggleSourcesOpen(turn.id)}
+          onToggleCard={(index) => onToggleSourceCard(turn.id, index)}
+        />
+      )}
+
+      {turn.timeline.length > 0 &&
+        (turn.timelineOpen ? (
+          <div className="timeline">
+            {turn.timeline.map((entry) => (
+              <TimelineLine key={entry.id} entry={entry} onToggle={() => onToggleEntry(turn.id, entry.id)} />
+            ))}
+          </div>
+        ) : (
+          <button type="button" className="tl-summary" onClick={() => onToggleTimelineOpen(turn.id)}>
+            {timelineSummary(turn.timeline)}
+            <span className="tl-summary-more">expand</span>
+          </button>
+        ))}
+    </div>
+  )
+})
 
 /** Imperative surface exposed to the workbench shell (`App.tsx`) — the topbar's "New chat"
  * button lives outside this component's own tree, so it drives `newChat()` through a ref instead
@@ -556,27 +833,31 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     setTurns((prev) => prev.map((t) => (t.id === id && t.role === 'assistant' ? fn(t) : t)))
   }
 
-  function toggleEntry(turnId: string, entryId: string) {
+  // These four wrapped in `useCallback` (empty deps — they only close over the stable `setTurns`
+  // via `patchAssistant`) so `AssistantTurnView` below can be `React.memo`'d: it's passed straight
+  // through as props, and an unstable reference there would force every assistant turn to
+  // re-render on every streamed token regardless of memoization, defeating the point.
+  const toggleEntry = useCallback((turnId: string, entryId: string) => {
     patchAssistant(turnId, (t) => ({
       ...t,
       timeline: t.timeline.map((e) => (e.id === entryId ? { ...e, expanded: !e.expanded } : e)),
     }))
-  }
+  }, [])
 
-  function toggleTimelineOpen(turnId: string) {
+  const toggleTimelineOpen = useCallback((turnId: string) => {
     patchAssistant(turnId, (t) => ({ ...t, timelineOpen: !t.timelineOpen }))
-  }
+  }, [])
 
-  function toggleSourcesOpen(turnId: string) {
+  const toggleSourcesOpen = useCallback((turnId: string) => {
     patchAssistant(turnId, (t) => ({ ...t, sourcesOpen: !t.sourcesOpen }))
-  }
+  }, [])
 
-  function toggleSourceCard(turnId: string, index: number) {
+  const toggleSourceCard = useCallback((turnId: string, index: number) => {
     patchAssistant(turnId, (t) => ({
       ...t,
       sources: t.sources.map((s, i) => (i === index ? { ...s, expanded: !s.expanded } : s)),
     }))
-  }
+  }, [])
 
   // Ingest turns (D57/Task U2) — client-side only, driven entirely by `Composer.tsx`'s own
   // upload logic; these two just append/patch them into the SAME turn list the answer turns live
@@ -793,83 +1074,14 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                 return <FindTurnCard turn={turn} key={turn.id} />
               }
               return (
-                <div className="chat-turn chat-assistant" key={turn.id}>
-                  {turn.streaming && !turn.text && (
-                    // The inline answer-loading mark (D57 follow-up) — stands in at the exact
-                    // spot the answer text will land for as long as this turn is streaming with
-                    // no `answer_delta` yet, whether that's the pre-tool-call "thinking" gap or
-                    // while tool calls are actively running (the timeline below keeps rendering
-                    // its own "Searching: … · result" lines the whole time; this sits above them
-                    // rather than duplicating their wording). Vanishes the instant `turn.text`
-                    // starts accumulating — the streamed markdown itself then shows progress.
-                    <div className="chat-loader mark-busy" role="status" aria-label="Answering">
-                      <Logo />
-                    </div>
-                  )}
-
-                  {turn.error && <p className="error">{turn.error}</p>}
-
-                  {turn.text && (
-                    <div className="recap chat-answer">
-                      {turn.groundingSegments.length > 0 ? (
-                        turn.groundingSegments.map((segment, index) =>
-                          segment.kind === 'general_knowledge' ? (
-                            <div className="gk-segment" key={index}>
-                              <span className="gk-segment-tag">general knowledge</span>
-                              <ChatMarkdown text={segment.text} />
-                            </div>
-                          ) : (
-                            <ChatMarkdown text={segment.text} key={index} />
-                          ),
-                        )
-                      ) : (
-                        <ChatMarkdown text={turn.text} />
-                      )}
-                    </div>
-                  )}
-
-                  {turn.fromGeneralKnowledge && (
-                    <span className="gk-chip" title="This answer contains content the assistant drew from its own general knowledge, not your ingested documents.">
-                      from general knowledge — not your documents
-                    </span>
-                  )}
-
-                  {turn.truncated && (
-                    <p className="chat-truncated">Stopped early — ran out of tool-call budget.</p>
-                  )}
-
-                  {turn.sources.length > 0 && (
-                    <SourcesPanel
-                      sources={turn.sources}
-                      query={turn.question}
-                      open={turn.sourcesOpen}
-                      onToggleOpen={() => toggleSourcesOpen(turn.id)}
-                      onToggleCard={(index) => toggleSourceCard(turn.id, index)}
-                    />
-                  )}
-
-                  {turn.timeline.length > 0 &&
-                    (turn.timelineOpen ? (
-                      <div className="timeline">
-                        {turn.timeline.map((entry) => (
-                          <TimelineLine
-                            key={entry.id}
-                            entry={entry}
-                            onToggle={() => toggleEntry(turn.id, entry.id)}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="tl-summary"
-                        onClick={() => toggleTimelineOpen(turn.id)}
-                      >
-                        {timelineSummary(turn.timeline)}
-                        <span className="tl-summary-more">expand</span>
-                      </button>
-                    ))}
-                </div>
+                <AssistantTurnView
+                  turn={turn}
+                  key={turn.id}
+                  onToggleSourcesOpen={toggleSourcesOpen}
+                  onToggleSourceCard={toggleSourceCard}
+                  onToggleEntry={toggleEntry}
+                  onToggleTimelineOpen={toggleTimelineOpen}
+                />
               )
             })
           )}

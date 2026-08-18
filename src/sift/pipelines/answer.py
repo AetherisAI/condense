@@ -140,7 +140,9 @@ class ConversationStore(Protocol):
         """Persist one turn, trimming that conversation to its newest ``max_turns`` turns.
 
         ``sources`` (T6, D42) is set only on a citing assistant turn — the same compact
-        ``{path, page, score, snippet}`` shape the ``sources`` SSE event carries.
+        ``{path, page, score, snippet, metadata}`` shape the ``sources`` SSE event carries
+        (``metadata``, clickable-citations audit F2, is the per-file ingest tags carried through
+        from ``Hit.metadata`` — ``None`` when the source file had none set).
 
         ``grounding_used``/``from_general_knowledge``/``grounding_segments`` (D51) are set only
         on an assistant turn — the SAME trust-boundary fields the ``grounding`` SSE event
@@ -636,6 +638,16 @@ def _merge_sources(existing: list[dict[str, Any]], hits: Sequence[Any]) -> list[
     ``_SOURCE_SNIPPET_CHARS``, sorted best-first and capped at ``_MAX_SOURCES`` — the same
     merge the Chat UI previously did in JS over raw ``tool_result`` blobs, moved server-side
     so every consumer (UI, non-stream trace, persisted turn) gets one canonical list.
+
+    ``metadata`` (clickable-citations audit F2) is carried through from ``Hit.metadata`` unchanged
+    — a shallow dict of per-file tags set at ingest (D28), e.g. the reserved ``source_url`` deep-
+    link key. Before this it was silently dropped here even though ``GET /search`` (``pipelines/
+    search.py``) already threaded the same field onto its ``Source``: the ONLY difference between
+    the two call paths is that this one passes hits through ``dict``/JSON (tool-call results,
+    SSE, persisted-turn JSON) rather than building the dataclass directly, and the drop meant
+    every ``/v1/answer`` citation card silently lost its deep link that ``GET /search`` kept —
+    dead code with no test ever exercising it end to end. ``Source.metadata`` (``api/schemas.py``)
+    already declares the field; this is the only place it needs threading through on this path.
     """
     merged: dict[tuple[str, int], dict[str, Any]] = {
         (item["path"], item["page"]): item for item in existing
@@ -655,7 +667,14 @@ def _merge_sources(existing: list[dict[str, Any]], hits: Sequence[Any]) -> list[
             continue
         text = hit.get("text")
         snippet = text[:_SOURCE_SNIPPET_CHARS] if isinstance(text, str) else ""
-        merged[key] = {"path": path, "page": page, "score": score, "snippet": snippet}
+        metadata = hit.get("metadata")
+        merged[key] = {
+            "path": path,
+            "page": page,
+            "score": score,
+            "snippet": snippet,
+            "metadata": metadata if isinstance(metadata, dict) else None,
+        }
     ranked = sorted(merged.values(), key=lambda item: item["score"], reverse=True)
     return ranked[:_MAX_SOURCES]
 
