@@ -2,7 +2,7 @@
 
 > The 2-minute version. Full detail + per-WP history: [`ROADMAP.md`](./ROADMAP.md). Paired companion (enforced).
 
-**Updated:** 2026-07-08 · **Owner:** Quentin (Dev B)
+**Updated:** 2026-11-05 · **Owner:** Quentin (Dev B)
 
 ## What we're building
 The **surface** of Condense: embed a query → pull a wide candidate set from the vector store → **rerank to the single best** → recap it → serve over an authed FastAPI + a chat-first React UI + a Tauri desktop app, all config-driven. Arthur builds the engine (ingest + storage); we meet at the `VectorStore` port and never block on each other.
@@ -16,6 +16,14 @@ The **surface** of Condense: embed a query → pull a wide candidate set from th
 The repo went public (MIT, D68). A full tri-review + three follow-on PRs merged to `main` today: `/status` secret redaction + constant-time auth + CI (SAST/web/quality) (#22); loopback-only compose bind by default (#23, D70); master-gated `/v1/tokens` mint/list/revoke (#24, D69); core `SearchOutcome` + AST-based layering test + `chunk_tokenizer=auto` (#25, D72). Suite grew 500→518 green. Supply-chain hardening (D71) is done locally, push pending a token-scope fix.
 
 **In parallel:** the Tauri **desktop app** (`feat/desktop-standalone`, D60–D67 — connect-first shell, PyInstaller server bundle for a no-Docker download, llama.cpp local embeddings) is feature-complete and installed for Quentin's manual validation. Merge → **v0.4.0**, on his word.
+
+## Active — evaluation harness (`feat/eval-harness`, opened 2026-11-05)
+`sift-eval` is a CLI that scores Find and Ask against a golden question set you write: recall and
+precision@k, RAGAS answer metrics (relevancy, faithfulness, correctness, context utilization),
+noise robustness, abstention, and latency. Each run writes a JSON + HTML report, and `compare`
+diffs two runs. It runs the real pipeline in-process (D73), uses RAGAS as an optional extra
+(D74), and keys gold by path + evidence quote so it survives re-chunking (D75). No API or `core/`
+change.
 
 ## Decisions already taken (see DECISIONS.md)
 - **Turso/libSQL native vectors** — no external vector DB (D2).

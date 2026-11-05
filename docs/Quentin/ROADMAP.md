@@ -1,5 +1,7 @@
 # Dev B Implementation Roadmap — Condense (retrieve · rank · recap · serve · UI)
 
+> 🚧 **2026-11-05 — eval harness WP opened** (`feat/eval-harness`, D73–D75): `sift-eval`, an in-process CLI scoring Find + Ask against a golden set. Metrics: recall/precision@k, RAGAS answer metrics, noise robustness, latency. See WP10 below and `docs/Quentin/active/`. Desktop WP still awaiting merge → v0.4.0.
+>
 > ✅ **2026-07-08 — public-hardening/audit wave MERGED; desktop WP COMPLETE, awaiting validation.** Repo went public (MIT, D68); a tri-review + three follow-on PRs (#22–#25) landed on `main`: `/status` secret redaction + constant-time auth + CI (SAST/web/quality), loopback-only compose bind by default (D70), master-gated `/v1/tokens` mint/list/revoke (D69), core `SearchOutcome` + AST layering test + `chunk_tokenizer=auto` (D72) — suite 500→518 green. Supply-chain hardening (D71) done locally, push pending a token-scope fix. In parallel, `feat/desktop-standalone` (D60–D67: Tauri shell, PyInstaller server bundle, llama.cpp local embeddings) is feature-complete — Quentin is validating an installed build; merge tags **v0.4.0** on his word.
 >
 > ⚠️ **RECONCILIATION 2026-06-27 — build PAUSED.** Arthur shipped the canonical Step-0 on `feat/dev-a-engine` (src-layout `src/sift/`, **async** ports, his `core/{types,ports,errors,hashing}` + `api/schemas.py`, hatchling pyproject, CI, contract tests, fakes). Dev B's flat-`sift/`/sync WP0 (on `main`) and the stopped WP1–WP5 are **superseded**. Dev B will rebuild only its **surface** slices (embedder · llm · rerank-judge · search pipeline · api · config · factory · web · docker) **async, in `src/sift/`, against his types** — see `DECISIONS.md` **D18**. The WP sections below predate this; WP0 (contracts/fakes) is now Arthur's, and the rest will be re-cut async against his foundation once `main` adopts it.
@@ -129,6 +131,19 @@ Types: `Vector = list[float]`; `Hit{ id:str, text:str, path:str, page:int|None, 
 - **Owns:** `adapters/rerank/crossencoder_http.py`, `tei` compose profile.
 - **Produces:** POST `RERANK_BASE_URL/rerank` `{query, texts}` → bare array `[{index,score}]` (sorted desc) → map back by `index`, reorder Hits.
 - **Depends:** WP4,WP5. **Build-against:** mocked TEI response. **Docker:** `tei` service (`ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id BAAI/bge-reranker-v2-m3`) behind a profile. **Acceptance:** with a stubbed `/rerank`, Hits reorder by score; `RERANK_STRATEGY=crossencoder` selects it with no pipeline change. *Gotcha: TEI = one model per container; response has no `results` wrapper.*
+
+### WP10 — Evaluation harness  `feat/eval-harness`  *(active, D73–D75)*
+- **Goal:** Measure quality instead of eyeballing it. Score Find (`SearchPipeline`) and Ask (`AnswerPipeline`) against a golden JSONL set, so every tuning change (chunking, rerank, K, LLM) has a number.
+- **Owns:** `src/sift/eval/` (separate dev-tool app, own `EvalSettings`), `sift-eval` script, `[eval]` extra (RAGAS 0.4), `docs/evaluation.md`, `evals/golden.example.jsonl`.
+- **Produces:**
+  - recall/precision/hit@k + MRR (doc and chunk level, pre- and post-rerank);
+  - RAGAS answer relevancy, faithfulness, answer correctness, context utilization, noise sensitivity;
+  - a controlled noise-robustness sweep and abstention on unanswerable questions;
+  - per-stage latency;
+  - run folders with JSON + HTML reports, `compare`, `validate` and `bootstrap`.
+- **Depends:** v0.2.0 (`AnswerPipeline`), D72 (`SearchOutcome`). **Touches:** additive `SearchPipeline.trace/recap`; `factory.build_container(ephemeral_conversations=)` + public `build_completer`. No `core/` or API change.
+- **Acceptance:** `sift-eval run --skip-judge` on fakes in CI; on the real stack `validate → run → compare` produces a report; product modules never import `sift.eval` (layering test).
+- **Later:** an in-app Evaluation tab that reads run folders.
 
 ---
 
