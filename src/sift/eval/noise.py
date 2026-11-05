@@ -166,26 +166,33 @@ async def run_noise_sweep(
         say(f"[noise] {item.id}: {len(es.ratios)} ratios, {len(gold)} gold passage(s)")
 
     if judge is not None:
-        gate = asyncio.Semaphore(es.judge_concurrency)
-        by_id = {i.id: i for i in eligible}
-
-        async def score(trial: NoiseTrial, metric: str) -> None:
-            item = by_id[trial.item_id]
-            sample = JudgeSample(
-                question=item.question,
-                response=trial.response,
-                contexts=tuple(p.text for p in trial.contexts),
-                reference=item.reference,
-            )
-            async with gate:
-                trial.scores[metric] = await judge.score(sample, metric)
-
-        await asyncio.gather(
-            *(
-                score(t, m)
-                for t in trials
-                if not t.error and t.response.strip()
-                for m in NOISE_METRICS
-            )
-        )
+        await judge_trials(trials, eligible, judge, es.judge_concurrency)
     return trials, skipped
+
+
+async def judge_trials(
+    trials: Sequence[NoiseTrial], items: Sequence[GoldenItem], judge: Judge, concurrency: int
+) -> None:
+    """Score each successful trial on :data:`NOISE_METRICS`, in place, ``concurrency`` at once."""
+    gate = asyncio.Semaphore(concurrency)
+    by_id = {i.id: i for i in items}
+
+    async def score(trial: NoiseTrial, metric: str) -> None:
+        item = by_id[trial.item_id]
+        sample = JudgeSample(
+            question=item.question,
+            response=trial.response,
+            contexts=tuple(p.text for p in trial.contexts),
+            reference=item.reference,
+        )
+        async with gate:
+            trial.scores[metric] = await judge.score(sample, metric)
+
+    await asyncio.gather(
+        *(
+            score(t, m)
+            for t in trials
+            if t.item_id in by_id and not t.error and t.response.strip()
+            for m in NOISE_METRICS
+        )
+    )

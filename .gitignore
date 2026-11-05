@@ -25,3 +25,6 @@ web/public/downloads/
 # OS
 .DS_Store
 sift_local.db*
+
+# sift-eval run folders (reports may quote your documents)
+eval-runs/

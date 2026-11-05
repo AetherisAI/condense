@@ -55,6 +55,7 @@ class EvalSettings(BaseSettings):
     noise_ratios: str = "0,0.25,0.5,0.75"
     noise_context_size: int = Field(default=4, ge=1)
     ask_max_contexts: int = Field(default=20, ge=1)
+    bootstrap_min_chars: int = Field(default=200, ge=1)
     grounding: Literal["strict", "hybrid", "open"] = "strict"
     warmup: int = Field(default=1, ge=0)
     seed: int = 13

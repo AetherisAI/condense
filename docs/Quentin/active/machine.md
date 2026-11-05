@@ -106,9 +106,11 @@ container from the same `.env` and drives the pipelines in-process. The product 
 
 ### Task 7: report + CLI (run / judge / compare) + packaging
 **Files:** `src/sift/eval/{report,runner,cli}.py`, `pyproject.toml`, `.gitignore`, `tests/eval/test_cli.py`
+- [x] self-contained run folder (config/golden copy/results/noise/summary json+md/report.html), credential redaction by field-name suffix, `rejudge`, `compare` (direction-aware ▲/▼), `[eval]` extra + `sift-eval` script, `eval-runs/` gitignored
 
 ### Task 8: validate + bootstrap
 **Files:** `src/sift/eval/{validate,bootstrap}.py`, `tests/eval/test_{validate,bootstrap}.py`
+- [x] validate: path resolution (+ did-you-mean), ambiguity warning, page/evidence presence, missing reference/relevant warnings; bootstrap: seeded round-robin sampling, verbatim-evidence filter, never overwrites, output parses as a golden set
 
 ### Task 9: docs + guards
 **Files:** `docs/evaluation.md`, `evals/golden.example.jsonl`, `.env.example`, `CLAUDE.md` §9, `docs/channel/from-quentin.md`, `tests/contract/test_layering.py`

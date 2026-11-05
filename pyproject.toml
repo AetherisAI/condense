@@ -31,10 +31,14 @@ inference = ["httpx>=0.28,<1"]
 # The desktop app's UI is stdlib Tkinter (no pip dep; on Ubuntu install the `python3-tk` package).
 agent = ["httpx>=0.28,<1", "watchdog>=6,<7", "platformdirs>=4.10,<5"]
 packaging = ["pyinstaller>=6.21,<7"]  # build the desktop agent into self-contained downloads (see packaging/)
+# `sift-eval`'s LLM-judged metrics (D74). RAGAS 0.4.3 imports `langchain_community.chat_models.
+# vertexai`, which langchain-community 0.4.x removed — hence the pin until RAGAS catches up.
+eval = ["ragas>=0.4.3,<0.5", "langchain-community>=0.3.31,<0.4"]
 
 [project.scripts]
 sift-agent = "agent.app:main"     # the small always-on desktop watcher (Tkinter)
 sift-ingest = "agent.cli:main"    # one-shot / --watch headless ingestion
+sift-eval = "sift.eval.cli:main"  # quality evaluation against a golden set (docs/evaluation.md)
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sift", "agent"]
