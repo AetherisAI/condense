@@ -89,11 +89,16 @@ class _StubIngest:
         ]
 
 
-def build_container(settings: Settings) -> Container:
-    """Construct every adapter from ``settings`` and return the wired :class:`Container`."""
+def build_container(settings: Settings, *, ephemeral_conversations: bool = False) -> Container:
+    """Construct every adapter from ``settings`` and return the wired :class:`Container`.
+
+    ``ephemeral_conversations`` (D73) wires the process-local ``FakeConversationStore`` even when
+    a Turso store is configured — the ``sift-eval`` harness drives the answer pipeline against
+    the real corpus but must never write its throwaway turns into the user's chat history.
+    """
     embedder = _build_embedder(settings)
     store = _build_store(settings)
-    completer = _build_completer(settings)
+    completer = build_completer(settings)
     reranker = _build_reranker(settings, completer)
     search = SearchPipeline(embedder, store, reranker, completer, settings)
     ingest = _build_ingest(settings, embedder, store)
@@ -101,12 +106,14 @@ def build_container(settings: Settings) -> Container:
     auth_tokens = parse_auth_tokens(settings.auth_tokens)
     # Both `OpenAICompatCompleter` and `NullCompleter` implement `ToolCompleter` too (D40) — one
     # instance serves both the recap `Completer` port and the answer loop's `ToolCompleter` port,
-    # so this is a structural cast, not a second adapter. `_build_completer`'s return type stays
+    # so this is a structural cast, not a second adapter. `build_completer`'s return type stays
     # `Completer` (its existing callers — the reranker, the recap — need nothing more).
     tool_completer: ToolCompleter = completer  # pyright: ignore[reportAssignmentType]
-    conversations = _build_conversation_store(settings)
+    conversations = (
+        FakeConversationStore() if ephemeral_conversations else _build_conversation_store(settings)
+    )
     # `title_completer=completer` (T6, D42): the SAME `Completer` instance already wired for
-    # the recap — no cast needed (unlike `tool_completer` above), since `_build_completer`'s
+    # the recap — no cast needed (unlike `tool_completer` above), since `build_completer`'s
     # return type is already `Completer`. Reusing it means the auto-title call is budget-capped
     # via the SAME `recap_max_tokens`/`recap_temperature` the recap uses, with no new knob.
     answer = AnswerPipeline(
@@ -224,7 +231,12 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
     return _StubIngest()
 
 
-def _build_completer(settings: Settings) -> Completer:
+def build_completer(settings: Settings) -> Completer:
+    """The configured chat :class:`Completer` (``LLM_*``), else the offline ``NullCompleter``.
+
+    Public (D73) so ``sift-eval`` can build its judge LLM from a ``Settings`` copy carrying the
+    judge's endpoint — same adapter, same retries/timeouts, no second composition root.
+    """
     if settings.llm_base_url:
         if not settings.llm_model:
             raise ValueError("LLM_BASE_URL is set but LLM_MODEL is missing")

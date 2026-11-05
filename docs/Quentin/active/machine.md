@@ -86,7 +86,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 
 ### Task 2: factory hooks
 **Files:** `src/sift/factory.py`, `tests/surface/test_factory.py`
-- [ ] `ephemeral_conversations=True` → `FakeConversationStore` even with Turso configured; public `build_completer`
+- [x] `ephemeral_conversations=True` → `FakeConversationStore` even with Turso configured; public `build_completer`
 
 ### Task 3: golden + matching + metrics (pure)
 **Files:** `src/sift/eval/{__init__,golden,matching,metrics}.py`, `tests/eval/test_{golden,matching,metrics}.py`

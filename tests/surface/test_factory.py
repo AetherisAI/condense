@@ -21,7 +21,7 @@ from sift.adapters.rerank.null import NullReranker
 from sift.adapters.store.fake import FakeVectorStore
 from sift.config import Settings
 from sift.core.hashing import content_hash
-from sift.factory import Container, build_container, resolve_chunk_tokenizer
+from sift.factory import Container, build_completer, build_container, resolve_chunk_tokenizer
 from sift.pipelines.answer import AnswerPipeline
 from sift.pipelines.ingest import IngestOutcome, SupportsIngest
 from sift.pipelines.tools import ToolRegistry
@@ -185,6 +185,28 @@ def test_build_container_conversation_store_is_libsql_when_turso_configured(tmp_
     )
 
     assert isinstance(container.answer._conversations, LibSQLConversationStore)
+
+
+def test_build_container_ephemeral_conversations_stay_in_memory_even_with_turso(tmp_path) -> None:
+    # D73: `sift-eval` drives `/v1/answer`'s pipeline in-process against the REAL store — its
+    # throwaway conversations must never land in the user's persisted chat history.
+    container = build_container(
+        Settings(
+            ingest_token="t", store_backend="libsql", turso_database_url=str(tmp_path / "sift.db")
+        ),
+        ephemeral_conversations=True,
+    )
+
+    assert isinstance(container.answer._conversations, FakeConversationStore)
+    assert container.conversations is container.answer._conversations
+
+
+def test_build_completer_is_public_and_config_driven() -> None:
+    assert isinstance(build_completer(Settings(ingest_token="t")), NullCompleter)
+    completer = build_completer(
+        Settings(ingest_token="t", llm_base_url="http://judge.local/v1", llm_model="judge")
+    )
+    assert isinstance(completer, OpenAICompatCompleter)
 
 
 def test_build_container_exposes_conversations_same_instance_answer_uses() -> None:
