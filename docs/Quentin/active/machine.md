@@ -81,8 +81,8 @@ container from the same `.env` and drives the pipelines in-process. The product 
 
 ### Task 1: `SearchPipeline.trace` / `recap`
 **Files:** `src/sift/pipelines/search.py`, `tests/surface/test_search_trace.py`
-- [ ] failing tests: stages populated, timings keys, `context` = `ranked[:recap_context_k]`, empty base, recap off → `context == []`
-- [ ] implement; existing `test_search_pipeline.py` stays green unchanged
+- [x] failing tests: stages populated, timings keys, `context` = `ranked[:recap_context_k]`, empty base, recap off → `context == []`
+- [x] implement; existing `test_search_pipeline.py` stays green unchanged
 
 ### Task 2: factory hooks
 **Files:** `src/sift/factory.py`, `tests/surface/test_factory.py`

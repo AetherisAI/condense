@@ -4,10 +4,17 @@ Ports only (the dependency rule: ``pipelines`` never imports an adapter). It emb
 query once, retrieves ``RETRIEVE_K`` nearest chunks, reranks them by true relevance, keeps
 the ``FINAL_K`` best, and recaps the top passage into a summary carried back with its source
 citations. An empty base short-circuits to a "No results found." recap with no sources.
+
+:meth:`SearchPipeline.trace` runs the same path but also keeps what ``search()`` discards — the
+raw retrieval order, the reranked list, the recap's exact context and per-stage timings — for
+the ``sift-eval`` harness (D73). ``search()`` is ``trace().outcome``, so the two never diverge.
 """
 
 from __future__ import annotations
 
+import time
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sift.config import Settings
@@ -157,6 +164,23 @@ def _recap_user(query: str, passages: list[Hit]) -> str:
     return f"Question: {query}\n\nPassages:\n" + "\n\n".join(blocks)
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchTrace:
+    """One search, stage by stage — the eval harness's view (D73), never on the wire.
+
+    ``retrieved`` is the raw vector-search order (≤ ``RETRIEVE_K``, before version-collapse and
+    rerank); ``ranked`` is after both; ``context`` is exactly what the recap LLM saw (empty when
+    recap is off). ``timings_ms`` holds each stage that ran (``ensure_ready``, ``embed``,
+    ``retrieve``, ``collapse``, ``rerank``, ``recap``) plus ``total``, in milliseconds.
+    """
+
+    outcome: SearchOutcome
+    retrieved: list[Hit]
+    ranked: list[Hit]
+    context: list[Hit]
+    timings_ms: dict[str, float]
+
+
 class SearchPipeline:
     """Wires the four query-time ports together; pins ``(model, dim)`` on first use."""
 
@@ -177,26 +201,55 @@ class SearchPipeline:
     async def search(
         self, query: str, tenant: str = "default", recap: bool | None = None
     ) -> SearchOutcome:
+        return (await self.trace(query, tenant, recap)).outcome
+
+    async def trace(
+        self, query: str, tenant: str = "default", recap: bool | None = None
+    ) -> SearchTrace:
         settings = self._settings
+        timings: dict[str, float] = {}
+        start = mark = time.perf_counter()
+
+        def lap(stage: str) -> None:
+            nonlocal mark
+            now = time.perf_counter()
+            timings[stage] = (now - mark) * 1000
+            mark = now
+
         await self._store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
+        lap("ensure_ready")
         vectors = await self._embedder.embed([query])
-        candidates = await self._store.search(vectors[0], settings.retrieve_k, tenant)
-        if not candidates:
-            return SearchOutcome(summary="No results found.", sources=[])
+        lap("embed")
+        retrieved = await self._store.search(vectors[0], settings.retrieve_k, tenant)
+        lap("retrieve")
+        if not retrieved:
+            timings["total"] = (time.perf_counter() - start) * 1000
+            return SearchTrace(
+                outcome=SearchOutcome(summary="No results found.", sources=[]),
+                retrieved=[],
+                ranked=[],
+                context=[],
+                timings_ms=timings,
+            )
+        candidates = list(retrieved)
         # Collapse near-duplicate versions before reranking so a stale copy can never out-rank
         # its newer twin (and so the reranker / recap spend their budget on distinct passages).
         if settings.version_collapse_enabled:
             candidates = _collapse_versions(candidates, settings.version_similarity_threshold)
+        lap("collapse")
         ranked = await self._reranker.rerank(query, candidates)
+        lap("rerank")
         top = ranked[: settings.final_k]
         # Recap is optional: when off (per-request override, else the config default) we skip the
         # LLM entirely and return just the source citation — the doc + page — as the response.
         do_recap = settings.recap_enabled if recap is None else recap
         if do_recap:
             context = ranked[: settings.recap_context_k]
-            summary = await self._completer.complete(_RECAP_SYSTEM, _recap_user(query, context))
+            summary = await self.recap(query, context)
         else:
+            context = []
             summary = ""
+        lap("recap")
         sources = [
             SearchSource(
                 path=hit.source_path,
@@ -208,4 +261,19 @@ class SearchPipeline:
             )
             for hit in top
         ]
-        return SearchOutcome(summary=summary, sources=sources)
+        timings["total"] = (time.perf_counter() - start) * 1000
+        return SearchTrace(
+            outcome=SearchOutcome(summary=summary, sources=sources),
+            retrieved=list(retrieved),
+            ranked=ranked,
+            context=context,
+            timings_ms=timings,
+        )
+
+    async def recap(self, query: str, passages: Sequence[Hit]) -> str:
+        """Recap ``passages`` for ``query`` with the production recap prompt.
+
+        Public so the eval's noise sweep can feed hand-built contexts through the exact prompt
+        ``/search`` uses (D73).
+        """
+        return await self._completer.complete(_RECAP_SYSTEM, _recap_user(query, list(passages)))
