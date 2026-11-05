@@ -89,7 +89,8 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - [x] `ephemeral_conversations=True` → `FakeConversationStore` even with Turso configured; public `build_completer`
 
 ### Task 3: golden + matching + metrics (pure)
-**Files:** `src/sift/eval/{__init__,golden,matching,metrics}.py`, `tests/eval/test_{golden,matching,metrics}.py`
+**Files:** `src/sift/eval/{__init__,records,golden,matching,metrics}.py`, `tests/eval/test_{golden,matching,metrics}.py`
+- [x] schema + typo-safe parsing, suffix/page/evidence matching (contiguous token run), recall/precision/hit@k + MRR at doc and chunk level, latency stats
 
 ### Task 4: config + collect (Find + Ask)
 **Files:** `src/sift/eval/{config,collect}.py`, `tests/eval/test_collect.py`
