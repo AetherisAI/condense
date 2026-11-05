@@ -129,7 +129,17 @@ container from the same `.env` and drives the pipelines in-process. The product 
 ## 5. Implementation log
 | Date | Commit | Change |
 |------|--------|--------|
-| 2026-11-05 | — | WP opened; plan approved |
+| 2026-11-05 | 30dfb0f | WP opened; plan approved; D73–D75 |
+| 2026-11-05 | a4f2134 | `SearchPipeline.trace()` + `recap()` |
+| 2026-11-05 | be56ce7 | factory `ephemeral_conversations` + public `build_completer` |
+| 2026-11-05 | 02e73a6 | golden schema, matching, retrieval metrics |
+| 2026-11-05 | 6fdf994 | `EvalSettings` + collect (Find/Ask) |
+| 2026-11-05 | 10170fc | `Judge` protocol, abstention, RAGAS adapter |
+| 2026-11-05 | 009298c | noise-robustness sweep |
+| 2026-11-05 | 33fca90 | runner, reports, CLI, validate, bootstrap, `[eval]` extra |
+| 2026-11-05 | 29d8311 | user guide, example set, env block, layering guards, channel 33 |
+| 2026-11-05 | c28faf7 | D76 citation stripping (found by the first real-stack run) |
+| 2026-11-05 | — | **Real-stack verification** on a scratch libSQL DB (5 docs via the real ingest pipeline, `mistral-embed`, `mistral-small-latest` generator + judge): `validate` OK; `run --skip-judge` and `run --noise` complete with 0 errors and 0 judge failures; Find doc hit@1 1.0, answer correctness Find 0.82 / Ask 0.81, noise robustness 0.88; v2 refund policy correctly preferred over v1; unanswerable question abstained on both surfaces. ~5.7 min for 6 questions + sweep at judge concurrency 2 |
 
 ## 6. Decisions
 - D73: eval is a separate in-process CLI app with its own `EvalSettings`.
