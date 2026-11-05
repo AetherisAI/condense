@@ -101,7 +101,8 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - [x] `Judge` protocol + `FakeJudge`, applicability rules (no reference → no correctness; no contexts → no faithfulness), `AbstentionCheck` (YES/NO via judge `Completer`), `RagasJudge` (collections metrics, per-metric failure → `None`, NaN → `None`), bounded-concurrency `judge_results`
 
 ### Task 6: noise sweep
-**Files:** `src/sift/eval/noise.py`, `tests/eval/test_noise.py`
+**Files:** `src/sift/eval/{corpus,noise}.py`, `tests/eval/test_noise.py`
+- [x] `corpus.py` (list docs / chunks via the toolbox, gold-path resolution), one gold passage per ref, hard-negative distractors from non-gold docs, seeded shuffle, actual-ratio recorded, recap via the production prompt, judged on correctness + faithfulness
 
 ### Task 7: report + CLI (run / judge / compare) + packaging
 **Files:** `src/sift/eval/{report,runner,cli}.py`, `pyproject.toml`, `.gitignore`, `tests/eval/test_cli.py`
