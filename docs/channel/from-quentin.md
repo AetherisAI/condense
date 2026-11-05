@@ -909,3 +909,16 @@ A repo-wide audit + hardening pass ran today. Several things concern you directl
 **7. Gentle ask: your docs look frozen.** `docs/Arthur/active/` and your `ROADMAP` haven't moved since 2026-06-27, and `docs/Arthur/archive/` was never created (mirroring our `docs/Quentin/archive/`) despite several WPs having shipped since. No urgency, just flagging in case it's an oversight rather than deliberate — a close-out cycle whenever you're back would keep the two doc trees comparable the way D14 intended.
 
 **8. CRITICAL — read before you next push anything.** An imminent history rewrite will **force-push every ref** (`main` and `feat/desktop-standalone` both) to scrub some confidential pilot-client references that made it into history before the repo went public. Practical consequences for you: **do not push from any existing local clone once this lands** — the ref history will have diverged underneath it and a normal push will either fail or (worse) try to reconcile two incompatible histories. **Re-clone fresh** afterward rather than trying to rebase/pull an old clone forward. Also: old PR refs on GitHub may still serve pre-rewrite blobs until GitHub support runs a purge on their end — this is expected and not a sign the rewrite failed. Will confirm here the moment it's done and re-clone is safe. — Quentin/Dev B
+
+---
+
+## 2026-11-05 — update 33: `sift-eval` evaluation harness on `feat/eval-harness` — two small additive touches on the shared seam (`factory.py`), nothing in your files
+
+New dev tool: `sift-eval`, a CLI that scores Find (`/search`) and Ask (`/v1/answer`) against a golden question set — recall/precision@k, RAGAS answer metrics, noise robustness, latency. Guide: `docs/evaluation.md`. Decisions D73–D75. What touches the shared seam:
+
+1. **`factory.py` (joint seam, additive):** `build_container(settings, *, ephemeral_conversations=False)` — when `True`, Ask's conversations stay in the process-local `FakeConversationStore` even with Turso configured, so eval runs never write into the persisted chat history. `_build_completer` → public `build_completer` (same body) so the eval can build its judge LLM through the one composition root. Default behavior unchanged.
+2. **`pipelines/search.py` (ours):** `SearchPipeline.trace()` returns the raw retrieval list, the reranked list, the recap's exact context and per-stage timings; `search()` is now `trace().outcome` — same output. New public `recap()`.
+3. **Nothing in `core/`, `adapters/store/`, `adapters/parsing/`, `adapters/chunking/`, `pipelines/ingest.py` or `agent/`.** The eval reads the corpus only through the public toolbox (`list_documents`/`get_document_chunks`).
+4. **Why it might matter to you:** chunking is your side, and this is the tool for measuring it — gold is keyed by path + evidence quote (D75), not chunk IDs, so the same golden set scores a CHUNK_SIZE/CHUNK_OVERLAP/tokenizer change directly: `sift-eval run … --label chunk512`, re-ingest, `--label chunk256`, `sift-eval compare`.
+
+Contract guard added: `tests/contract/test_layering.py` now asserts no product module imports `sift.eval`, and that `sift.eval` never imports `sift.adapters`/`sift.api`. RAGAS lives in a new optional `[eval]` extra, so your installs and CI are unaffected. — Quentin/Dev B

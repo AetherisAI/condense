@@ -1,0 +1,18 @@
+# sift-eval golden set — EXAMPLE. One JSON object per line; lines starting with # are comments.
+# Copy to evals/golden.jsonl and replace with questions about YOUR indexed documents.
+# Schema and authoring guide: docs/evaluation.md
+#
+# Fields: id (unique), question, reference (the correct answer — enables answer correctness),
+#   relevant: [{path, page?, evidence?}] (where the answer lives — enables retrieval metrics),
+#   answerable (default true; false = the documents do NOT cover it), tags (for breakdowns).
+#
+# A single-fact question, pinned to a quote (strictest matching):
+{"id": "refunds-01", "question": "How long does a refund take once it's approved?", "reference": "Refunds are paid out within two to three business days of approval.", "relevant": [{"path": "policies/refunds_v2.md", "evidence": "two to three business days"}], "tags": ["policy", "versioned"]}
+# Paraphrased — the words differ from the document's (this is what real users do):
+{"id": "shipping-01", "question": "If I order before noon, when does express delivery show up?", "reference": "Express orders placed before noon arrive the next business day.", "relevant": [{"path": "policies/shipping.md", "page": 2, "evidence": "arrives the next business day"}], "tags": ["policy", "paraphrase"]}
+# Needs two documents:
+{"id": "leave-01", "question": "How many days off do employees get in total, holidays plus wellbeing days?", "reference": "25 days of paid holiday plus 2 wellbeing days, 27 in total.", "relevant": [{"path": "hr/holidays.md", "evidence": "twenty five days of paid holiday"}, {"path": "hr/wellbeing.md", "evidence": "two wellbeing days"}], "tags": ["hr", "multi-doc"]}
+# Path-only gold (any chunk of the document counts) — use when no single quote captures it:
+{"id": "security-01", "question": "What is our policy on sharing customer data with contractors?", "reference": "Contractors may only access customer data under a signed DPA and on a need-to-know basis.", "relevant": [{"path": "legal/data-protection.md"}], "tags": ["legal"]}
+# Unanswerable — the corpus doesn't cover it; a good system says so instead of guessing:
+{"id": "none-01", "question": "What was the company's revenue in 2019?", "answerable": false, "tags": ["unanswerable"]}

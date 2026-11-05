@@ -95,3 +95,28 @@ def test_adapters_never_import_api_pipelines_or_factory() -> None:
     assert not offenders, (
         f"adapters/ must never import sift.api/sift.pipelines/sift.factory; found: {offenders}"
     )
+
+
+EVAL_DIR = SRC_DIR / "eval"
+
+
+def test_product_never_imports_the_eval_harness() -> None:
+    # D73: `sift.eval` is a separate dev-tool app that consumes the product — never the reverse,
+    # so the server, the frozen engine bundle and CI never load it (or its optional RAGAS deps).
+    offenders: dict[str, set[str]] = {}
+    for path in sorted(SRC_DIR.rglob("*.py")):
+        if path.is_relative_to(EVAL_DIR):
+            continue
+        bad = _forbidden_hits(_imported_modules(ast.parse(path.read_text("utf-8"))), ("sift.eval",))
+        if bad:
+            offenders[str(path.relative_to(SRC_DIR))] = bad
+
+    assert not offenders, f"product code must never import sift.eval; found: {offenders}"
+
+
+def test_eval_harness_never_imports_adapters_or_api() -> None:
+    # The harness reaches the system only through `sift.factory` and public pipeline/toolbox
+    # methods — never a concrete adapter or the HTTP layer.
+    offenders = _check_directory(EVAL_DIR, ("sift.adapters", "sift.api"))
+
+    assert not offenders, f"sift.eval must not import sift.adapters/sift.api; found: {offenders}"

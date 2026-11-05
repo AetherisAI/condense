@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from sift.eval.golden import GoldenError, GoldRef, item_to_dict, parse_lines
+from sift.eval.golden import GoldenError, GoldRef, item_to_dict, load_golden, parse_lines
 
 
 def _line(**fields: object) -> str:
@@ -92,3 +93,11 @@ def test_item_to_dict_round_trips() -> None:
 
     assert parse_lines([json.dumps(item_to_dict(item))]) == [item]
     assert "answerable" not in item_to_dict(item)
+
+
+def test_shipped_example_parses() -> None:
+    example = Path(__file__).resolve().parents[2] / "evals" / "golden.example.jsonl"
+    items = load_golden(example)
+
+    assert len(items) == 5
+    assert sum(not i.answerable for i in items) == 1

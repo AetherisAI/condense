@@ -8,7 +8,7 @@
 ## 2. Our role — Dev B ("the surface")
 Quentin builds **retrieve + rank + recap + serve + UI**. Arthur builds **the engine** (ingest + storage). We code against **ports** and test with **fakes** — never blocked on Arthur. (See `DECISIONS.md` D3.)
 
-**We own:** `adapters/embedding/`, `adapters/rerank/`, `adapters/llm/`, `pipelines/search.py`, `api/`, `config.py`, `factory.py`, `web/`, and the `web`+`tei` parts of `docker-compose.yml`.
+**We own:** `adapters/embedding/`, `adapters/rerank/`, `adapters/llm/`, `pipelines/search.py`, `api/`, `config.py`, `factory.py`, `eval/` (the `sift-eval` harness), `web/`, and the `web`+`tei` parts of `docker-compose.yml`.
 **Arthur owns:** `adapters/store/libsql.py`, `adapters/parsing/`, `adapters/chunking/`, `pipelines/ingest.py`, `agent/`.
 **Co-owned (joint sign-off):** `core/` (types + ports), API schemas, `factory.py` integration.
 
@@ -80,6 +80,9 @@ api/               main.py · routes.py · deps.py · v1.py · tokens.py · sche
                    (auth→tenant chokepoint in deps.py; /v1 toolbox+answer+conversations;
                     /v1/tokens master-gated mint/list/revoke, D69)
 config.py · factory.py
+eval/              sift-eval harness — separate dev-tool app, own EvalSettings (D73–D75):
+                   golden · matching · metrics · collect · judge/ragas_judge · noise ·
+                   report · runner · validate · bootstrap · cli   (docs/evaluation.md)
 web/               Vite+React chat-first workbench (Ask|Find, System drawer incl. AccessTokens.tsx)
 docker-compose.yml (api · web · tei profile)
 ```

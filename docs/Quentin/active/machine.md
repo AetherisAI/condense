@@ -114,6 +114,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 
 ### Task 9: docs + guards
 **Files:** `docs/evaluation.md`, `evals/golden.example.jsonl`, `.env.example`, `CLAUDE.md` §9, `docs/channel/from-quentin.md`, `tests/contract/test_layering.py`
+- [x] user guide, example set (+ parses test), commented `EVAL_*` block (+ parity test), CLAUDE.md ownership/map, channel update 33, layering guards (product ↛ `sift.eval`, `sift.eval` ↛ adapters/api)
 
 ## 4. Test strategy
 - Everything runs on the default fakes (`FakeEmbedder`, `FakeVectorStore` seeded via `upsert`,
