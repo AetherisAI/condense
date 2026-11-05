@@ -98,6 +98,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 
 ### Task 5: judge protocol + RAGAS adapter
 **Files:** `src/sift/eval/{judge,ragas_judge}.py`, `tests/eval/test_judge.py`
+- [x] `Judge` protocol + `FakeJudge`, applicability rules (no reference → no correctness; no contexts → no faithfulness), `AbstentionCheck` (YES/NO via judge `Completer`), `RagasJudge` (collections metrics, per-metric failure → `None`, NaN → `None`), bounded-concurrency `judge_results`
 
 ### Task 6: noise sweep
 **Files:** `src/sift/eval/noise.py`, `tests/eval/test_noise.py`
