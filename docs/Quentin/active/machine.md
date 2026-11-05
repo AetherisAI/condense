@@ -93,7 +93,8 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - [x] schema + typo-safe parsing, suffix/page/evidence matching (contiguous token run), recall/precision/hit@k + MRR at doc and chunk level, latency stats
 
 ### Task 4: config + collect (Find + Ask)
-**Files:** `src/sift/eval/{config,collect}.py`, `tests/eval/test_collect.py`
+**Files:** `src/sift/eval/{config,collect}.py`, `tests/eval/{conftest,test_collect}.py`
+- [x] `EvalSettings` (+ placeholder ingest token so an eval-only `.env` loads), Find via `trace()`, Ask via the event stream (tool-result passages → contexts, `sources` → cited, tool vs model time), warmup, per-question error capture
 
 ### Task 5: judge protocol + RAGAS adapter
 **Files:** `src/sift/eval/{judge,ragas_judge}.py`, `tests/eval/test_judge.py`
