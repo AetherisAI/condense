@@ -25,6 +25,9 @@ and `compare` diffs two runs.
   small prompts through the existing `Completer`.
 - **D75:** gold relevance is keyed by **path (+ optional page, + optional evidence quote)**, not
   chunk IDs, so a golden set survives re-chunking.
+- **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
+  `(file.md, p.1)` as an unsupported claim (live: 0.5 → 1.0 on a correct answer). Stored answers
+  stay verbatim.
 
 ## Ports / interfaces touched
 - No `core/` changes.

@@ -29,7 +29,7 @@ from sift.eval.collect import Progress
 from sift.eval.config import EvalSettings
 from sift.eval.corpus import document_passages, list_documents, resolve
 from sift.eval.golden import GoldenItem, GoldRef
-from sift.eval.judge import Judge, JudgeSample
+from sift.eval.judge import Judge, make_sample
 from sift.eval.matching import passage_matches, path_matches
 from sift.eval.records import Passage, SurfaceResult
 from sift.factory import Container
@@ -166,12 +166,16 @@ async def run_noise_sweep(
         say(f"[noise] {item.id}: {len(es.ratios)} ratios, {len(gold)} gold passage(s)")
 
     if judge is not None:
-        await judge_trials(trials, eligible, judge, es.judge_concurrency)
+        await judge_trials(trials, eligible, judge, es.judge_concurrency, es.strip_citations)
     return trials, skipped
 
 
 async def judge_trials(
-    trials: Sequence[NoiseTrial], items: Sequence[GoldenItem], judge: Judge, concurrency: int
+    trials: Sequence[NoiseTrial],
+    items: Sequence[GoldenItem],
+    judge: Judge,
+    concurrency: int,
+    strip: bool = True,
 ) -> None:
     """Score each successful trial on :data:`NOISE_METRICS`, in place, ``concurrency`` at once."""
     gate = asyncio.Semaphore(concurrency)
@@ -179,11 +183,12 @@ async def judge_trials(
 
     async def score(trial: NoiseTrial, metric: str) -> None:
         item = by_id[trial.item_id]
-        sample = JudgeSample(
+        sample = make_sample(
             question=item.question,
             response=trial.response,
-            contexts=tuple(p.text for p in trial.contexts),
+            contexts=[p.text for p in trial.contexts],
             reference=item.reference,
+            strip=strip,
         )
         async with gate:
             trial.scores[metric] = await judge.score(sample, metric)

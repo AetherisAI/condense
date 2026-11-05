@@ -57,6 +57,7 @@ class EvalSettings(BaseSettings):
     ask_max_contexts: int = Field(default=20, ge=1)
     bootstrap_min_chars: int = Field(default=200, ge=1)
     grounding: Literal["strict", "hybrid", "open"] = "strict"
+    strip_citations: bool = True
     warmup: int = Field(default=1, ge=0)
     seed: int = 13
     tenant: str = "default"

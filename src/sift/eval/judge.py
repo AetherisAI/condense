@@ -12,11 +12,19 @@ optional extra); tests use :class:`FakeJudge`. Scores land in each
 Separately, :class:`AbstentionCheck` asks the judge LLM whether a response declined to answer,
 recorded as ``abstained`` (1.0/0.0) on every result: on ``answerable: false`` items that's the
 correct-abstention rate, on answerable ones the false-refusal rate.
+
+**Citations are stripped before judging (D76).** Both surfaces cite their sources inline —
+``(policies/shipping.md, p.1)``, ``[1]``, a trailing ``Source: [1]`` line — and RAGAS counts
+each as a claim the passages don't support: measured live, a correct one-sentence Ask answer
+scored faithfulness 0.5 with its citation and 1.0 without. :func:`strip_citations` removes those
+markers from the judged copy only (the stored response stays verbatim); ``EVAL_STRIP_CITATIONS=
+false`` turns it off.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -45,6 +53,43 @@ class JudgeSample:
     response: str
     contexts: tuple[str, ...] = ()
     reference: str | None = None
+
+
+_DOC_EXT = r"(?:md|markdown|txt|pdf|docx?|pptx?|xlsx?|csv|tsv|html?|json|rtf|odt|eml)"
+# `(policies/shipping.md, p.1)`, `(hr/a.md, p.1; hr/b.md, p.2)`, `(p. 3)` — a parenthetical that
+# names a document file or a page is a citation, not content.
+_PAREN_CITATION = re.compile(
+    rf"\s*\((?=[^()]*(?:\.{_DOC_EXT}\b|\bp(?:age)?\.?\s*\d))[^()]*\)", re.IGNORECASE
+)
+# `[1]`, `[1, 3]`, `[2-4]`
+_BRACKET_CITATION = re.compile(r"\s*\[\d+(?:\s*[,;–-]\s*\d+)*\]")
+# A line that is nothing but an attribution once the markers above are gone: `Source: [1]`.
+_SOURCE_LINE = re.compile(
+    r"^\s*[*_]*(?:sources?|references?|citations?|cited)[*_]*\s*:[\s,;.*_]*$", re.IGNORECASE
+)
+
+
+def strip_citations(text: str) -> str:
+    """``text`` without inline source citations — see the module docstring (D76)."""
+    text = _BRACKET_CITATION.sub("", _PAREN_CITATION.sub("", text))
+    lines = [line for line in text.splitlines() if not _SOURCE_LINE.match(line)]
+    return re.sub(r"\s+([.,;:!?])", r"\1", "\n".join(lines)).strip()
+
+
+def make_sample(
+    *,
+    question: str,
+    response: str,
+    contexts: Sequence[str],
+    reference: str | None,
+    strip: bool = True,
+) -> JudgeSample:
+    return JudgeSample(
+        question=question,
+        response=strip_citations(response) if strip else response,
+        contexts=tuple(contexts),
+        reference=reference,
+    )
 
 
 def applicable(metric: str, sample: JudgeSample) -> bool:
@@ -111,12 +156,13 @@ class AbstentionCheck:
         return None
 
 
-def sample_for(result: SurfaceResult, item: GoldenItem) -> JudgeSample:
-    return JudgeSample(
+def sample_for(result: SurfaceResult, item: GoldenItem, strip: bool = True) -> JudgeSample:
+    return make_sample(
         question=item.question,
         response=result.response,
-        contexts=tuple(p.text for p in result.contexts),
+        contexts=[p.text for p in result.contexts],
         reference=item.reference,
+        strip=strip,
     )
 
 
@@ -128,6 +174,7 @@ async def judge_results(
     abstention: AbstentionCheck | None,
     metrics: Sequence[str] = METRICS,
     concurrency: int = 4,
+    strip: bool = True,
     progress: Progress | None = None,
 ) -> None:
     """Fill ``scores`` on every successfully-collected result, in place, ``concurrency`` at a time.
@@ -153,7 +200,7 @@ async def judge_results(
         item = items.get(result.item_id)
         if item is None or result.error or not result.response.strip():
             continue
-        sample = sample_for(result, item)
+        sample = sample_for(result, item, strip)
         if judge is not None and item.answerable:
             tasks.extend(one_metric(result, sample, m) for m in metrics if applicable(m, sample))
         if abstention is not None:

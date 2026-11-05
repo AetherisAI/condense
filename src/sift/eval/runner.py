@@ -230,6 +230,7 @@ async def run(
             judge=judge,
             abstention=abstention,
             concurrency=es.judge_concurrency,
+            strip=es.strip_citations,
             progress=say,
         )
     trials: list[NoiseTrial] = []
@@ -284,9 +285,10 @@ async def rejudge(
         judge=judge,
         abstention=abstention,
         concurrency=es.judge_concurrency,
+        strip=es.strip_citations,
         progress=say,
     )
-    await judge_trials(trials, items, judge, es.judge_concurrency)
+    await judge_trials(trials, items, judge, es.judge_concurrency, es.strip_citations)
     run["judge"] = judge.name
     run["judge_model"] = es.judge_model_name(app)
     run["rejudged_at"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")

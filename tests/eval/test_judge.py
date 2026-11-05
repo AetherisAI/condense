@@ -6,7 +6,14 @@ import pytest
 
 from sift.adapters.llm.fake import FakeCompleter
 from sift.eval.golden import GoldenItem
-from sift.eval.judge import AbstentionCheck, FakeJudge, JudgeSample, applicable, judge_results
+from sift.eval.judge import (
+    AbstentionCheck,
+    FakeJudge,
+    JudgeSample,
+    applicable,
+    judge_results,
+    strip_citations,
+)
 from sift.eval.records import Passage, SurfaceResult
 
 ANSWERABLE = GoldenItem(id="a", question="How long?", reference="Two days.")
@@ -165,3 +172,41 @@ def test_ragas_judge_requires_a_judge_model() -> None:
             embed_model="",
             embed_api_key="",
         )
+
+
+# --- citation stripping (D76) ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # Ask's inline style, single and multi-source.
+        (
+            "Express orders arrive the next business day (policies/shipping.md, p.1).",
+            "Express orders arrive the next business day.",
+        ),
+        ("27 days in total (hr/a.md, p.1; hr/b.md, p.2).", "27 days in total."),
+        # Find recap styles: numbered markers and a trailing attribution line.
+        ("Refunds take 2-3 days [1, 2].", "Refunds take 2-3 days."),
+        ("Yes, up to five days.\nSource: [1]", "Yes, up to five days."),
+        ("**Sources:** [1], [2]", ""),
+        # Content that merely looks parenthetical or mentions sources is kept.
+        ("See the guide (e.g. section 3).", "See the guide (e.g. section 3)."),
+        ("Free (for orders above 50 euros).", "Free (for orders above 50 euros)."),
+        ("Sources: the 2026 policy and the FAQ", "Sources: the 2026 policy and the FAQ"),
+    ],
+)
+def test_strip_citations(raw: str, expected: str) -> None:
+    assert strip_citations(raw) == expected
+
+
+async def test_judge_sees_stripped_response_unless_disabled() -> None:
+    row = _result("a", response="It takes two days (a.md, p.1).")
+
+    stripping, verbatim = FakeJudge(), FakeJudge()
+    await judge_results([row], {"a": ANSWERABLE}, judge=stripping, abstention=None)
+    await judge_results([row], {"a": ANSWERABLE}, judge=verbatim, abstention=None, strip=False)
+
+    assert {s.response for _, s in stripping.calls} == {"It takes two days."}
+    assert {s.response for _, s in verbatim.calls} == {"It takes two days (a.md, p.1)."}
+    assert row.response == "It takes two days (a.md, p.1)."  # the stored answer is never touched

@@ -169,6 +169,11 @@ For chunking experiments, re-ingest the corpus between runs. The golden set need
   `EVAL_JUDGE_CONCURRENCY` to trade speed for rate limits.
 - **Latency is measured in-process.** It excludes HTTP, auth and serialization, but it covers
   every model call. Questions run one at a time, and the first `EVAL_WARMUP` runs are discarded.
+- **Citations are stripped before judging** (D76): inline markers like `(policies/shipping.md,
+  p.1)`, `[1]` and `Source: [1]` lines are removed from the copy the judge sees, because RAGAS
+  otherwise counts them as unsupported claims (a correct cited answer scored faithfulness 0.5,
+  and the same answer uncited scored 1.0). Reports always show the answer verbatim. Set
+  `EVAL_STRIP_CITATIONS=false` to judge raw answers.
 - **Ask's retrieval metrics** are computed over the sources the agent's searches returned
   (doc level only), not over a ranking it chose.
 - **Run against the same index the server uses**, ideally while it's idle. The eval only reads

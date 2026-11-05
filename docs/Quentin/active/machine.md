@@ -135,6 +135,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - D73: eval is a separate in-process CLI app with its own `EvalSettings`.
 - D74: RAGAS optional extra behind the `Judge` protocol; own prompts for bootstrap and abstention.
 - D75: gold keyed by path + page + evidence, not chunk IDs.
+- D76: citations stripped from the judged copy of each answer (found by the first real-stack run).
 
 ## 7. Changelog
 - (on merge)
