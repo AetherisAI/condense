@@ -2,9 +2,15 @@
 
 Definitions (per golden item, then averaged over the items where they're defined):
 
-- **recall@k** — gold refs found in the top-k ÷ gold refs.
+- **recall@k** — required evidence found in the top-k ÷ required evidence. "Required evidence"
+  is a *group* of gold refs (:func:`~sift.eval.golden.ref_groups`): alternatives that each state
+  the answer share a group, and one of them is enough; an unlabelled ref is its own group, so a
+  set without ``group`` labels scores exactly as before (D78).
+- **complete@k** — 1 if *every* group is found in the top-k, else 0: for a multi-hop question,
+  did retrieval surface everything the answer needs?
 - **precision@k** — relevant passages in the top-k ÷ k (the standard ``/k`` form, so one gold
-  document caps doc-level precision@5 at 0.2 — compare runs, not against 1.0).
+  document caps doc-level precision@5 at 0.2 — compare runs, not against 1.0). A passage is
+  relevant if it matches any gold ref; groups don't change it.
 - **hit@k** — 1 if any gold ref is in the top-k, else 0. hit@1 on the final ranking is the
   product's own question: did ``/search`` return the right thing?
 - **MRR** — 1 ÷ rank of the first relevant passage (0 when none is retrieved).
@@ -18,20 +24,24 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 
-from sift.eval.golden import GoldRef
+from sift.eval.golden import GoldRef, ref_groups
 from sift.eval.matching import normalize_path, passage_matches, path_matches
 from sift.eval.records import Passage
 
 Scores = dict[str, float]
 
 
-def _scores(matched: Sequence[set[int]], n_refs: int, ks: Sequence[int]) -> Scores:
+def _scores(
+    matched: Sequence[set[int]], groups: Sequence[tuple[int, ...]], ks: Sequence[int]
+) -> Scores:
     """Score a ranking given, per rank, the set of gold-ref indices that passage satisfies."""
     out: Scores = {}
     for k in ks:
         window = matched[:k]
         found = set().union(*window) if window else set()
-        out[f"recall@{k}"] = len(found) / n_refs
+        covered = sum(1 for group in groups if found.intersection(group))
+        out[f"recall@{k}"] = covered / len(groups)
+        out[f"complete@{k}"] = 1.0 if covered == len(groups) else 0.0
         out[f"precision@{k}"] = sum(1 for m in window if m) / k
         out[f"hit@{k}"] = 1.0 if found else 0.0
     first = next((rank for rank, m in enumerate(matched, start=1) if m), None)
@@ -47,7 +57,7 @@ def chunk_scores(
     matched = [
         {i for i, ref in enumerate(refs) if passage_matches(p, ref, threshold)} for p in ranking
     ]
-    return _scores(matched, len(refs), ks)
+    return _scores(matched, ref_groups(refs), ks)
 
 
 def doc_scores(
@@ -63,7 +73,7 @@ def doc_scores(
             seen.add(key)
             docs.append(passage.path)
     matched = [{i for i, ref in enumerate(refs) if path_matches(doc, ref.path)} for doc in docs]
-    return _scores(matched, len(refs), ks)
+    return _scores(matched, ref_groups(refs), ks)
 
 
 def mean_scores(rows: Iterable[Scores | None]) -> Scores:

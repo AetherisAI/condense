@@ -29,6 +29,8 @@ JSON + HTML report; `compare` diffs two runs.
   stay verbatim.
 - **D77:** **answer recall** joins answer correctness, an F1 that also charges for true details
   the reference omits. References now hold only what the question asks.
+- **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
+  `complete@k` asks if all were found. `compare` warns when the set changed.
 
 ## Ports / interfaces touched
 - No `core/` changes.

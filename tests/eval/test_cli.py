@@ -119,6 +119,22 @@ async def test_rejudge_rescores_and_compare_diffs(
     table = compare(before, after)
     assert "find.answer.answer_correctness.mean | 0.400 | 0.800 | +0.400 | ▲ better" in table
     assert "find.latency_ms.total.mean" in table  # unchanged rows still listed
+    assert "Different golden sets" not in table  # same file: no warning
+    assert "find.retrieval.final.doc.complete@1" in table
+
+
+def test_compare_warns_when_the_golden_set_changed() -> None:
+    def summary(sha: str, n: int) -> dict[str, object]:
+        return {
+            "run": {"label": sha, "golden_sha256": sha * 16, "n_items": n},
+            "surfaces": {"find": {"retrieval": {"final": {"doc": {"recall@1": 0.5}}}}},
+        }
+
+    table = compare(summary("aaaa", 10), summary("bbbb", 12))
+
+    assert (
+        "**Different golden sets** (A aaaaaaaaaaaa…, 10 items; B bbbbbbbbbbbb…, 12 items)" in table
+    )
 
 
 def test_compare_treats_latency_as_lower_is_better() -> None:

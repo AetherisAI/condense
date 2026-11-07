@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from sift.eval.golden import GoldenError, GoldRef, item_to_dict, load_golden, parse_lines
+from sift.eval.golden import (
+    GoldenError,
+    GoldRef,
+    item_to_dict,
+    load_golden,
+    parse_lines,
+    ref_groups,
+)
 
 
 def _line(**fields: object) -> str:
@@ -60,6 +67,8 @@ def test_bootstrap_passthrough_keys_are_accepted() -> None:
             "an unanswerable item can't list 'relevant' evidence",
         ),
         (_line(tags="policy"), "'tags' must be a list of strings"),
+        (_line(relevant=[{"path": "x.md", "group": ""}]), "'group' must be a non-empty string"),
+        (_line(relevant=[{"path": "x.md", "group": 1}]), "'group' must be a non-empty string"),
     ],
 )
 def test_schema_violations_name_the_line(line: str, message: str) -> None:
@@ -84,7 +93,10 @@ def test_item_to_dict_round_trips() -> None:
     raw = json.loads(
         _line(
             reference="r",
-            relevant=[{"path": "a.md", "evidence": "quote"}],
+            relevant=[
+                {"path": "a.md", "evidence": "quote", "group": "g"},
+                {"path": "b.md", "evidence": "other quote", "group": "g"},
+            ],
             answerable=True,
             tags=["t"],
         )
@@ -93,6 +105,20 @@ def test_item_to_dict_round_trips() -> None:
 
     assert parse_lines([json.dumps(item_to_dict(item))]) == [item]
     assert "answerable" not in item_to_dict(item)
+    assert item_to_dict(item)["relevant"][1]["group"] == "g"
+
+
+def test_ref_groups_labels_share_unlabelled_stand_alone() -> None:
+    refs = [
+        GoldRef(path="a.md", group="x"),
+        GoldRef(path="b.md"),
+        GoldRef(path="c.md", group="x"),
+        GoldRef(path="d.md", group="y"),
+        GoldRef(path="e.md"),
+    ]
+
+    assert ref_groups(refs) == [(0, 2), (1,), (3,), (4,)]
+    assert ref_groups(refs[1:2] + refs[4:]) == [(0,), (1,)]  # no labels: every ref required
 
 
 def test_shipped_example_parses() -> None:

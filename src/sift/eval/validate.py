@@ -5,6 +5,10 @@ checked against the live index: its path must resolve to an ingested document (s
 is a warning — scoring would credit any of them), and a given page or evidence quote must exist
 in that document's chunks. Missing ``reference``/``relevant`` fields are warnings: the item still
 runs, it just skips the metrics that need them.
+
+Alternative groups (D78) get two extra warnings, because a loose alternative is the easy way to
+inflate recall: an alternative with neither page nor evidence lets *any* chunk of that document
+satisfy the whole group, and a label used by a single entry is usually a typo of another label.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from pathlib import Path, PurePosixPath
 from sift.config import Settings
 from sift.eval.config import EvalSettings
 from sift.eval.corpus import Doc, document_passages, list_documents, resolve
-from sift.eval.golden import GoldRef, load_golden
+from sift.eval.golden import GoldenItem, GoldRef, load_golden, ref_groups
 from sift.eval.matching import evidence_matches, normalize_path
 from sift.eval.records import Passage
 from sift.factory import Container, build_container
@@ -59,6 +63,28 @@ def _check_ref(ref: GoldRef, passages: list[Passage], threshold: float) -> str |
     return None
 
 
+def _group_warnings(item: GoldenItem) -> list[str]:
+    warnings: list[str] = []
+    for group in ref_groups(item.relevant):
+        label = item.relevant[group[0]].group
+        if label is None:
+            continue
+        if len(group) == 1:
+            warnings.append(
+                f"{item.id}: group '{label}' has a single entry — a typo of another label?"
+            )
+            continue
+        for index in group:
+            ref = item.relevant[index]
+            if ref.page is None and ref.evidence is None:
+                warnings.append(
+                    f"{item.id}: alternative '{ref.path}' in group '{label}' has no page or "
+                    "evidence, so any chunk of it satisfies the group — quote where it states "
+                    "the answer"
+                )
+    return warnings
+
+
 async def validate_golden(
     golden: Path, app: Settings, es: EvalSettings, container: Container | None = None
 ) -> ValidationReport:
@@ -85,6 +111,7 @@ async def validate_golden(
             report.warnings.append(
                 f"{item.id}: no 'reference' — answer correctness and noise sweep skip it"
             )
+        report.warnings += _group_warnings(item)
         for ref in item.relevant:
             matches = resolve(ref.path, docs)
             if not matches:

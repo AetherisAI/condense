@@ -201,14 +201,18 @@ def _retrieval_table(retrieval: Mapping[str, Any], ks: Sequence[int]) -> list[li
         for level, scores in levels.items():
             row = [stage, level]
             for k in ks:
-                row += [_fmt(scores.get(f"recall@{k}")), _fmt(scores.get(f"precision@{k}"))]
+                row += [
+                    _fmt(scores.get(f"recall@{k}")),
+                    _fmt(scores.get(f"precision@{k}")),
+                    _fmt(scores.get(f"complete@{k}")),
+                ]
             row.append(_fmt(scores.get("mrr")))
             rows.append(row)
     return rows
 
 
 def _retrieval_header(ks: Sequence[int]) -> list[str]:
-    return ["stage", "level", *[x for k in ks for x in (f"R@{k}", f"P@{k}")], "MRR"]
+    return ["stage", "level", *[x for k in ks for x in (f"R@{k}", f"P@{k}", f"C@{k}")], "MRR"]
 
 
 def _answer_rows(summary: Mapping[str, Any]) -> list[list[str]]:
@@ -576,7 +580,20 @@ def compare(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
         rows.append(
             [key.removeprefix("surfaces."), _fmt(va, ms), _fmt(vb, ms), f"{delta:+.3f}", mark]
         )
-    label_a = a.get("run", {}).get("label", "A")
-    label_b = b.get("run", {}).get("label", "B")
+    run_a, run_b = a.get("run", {}), b.get("run", {})
+    label_a = run_a.get("label", "A")
+    label_b = run_b.get("label", "B")
     header = ["metric", f"A: {label_a}", f"B: {label_b}", "Δ (B−A)", ""]
-    return f"# sift-eval compare: {label_a} → {label_b}\n\n" + _md_table(header, rows) + "\n"
+    warning = ""
+    sha_a, sha_b = run_a.get("golden_sha256"), run_b.get("golden_sha256")
+    if sha_a and sha_b and sha_a != sha_b:
+        # Editing the set (new questions, trimmed references, alternative gold) moves every
+        # metric on its own — a delta between two different sets says nothing about the system.
+        warning = (
+            f"> **Different golden sets** (A {sha_a[:12]}…, {run_a.get('n_items', '?')} items; "
+            f"B {sha_b[:12]}…, {run_b.get('n_items', '?')} items). Deltas mix changes to the set "
+            "with changes to the system: re-run both configurations on the same set.\n\n"
+        )
+    return (
+        f"# sift-eval compare: {label_a} → {label_b}\n\n" + warning + _md_table(header, rows) + "\n"
+    )

@@ -39,7 +39,8 @@ container from the same `.env` and drives the pipelines in-process. The product 
   ≥ `EVAL_EVIDENCE_MATCH_THRESHOLD`. Metrics are computed at doc level (ranked list deduped by
   path) and chunk level.
 - **Metrics:**
-  - recall@k = gold entries found in top-k ÷ gold entries.
+  - recall@k = required groups found in top-k ÷ groups (D78: entries sharing a `group` label
+    are alternatives; unlabelled entries stand alone). complete@k = every group found.
   - precision@k = relevant items in top-k ÷ k.
   - hit@k: whether any gold entry is in the top-k.
   - MRR uses the first relevant rank.
@@ -146,12 +147,15 @@ container from the same `.env` and drives the pipelines in-process. The product 
 
 | 2026-11-07 | (this commit) | D77 `answer_recall` metric; By-tag table carries every judged metric; AnswerCorrectness skipped (not crashed) without embeddings; guide: minimal references, reference in the answer's language, compare variants per tag. Found by the MITRE silver-set audit |
 
+| 2026-11-07 | (this commit) | D78 alternative gold groups: `GoldRef.group`, `ref_groups`, recall over groups + `complete@k`, one noise passage per group, `validate` warns on loose alternatives / lone labels, `compare` warns on golden-set change, C@k columns in the retrieval table |
+
 ## 6. Decisions
 - D73: eval is a separate in-process CLI app with its own `EvalSettings`.
 - D74: RAGAS optional extra behind the `Judge` protocol; own prompts for bootstrap and abstention.
 - D75: gold keyed by path + page + evidence, not chunk IDs.
 - D76: citations stripped from the judged copy of each answer (found by the first real-stack run).
 - D77: `answer_recall` beside `answer_correctness`; references hold only what the question asks.
+- D78: gold alternatives via `group`; recall counts required groups; `complete@k`.
 
 ## 7. Changelog
 - (on merge)

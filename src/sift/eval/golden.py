@@ -8,6 +8,14 @@ One JSON object per line::
                    "evidence": "two to three business days"}],
      "answerable": true, "tags": ["policy"]}
 
+A ``relevant`` entry may carry a ``group`` label. Entries sharing a label are **alternatives**
+(any one of them is enough: two files that each state the answer); every entry without a label
+is its own group. Each group is one piece of evidence the answer *requires*, which is what
+recall counts (D78)::
+
+    "relevant": [{"path": "tactics/TA0101.md", "evidence": "T0884 Connection Proxy", "group": "a"},
+                 {"path": "techniques/T0884.md", "evidence": "an intermediary", "group": "a"}]
+
 Blank lines and lines starting with ``#`` are skipped so a hand-written set can carry comments.
 Unknown keys are an error (a typo like ``"refrence"`` would otherwise silently drop the reference
 answer), except the free-form ``notes``/``review`` keys ``bootstrap`` writes for curation.
@@ -23,7 +31,7 @@ from typing import Any
 
 _ITEM_KEYS = frozenset({"id", "question", "reference", "relevant", "answerable", "tags"})
 _PASSTHROUGH_KEYS = frozenset({"notes", "review"})
-_REF_KEYS = frozenset({"path", "page", "evidence"})
+_REF_KEYS = frozenset({"path", "page", "evidence", "group"})
 
 
 class GoldenError(ValueError):
@@ -32,11 +40,16 @@ class GoldenError(ValueError):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GoldRef:
-    """One piece of gold evidence: a document, optionally narrowed to a page and a quote."""
+    """One piece of gold evidence: a document, optionally narrowed to a page and a quote.
+
+    ``group`` names the alternatives this ref belongs to (see the module docstring); ``None``
+    means it stands alone.
+    """
 
     path: str
     page: int | None = None
     evidence: str | None = None
+    group: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -69,7 +82,29 @@ def _parse_ref(raw: Any, where: str) -> GoldRef:
     evidence = raw.get("evidence")
     if evidence is not None:
         evidence = _require_str(raw, "evidence", where)
-    return GoldRef(path=path, page=page, evidence=evidence)
+    group = raw.get("group")
+    if group is not None:
+        group = _require_str(raw, "group", where)
+    return GoldRef(path=path, page=page, evidence=evidence, group=group)
+
+
+def ref_groups(refs: Sequence[GoldRef]) -> list[tuple[int, ...]]:
+    """Indices of ``refs`` per required piece of evidence, in first-appearance order.
+
+    Refs sharing a ``group`` label form one group (any member satisfies it); an unlabelled ref
+    is a group of its own, so a set without labels means "every ref is required", as before.
+    """
+    groups: list[list[int]] = []
+    by_label: dict[str, list[int]] = {}
+    for index, ref in enumerate(refs):
+        if ref.group is None:
+            groups.append([index])
+        elif ref.group in by_label:
+            by_label[ref.group].append(index)
+        else:
+            by_label[ref.group] = [index]
+            groups.append(by_label[ref.group])
+    return [tuple(g) for g in groups]
 
 
 def parse_item(raw: Any, *, where: str = "item") -> GoldenItem:
@@ -143,7 +178,16 @@ def item_to_dict(item: GoldenItem) -> dict[str, Any]:
         out["reference"] = item.reference
     if item.relevant:
         out["relevant"] = [
-            {k: v for k, v in (("path", r.path), ("page", r.page), ("evidence", r.evidence)) if v}
+            {
+                k: v
+                for k, v in (
+                    ("path", r.path),
+                    ("page", r.page),
+                    ("evidence", r.evidence),
+                    ("group", r.group),
+                )
+                if v
+            }
             for r in item.relevant
         ]
     if not item.answerable:

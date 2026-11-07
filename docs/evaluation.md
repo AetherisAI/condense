@@ -16,7 +16,8 @@ took. Design decisions: D73 to D75 in `docs/Quentin/DECISIONS.md`.
 
 | Metric | Meaning | Better | Surfaces |
 |---|---|---|---|
-| **recall@k** | share of the gold evidence found in the top k | ↑ | Find (exact), Ask (cited sources) |
+| **recall@k** | share of the *required* gold evidence found in the top k. Alternatives (entries sharing a `group`) count once, as soon as any of them is found | ↑ | Find (exact), Ask (cited sources) |
+| **complete@k** | was *all* the required evidence in the top k? Equals hit@k for a one-group question; for a multi-hop one it says whether retrieval surfaced everything the answer needs | ↑ | Find, Ask |
 | **precision@k** | share of the top k that is gold evidence (÷ k) | ↑ | Find, Ask |
 | **hit@k** | was *any* gold evidence in the top k? Find's **final hit@1 is the product's own question: did `/search` return the right thing?** | ↑ | Find, Ask |
 | **MRR** | 1 ÷ rank of the first gold passage | ↑ | Find, Ask |
@@ -85,7 +86,7 @@ One JSON object per line. `#` lines are comments. Start from `evals/golden.examp
 | `id` | yes | unique key, used to diff runs |
 | `question` | yes | what the system is asked |
 | `reference` | recommended | answer correctness and recall, noise sensitivity, the noise sweep |
-| `relevant[]` | recommended | every retrieval metric. `path` is required; `page` and `evidence` make matching stricter |
+| `relevant[]` | recommended | every retrieval metric. `path` is required; `page` and `evidence` make matching stricter; `group` marks alternatives (below) |
 | `answerable` | no (default `true`) | `false`: the corpus doesn't cover it, so the item scores abstention instead |
 | `tags` | no | per-tag breakdown in the report |
 
@@ -98,6 +99,31 @@ One JSON object per line. `#` lines are comments. Start from `evals/golden.examp
   across a chunk boundary.
 - Gold never references chunk IDs, so **the same set keeps working after you change chunking and
   re-ingest**.
+
+**Required evidence vs alternatives (`group`):** every `relevant` entry is *required* by
+default: recall counts how many of them were found. When two files each state the answer on
+their own (a technique file and the tactic file that lists it, the Enterprise and ICS copies of
+one mitigation), give them the same `group` label. Recall then counts the group as found when
+*any* member is found:
+
+```json
+"relevant": [
+  {"path": "techniques/T0884_connection-proxy.md", "evidence": "act as an intermediary", "group": "answer"},
+  {"path": "tactics/TA0101_command-and-control.md", "evidence": "T0884 Connection Proxy", "group": "answer"}
+]
+```
+
+A multi-hop question keeps one group per fact it needs (or no labels at all), so finding half of
+it is recall 0.5 and complete 0. Two rules keep alternatives honest, and `validate` checks them:
+
+- **An alternative must state the answer by itself.** Give it an `evidence` quote showing where.
+  An alternative without page or evidence lets any chunk of that file satisfy the group, and
+  `validate` warns about it. A file that merely mentions the topic is not an alternative.
+- **Labels are per item and must match exactly.** A label used by one entry only is reported
+  as a likely typo.
+
+Groups change recall and complete@k only. Precision, hit@k and MRR already counted any matching
+entry, and they are unchanged. A set without labels scores exactly as before.
 
 **What makes a good set:**
 
@@ -156,7 +182,8 @@ Each run writes a folder in `eval-runs/` (gitignored, because reports quote your
 
 - `report.html`: a self-contained page with headline numbers and every table, plus a
   per-question drill-down (the answer and the ranking, with gold passages marked ✓).
-- `summary.md` / `summary.json`: the aggregates. `compare` diffs the JSON.
+- `summary.md` / `summary.json`: the aggregates. `compare` diffs the JSON, and warns when the
+  two runs used different golden files: then the deltas mix set changes with system changes.
 - `results.jsonl` / `noise.jsonl`: every raw row.
 - `config.json`: git SHA, golden-set hash, judge, and the redacted settings it ran under.
 - `golden.jsonl`: a copy of the golden set as it was at run time.

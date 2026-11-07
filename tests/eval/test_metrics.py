@@ -23,9 +23,11 @@ def test_chunk_scores_single_gold() -> None:
 
     assert scores == {
         "recall@1": 0.0,
+        "complete@1": 0.0,
         "precision@1": 0.0,
         "hit@1": 0.0,
         "recall@3": 1.0,
+        "complete@3": 1.0,
         "precision@3": pytest.approx(1 / 3),
         "hit@3": 1.0,
         "mrr": 0.5,
@@ -76,7 +78,63 @@ def test_no_gold_refs_means_undefined() -> None:
 def test_empty_ranking_scores_zero() -> None:
     scores = doc_scores([], [GoldRef(path="a.md")], ks=[5])
 
-    assert scores == {"recall@5": 0.0, "precision@5": 0.0, "hit@5": 0.0, "mrr": 0.0}
+    assert scores == {
+        "recall@5": 0.0,
+        "complete@5": 0.0,
+        "precision@5": 0.0,
+        "hit@5": 0.0,
+        "mrr": 0.0,
+    }
+
+
+def test_alternatives_in_one_group_need_only_one_hit() -> None:
+    # Two files that each state the answer: finding either one is full recall (D78).
+    ranking = [_p("tactic.md", "T0884 Connection Proxy"), _p("x.md")]
+    refs = [
+        GoldRef(path="technique.md", evidence="act as an intermediary", group="a"),
+        GoldRef(path="tactic.md", evidence="T0884 Connection Proxy", group="a"),
+    ]
+
+    for scores in (
+        chunk_scores(ranking, refs, ks=[1], threshold=0.6),
+        doc_scores(ranking, refs, [1]),
+    ):
+        assert scores is not None
+        assert scores["recall@1"] == 1.0 and scores["complete@1"] == 1.0
+        assert scores["hit@1"] == 1.0 and scores["precision@1"] == 1.0
+
+
+def test_required_groups_each_count_and_complete_needs_all() -> None:
+    # Multi-hop: fact A has two alternative sources, fact B one; only A is retrieved.
+    ranking = [_p("a2.md", "fact a"), _p("x.md"), _p("y.md")]
+    refs = [
+        GoldRef(path="a1.md", evidence="fact a", group="A"),
+        GoldRef(path="a2.md", evidence="fact a", group="A"),
+        GoldRef(path="b.md", evidence="fact b"),
+    ]
+
+    scores = chunk_scores(ranking, refs, ks=[3], threshold=0.6)
+
+    assert scores is not None
+    assert scores["recall@3"] == 0.5  # 1 of 2 required groups, not 1 of 3 refs
+    assert scores["complete@3"] == 0.0
+    assert scores["hit@3"] == 1.0 and scores["mrr"] == 1.0
+
+
+def test_two_hits_inside_one_group_still_count_once() -> None:
+    # Retrieving both alternatives can't push recall past what one would give.
+    ranking = [_p("a1.md", "fact a"), _p("a2.md", "fact a"), _p("x.md")]
+    refs = [
+        GoldRef(path="a1.md", evidence="fact a", group="A"),
+        GoldRef(path="a2.md", evidence="fact a", group="A"),
+        GoldRef(path="b.md", evidence="fact b"),
+    ]
+
+    scores = chunk_scores(ranking, refs, ks=[3], threshold=0.6)
+
+    assert scores is not None
+    assert scores["recall@3"] == 0.5 and scores["complete@3"] == 0.0
+    assert scores["precision@3"] == pytest.approx(2 / 3)  # both passages are relevant
 
 
 def test_mean_scores_skips_undefined_rows_and_nan() -> None:

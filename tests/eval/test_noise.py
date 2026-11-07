@@ -65,6 +65,30 @@ async def test_gold_passages_path_only_ref_uses_retrieval(container: Container) 
     assert [p.path for p in passages] == ["policies/refunds.md"]
 
 
+async def test_gold_passages_one_per_group_first_locatable_alternative(
+    container: Container,
+) -> None:
+    # Group "a": an unlocatable alternative, then shipping.md; refunds.md stands alone.
+    item = GoldenItem(
+        id="g",
+        question="q",
+        reference="r",
+        relevant=(
+            GoldRef(path="nowhere.md", evidence="nothing", group="a"),
+            GoldRef(path="policies/shipping.md", evidence="express", group="a"),
+            GoldRef(path="policies/shipping.md", page=1, group="a"),
+            GoldRef(path="refunds.md", evidence="two to three business days"),
+        ),
+    )
+
+    passages = await gold_passages(container, item, None, EvalSettings(), {})
+
+    assert [(p.path, p.page) for p in passages] == [
+        ("policies/shipping.md", 2),  # group "a" contributes one passage, not two
+        ("policies/refunds.md", 1),
+    ]
+
+
 async def test_sweep_keeps_gold_docs_out_of_distractors_and_judges(container: Container) -> None:
     es = EvalSettings(noise_ratios="0,0.5", noise_context_size=2)
     find_row = await collect_find(container, ITEM, es)

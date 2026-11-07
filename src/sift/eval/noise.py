@@ -3,8 +3,10 @@
 A controlled sweep over the recap stage alone (retrieval is held fixed, so this isolates the
 generator's robustness — RAG-benchmark "noise robustness"). Per answerable item with a reference:
 
-1. **Gold passages** — one per gold ref: the gold document's first chunk matching the ref's
-   page/evidence; for a path-only ref, the best-ranked retrieved chunk from that document.
+1. **Gold passages** — one per required group of gold refs (alternatives share a group, D78):
+   the gold document's first chunk matching the ref's page/evidence; for a path-only ref, the
+   best-ranked retrieved chunk from that document. A group's first locatable ref stands for it,
+   so two files that state the same answer don't both crowd into the context.
 2. **Distractors** — this question's own retrieved passages from NON-gold documents, in rank
    order (hard negatives: on-topic but not the answer), topped up with other questions'
    non-gold passages in seeded random order.
@@ -28,7 +30,7 @@ from typing import Any
 from sift.eval.collect import Progress
 from sift.eval.config import EvalSettings
 from sift.eval.corpus import document_passages, list_documents, resolve
-from sift.eval.golden import GoldenItem, GoldRef
+from sift.eval.golden import GoldenItem, GoldRef, ref_groups
 from sift.eval.judge import Judge, make_sample
 from sift.eval.matching import passage_matches, path_matches
 from sift.eval.records import Passage, SurfaceResult
@@ -68,33 +70,43 @@ async def gold_passages(
     es: EvalSettings,
     doc_chunks: dict[str, list[Passage]],
 ) -> list[Passage]:
-    """One passage per gold ref (see module docstring); refs that can't be located are skipped."""
+    """One passage per required group (see module docstring); groups that can't be located are
+    skipped."""
     docs = None
-    found: list[Passage] = []
-    for ref in item.relevant:
-        passage: Passage | None = None
-        if ref.page is not None or ref.evidence is not None:
-            if docs is None:
-                docs = await list_documents(container, es.tenant)
-            for doc in resolve(ref.path, docs):
-                if doc.source_hash not in doc_chunks:
-                    doc_chunks[doc.source_hash] = await document_passages(
-                        container, doc.source_hash, es.tenant
-                    )
-                passage = next(
-                    (
-                        p
-                        for p in doc_chunks[doc.source_hash]
-                        if passage_matches(p, ref, es.evidence_match_threshold)
-                    ),
-                    None,
+
+    async def locate(ref: GoldRef) -> Passage | None:
+        nonlocal docs
+        if ref.page is None and ref.evidence is None:
+            if find_row is None:
+                return None
+            return next((p for p in find_row.retrieved if path_matches(p.path, ref.path)), None)
+        if docs is None:
+            docs = await list_documents(container, es.tenant)
+        for doc in resolve(ref.path, docs):
+            if doc.source_hash not in doc_chunks:
+                doc_chunks[doc.source_hash] = await document_passages(
+                    container, doc.source_hash, es.tenant
                 )
-                if passage:
-                    break
-        elif find_row is not None:
-            passage = next((p for p in find_row.retrieved if path_matches(p.path, ref.path)), None)
-        if passage is not None and passage not in found:
-            found.append(passage)
+            passage = next(
+                (
+                    p
+                    for p in doc_chunks[doc.source_hash]
+                    if passage_matches(p, ref, es.evidence_match_threshold)
+                ),
+                None,
+            )
+            if passage:
+                return passage
+        return None
+
+    found: list[Passage] = []
+    for group in ref_groups(item.relevant):
+        for index in group:
+            passage = await locate(item.relevant[index])
+            if passage is not None:
+                if passage not in found:
+                    found.append(passage)
+                break
     return found
 
 

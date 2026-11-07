@@ -60,6 +60,38 @@ async def test_problems_are_reported(container: Container, tmp_path: Path) -> No
     assert "FAILED — 3 error(s), 3 warning(s)" in report.render()
 
 
+async def test_loose_alternatives_and_lone_labels_warn(
+    container: Container, tmp_path: Path
+) -> None:
+    golden = _golden(
+        tmp_path,
+        _item(
+            "alt",
+            relevant=[
+                {"path": "refunds.md", "evidence": "two to three business days", "group": "a"},
+                {"path": "shipping.md", "group": "a"},
+                {"path": "shipping.md", "page": 2, "group": "b"},
+            ],
+        ),
+        _item(
+            "ok",
+            relevant=[
+                {"path": "refunds.md", "evidence": "two to three business days", "group": "a"},
+                {"path": "shipping.md", "page": 2, "group": "a"},
+            ],
+        ),
+    )
+
+    report = await validate_golden(golden, container.settings, EvalSettings(), container)
+
+    assert report.errors == []
+    assert report.warnings == [
+        "alt: alternative 'shipping.md' in group 'a' has no page or evidence, so any chunk of it "
+        "satisfies the group — quote where it states the answer",
+        "alt: group 'b' has a single entry — a typo of another label?",
+    ]
+
+
 async def test_ambiguous_path_warns(tmp_path: Path) -> None:
     from .conftest import seed
 
