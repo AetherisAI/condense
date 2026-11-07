@@ -80,6 +80,9 @@ async def test_run_writes_a_complete_run_folder(
     assert summary["surfaces"]["ask"]["tool_calls_mean"] == 0.0  # NullCompleter calls no tool
     assert [r["ratio"] for r in summary["noise"]["by_ratio"]] == [0.0, 0.5]
     assert summary["tags"]["shipping"]["n"] == 1
+    # By-tag rows carry every judged metric, so variants are compared within their own tag.
+    assert summary["tags"]["shipping"]["find.answer_correctness"] == 0.9
+    assert summary["tags"]["shipping"]["find.answer_relevancy"] == 0.5
     config = json.loads((run_dir / "config.json").read_text())
     assert config["settings"]["ingest_token"] == "set"  # redacted, never the value
     assert config["judge"] == "fake"

@@ -143,11 +143,13 @@ def summarize_tags(
             hit = mean_scores(doc_scores(r.ranked, items[r.item_id].relevant, [1]) for r in subset)
             if "hit@1" in hit:
                 entry[f"{surface}.doc_hit@1"] = hit["hit@1"]
-            correctness = _metric_stats(
-                [r.scores["answer_correctness"] for r in subset if "answer_correctness" in r.scores]
-            )
-            if "mean" in correctness:
-                entry[f"{surface}.answer_correctness"] = correctness["mean"]
+            # Every judged metric, so variants of one question (keywords, scenario, translated…)
+            # are compared within their own tag — answer relevancy in particular depends on how
+            # the question is phrased, not only on the answer.
+            for metric in METRICS:
+                stats = _metric_stats([r.scores[metric] for r in subset if metric in r.scores])
+                if "mean" in stats:
+                    entry[f"{surface}.{metric}"] = stats["mean"]
         out[tag] = entry
     return out
 

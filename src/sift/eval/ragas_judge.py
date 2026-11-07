@@ -38,6 +38,8 @@ def _metric_kwargs(metric: str, sample: JudgeSample) -> dict[str, Any]:
                 "response": sample.response,
                 "reference": sample.reference or "",
             }
+        case "answer_recall":
+            return {"response": sample.response, "reference": sample.reference or ""}
         case "noise_sensitivity":
             return {
                 "user_input": sample.question,
@@ -95,10 +97,14 @@ class RagasJudge:
             "answer_correctness": lambda: collections.AnswerCorrectness(
                 llm=llm, embeddings=embeddings
             ),
+            # Share of the reference's claims the answer covers; extra details don't count (D77).
+            "answer_recall": lambda: collections.FactualCorrectness(llm=llm, mode="recall"),
             "context_utilization": lambda: collections.ContextUtilization(llm=llm),
             "noise_sensitivity": lambda: collections.NoiseSensitivity(llm=llm, mode="relevant"),
         }
-        needs_embeddings = {"answer_relevancy"}
+        # AnswerCorrectness's similarity term (weight 0.25) needs embeddings too; without them
+        # its constructor raises, so skip it like answer relevancy instead of crashing the run.
+        needs_embeddings = {"answer_relevancy", "answer_correctness"}
         self._metrics: dict[str, Any] = {}
         for metric in metrics:
             if metric in needs_embeddings and embeddings is None:

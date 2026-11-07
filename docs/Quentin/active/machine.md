@@ -50,7 +50,10 @@ container from the same `.env` and drives the pipelines in-process. The product 
     `AnswerCorrectness(user_input, response, reference)` (LLM + embeddings),
     `ContextUtilization(user_input, response, retrieved_contexts)`,
     `NoiseSensitivity(mode="relevant")(user_input, response, reference, retrieved_contexts)`
-    (lower is better).
+    (lower is better), and `FactualCorrectness(mode="recall")(response, reference)` as
+    `answer_recall` (D77: required facts covered, verbosity-neutral).
+  - By tag: doc hit@1 plus every judged metric per surface, so variant kinds are compared within
+    their own tag.
 - **Noise sweep (Find):**
   1. Gold passages are the chunks of the gold doc that match the evidence, falling back to the
      best retrieved chunk from the gold doc.
@@ -141,11 +144,14 @@ container from the same `.env` and drives the pipelines in-process. The product 
 | 2026-11-05 | c28faf7 | D76 citation stripping (found by the first real-stack run) |
 | 2026-11-05 | — | **Real-stack verification** on a scratch libSQL DB (5 docs via the real ingest pipeline, `mistral-embed`, `mistral-small-latest` generator + judge): `validate` OK; `run --skip-judge` and `run --noise` complete with 0 errors and 0 judge failures; Find doc hit@1 1.0, answer correctness Find 0.82 / Ask 0.81, noise robustness 0.88; v2 refund policy correctly preferred over v1; unanswerable question abstained on both surfaces. ~5.7 min for 6 questions + sweep at judge concurrency 2 |
 
+| 2026-11-07 | (this commit) | D77 `answer_recall` metric; By-tag table carries every judged metric; AnswerCorrectness skipped (not crashed) without embeddings; guide: minimal references, reference in the answer's language, compare variants per tag. Found by the MITRE silver-set audit |
+
 ## 6. Decisions
 - D73: eval is a separate in-process CLI app with its own `EvalSettings`.
 - D74: RAGAS optional extra behind the `Judge` protocol; own prompts for bootstrap and abstention.
 - D75: gold keyed by path + page + evidence, not chunk IDs.
 - D76: citations stripped from the judged copy of each answer (found by the first real-stack run).
+- D77: `answer_recall` beside `answer_correctness`; references hold only what the question asks.
 
 ## 7. Changelog
 - (on merge)

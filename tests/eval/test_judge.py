@@ -38,6 +38,8 @@ def _result(item_id: str, **fields: object) -> SurfaceResult:
         ("faithfulness", JudgeSample(question="q", response="r", contexts=("c",)), True),
         ("answer_correctness", JudgeSample(question="q", response="r"), False),
         ("answer_correctness", JudgeSample(question="q", response="r", reference="x"), True),
+        ("answer_recall", JudgeSample(question="q", response="r"), False),
+        ("answer_recall", JudgeSample(question="q", response="r", reference="x"), True),
         ("noise_sensitivity", JudgeSample(question="q", response="r", reference="x"), False),
     ],
 )
@@ -56,6 +58,7 @@ async def test_judge_results_scores_applicable_metrics_only() -> None:
         "answer_relevancy": 0.5,
         "faithfulness": 0.9,
         "answer_correctness": None,  # the judge failed → recorded as missing, not dropped
+        "answer_recall": 0.5,
         "context_utilization": 0.5,
         "noise_sensitivity": 0.5,
     }
@@ -129,10 +132,12 @@ def test_ragas_judge_builds_every_metric_without_network() -> None:
         "answer_relevancy",
         "faithfulness",
         "answer_correctness",
+        "answer_recall",
         "context_utilization",
         "noise_sensitivity",
     }
     assert judge.name.startswith("ragas 0.4")
+    assert judge._metrics["answer_recall"].mode == "recall"
 
 
 async def test_ragas_judge_maps_sample_onto_ascore_kwargs() -> None:
@@ -148,6 +153,16 @@ async def test_ragas_judge_maps_sample_onto_ascore_kwargs() -> None:
         "reference": "ref",
         "retrieved_contexts": ["c1", "c2"],
     }
+
+
+async def test_ragas_judge_answer_recall_takes_response_and_reference_only() -> None:
+    judge = _ragas_judge()
+    stub = _StubMetric(1.0)
+    judge._metrics["answer_recall"] = stub
+    sample = JudgeSample(question="q", response="r", contexts=("c",), reference="ref")
+
+    assert await judge.score(sample, "answer_recall") == 1.0
+    assert stub.kwargs == {"response": "r", "reference": "ref"}
 
 
 @pytest.mark.parametrize("value", [ValueError("unparseable judge output"), float("nan")])

@@ -22,7 +22,8 @@ took. Design decisions: D73 to D75 in `docs/Quentin/DECISIONS.md`.
 | **MRR** | 1 ÷ rank of the first gold passage | ↑ | Find, Ask |
 | **answer relevancy** | does the answer address the question? (RAGAS: questions generated back from the answer, compared with the real one) | ↑ | both |
 | **faithfulness** | share of the answer's claims supported by the passages the generator actually saw | ↑ | both |
-| **answer correctness** | agreement with your `reference` answer (RAGAS: claim-level F1 plus semantic similarity) | ↑ | both |
+| **answer correctness** | agreement with your `reference` answer (RAGAS: claim-level F1 plus semantic similarity). An F1, so true details the reference doesn't list also cost points | ↑ | both |
+| **answer recall** | share of the `reference`'s facts the answer states; extra details don't count against it (RAGAS `FactualCorrectness`, recall mode). With references that hold only what's asked, this is the "did it answer correctly?" number | ↑ | both |
 | **context utilization** | were the passages given to the generator actually useful for its answer? (rank-weighted) | ↑ | both |
 | **noise sensitivity** | share of the answer's claims that are wrong, given what was retrieved (RAGAS) | ↓ | both |
 | **noise robustness** | `--noise`: answer correctness as irrelevant passages are mixed into the recap context, and the ratio correctness@max-noise ÷ correctness@clean | ↑ | Find |
@@ -83,7 +84,7 @@ One JSON object per line. `#` lines are comments. Start from `evals/golden.examp
 |---|---|---|
 | `id` | yes | unique key, used to diff runs |
 | `question` | yes | what the system is asked |
-| `reference` | recommended | answer correctness, noise sensitivity, the noise sweep |
+| `reference` | recommended | answer correctness and recall, noise sensitivity, the noise sweep |
 | `relevant[]` | recommended | every retrieval metric. `path` is required; `page` and `evidence` make matching stricter |
 | `answerable` | no (default `true`) | `false`: the corpus doesn't cover it, so the item scores abstention instead |
 | `tags` | no | per-tag breakdown in the report |
@@ -110,8 +111,17 @@ One JSON object per line. `#` lines are comments. Start from `evals/golden.examp
   - enumeration ("which documents mention X");
   - **10–15% unanswerable**.
 - **Keep evidence quotes short:** 3 to 12 words that are actually in the document.
-- **Write `reference` answers** as the one or two sentences you'd accept as correct.
-- **Tag questions** by topic and type, so the report shows where quality is weak.
+- **Write `reference` answers that hold exactly what the question asks**: every part it asks
+  for, nothing else. Background, dates or IDs the question didn't ask about, and grading hints
+  ("X also counts"), go in `notes`. The judge treats every sentence of the reference as a fact
+  the answer must state.
+- **Write the reference in the language the answer will come back in.** Both surfaces answer in
+  the question's language, so a translated question needs a translated reference.
+- **Tag questions** by topic and type, so the report shows where quality is weak. If you add
+  reworded or translated copies of a question, tag each kind (`keywords`, `de`, …) and the
+  originals (`base`). Then compare answer metrics within a kind, in the report's By-tag table:
+  answer relevancy in particular depends on how the question is phrased, so a mean taken across
+  kinds mixes phrasing with quality.
 
 ## 4. Commands
 
@@ -164,8 +174,8 @@ For chunking experiments, re-ingest the corpus between runs. The golden set need
 
 ## 6. Caveats
 
-- **Cost:** each judged question makes roughly 10–20 judge-LLM calls per surface, plus 2 per
-  noise ratio. Use `--skip-judge` for retrieval-only iterations, and
+- **Cost:** each judged question makes roughly 15–25 judge-LLM calls per surface (answer recall
+  alone is about 4), plus 2 per noise ratio. Use `--skip-judge` for retrieval-only iterations, and
   `EVAL_JUDGE_CONCURRENCY` to trade speed for rate limits.
 - **Latency is measured in-process.** It excludes HTTP, auth and serialization, but it covers
   every model call. Questions run one at a time, and the first `EVAL_WARMUP` runs are discarded.

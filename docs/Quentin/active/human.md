@@ -28,6 +28,9 @@ and `compare` diffs two runs.
 - **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
   `(file.md, p.1)` as an unsupported claim (live: 0.5 → 1.0 on a correct answer). Stored answers
   stay verbatim.
+- **D77:** **answer recall** joins answer correctness. Correctness is an F1, so it also charges
+  for true details the reference doesn't list and moves with verbosity. Recall only asks whether
+  the reference's facts are there. References now hold just what the question asks.
 
 ## Ports / interfaces touched
 - No `core/` changes.
