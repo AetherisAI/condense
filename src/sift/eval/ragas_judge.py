@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _INSTALL_HINT = "RAGAS is not installed — run: pip install -e '.[eval]' (or use --skip-judge)"
 _JUDGE_MAX_RETRIES = 10
+_JUDGE_MAX_TOKENS = 4096
 
 
 def _metric_kwargs(metric: str, sample: JudgeSample) -> dict[str, Any]:
@@ -82,12 +83,14 @@ class RagasJudge:
             )
         # Local OpenAI-compatible servers (Ollama, llama.cpp) take any key; the client insists
         # on a non-empty one. The SDK's default 2 retries (~1.5 s) can't outlast a hosted judge's
-        # per-minute rate-limit window; 10 retries back off for ~1 min (D79).
+        # per-minute rate-limit window; 10 retries back off for ~1 min (D79). RAGAS's default
+        # 1024 output tokens truncates the claim lists of long answers (D80).
         llm = llm_factory(
             model,
             client=AsyncOpenAI(
                 base_url=base_url, api_key=api_key or "none", max_retries=_JUDGE_MAX_RETRIES
             ),
+            max_tokens=_JUDGE_MAX_TOKENS,
         )
         # `Any`: ragas's own embedding unions don't line up with each metric's parameter type,
         # and in CI (no [eval] extra) these names don't resolve at all.
