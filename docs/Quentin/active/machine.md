@@ -147,7 +147,9 @@ container from the same `.env` and drives the pipelines in-process. The product 
 
 | 2026-11-07 | (this commit) | D77 `answer_recall` metric; By-tag table carries every judged metric; AnswerCorrectness skipped (not crashed) without embeddings; guide: minimal references, reference in the answer's language, compare variants per tag. Found by the MITRE silver-set audit |
 
-| 2026-11-07 | (this commit) | D78 alternative gold groups: `GoldRef.group`, `ref_groups`, recall over groups + `complete@k`, one noise passage per group, `validate` warns on loose alternatives / lone labels, `compare` warns on golden-set change, C@k columns in the retrieval table |
+| 2026-11-07 | fd401e5 | D78 alternative gold groups: `GoldRef.group`, `ref_groups`, recall over groups + `complete@k`, one noise passage per group, `validate` warns on loose alternatives / lone labels, `compare` warns on golden-set change, C@k columns in the retrieval table |
+
+| 2026-11-07 | (this commit) | D79 `OpenAICompatCompleter._post` retries 429/502/503/504 (exponential 2→32 s, numeric `Retry-After` honoured, 500 never retried); RAGAS judge client `max_retries=10`. Found by the first MITRE run (2,298 files, 7,278 chunks): `validate` OK, then Mistral 429s errored ~half of Find questions and would have silently truncated Ask answers |
 
 ## 6. Decisions
 - D73: eval is a separate in-process CLI app with its own `EvalSettings`.
@@ -156,6 +158,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - D76: citations stripped from the judged copy of each answer (found by the first real-stack run).
 - D77: `answer_recall` beside `answer_correctness`; references hold only what the question asks.
 - D78: gold alternatives via `group`; recall counts required groups; `complete@k`.
+- D79: transient-HTTP retry with backoff in the LLM client and the RAGAS judge client.
 
 ## 7. Changelog
 - (on merge)

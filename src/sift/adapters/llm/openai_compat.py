@@ -22,10 +22,15 @@ model, not just one that supports native function-calling:
   malformed shape, ...) falls back to prompted for that call AND sticks for the rest of this
   instance's process lifetime (never retries native again) — cheap, and avoids repeatedly
   paying a doomed native attempt's latency/error on every subsequent turn.
+
+Transient HTTP failures (429 rate limits, 502/503/504 gateway errors) are retried with
+exponential backoff, honouring a numeric ``Retry-After`` (D79). A 500 is NOT retried: some
+providers use it to reject an unsupported ``tools`` param, and "auto" must see that at once.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -41,6 +46,13 @@ logger = logging.getLogger(__name__)
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
+# D79: hosted providers rate-limit per minute (Mistral: 100 req / 100k tokens), so the backoff
+# has to outlast a full window: 2+4+8+16+32 s ≈ 1 min across the default 5 retries.
+_RETRY_STATUSES = frozenset({429, 502, 503, 504})
+_BACKOFF_BASE_S = 2.0
+_BACKOFF_CAP_S = 60.0
+_sleep = asyncio.sleep  # module-level so tests can skip the real wait
+
 
 class OpenAICompatCompleter:
     """Completer + ToolCompleter backed by an OpenAI-compatible ``/chat/completions`` endpoint."""
@@ -55,6 +67,7 @@ class OpenAICompatCompleter:
         temperature: float | None = None,
         tool_mode: Literal["auto", "native", "prompted"] = "auto",
         answer_max_tokens: int | None = None,
+        max_retries: int = 5,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
@@ -62,6 +75,7 @@ class OpenAICompatCompleter:
         self._max_tokens = max_tokens
         self._temperature = temperature
         self._tool_mode = tool_mode
+        self._max_retries = max_retries
         # Separate from `max_tokens` (the recap's cap, via `.complete()`): `Settings
         # .answer_max_tokens` bounds ONLY the `/v1/answer` loop's completions
         # (`.complete_with_tools()`), which may need a longer budget for tool-call reasoning.
@@ -163,9 +177,23 @@ class OpenAICompatCompleter:
         return self._client
 
     async def _post(self, payload: Mapping[str, object], headers: Mapping[str, str]) -> Any:
-        response = await self._get_client().post(
-            f"{self._base_url}/chat/completions", json=payload, headers=headers
-        )
+        url = f"{self._base_url}/chat/completions"
+        attempt = 0
+        while True:
+            response = await self._get_client().post(url, json=payload, headers=headers)
+            if response.status_code not in _RETRY_STATUSES or attempt >= self._max_retries:
+                break
+            delay = _retry_delay(response, attempt)
+            logger.warning(
+                "%s from %s; retry %d/%d in %.1fs",
+                response.status_code,
+                url,
+                attempt + 1,
+                self._max_retries,
+                delay,
+            )
+            await _sleep(delay)
+            attempt += 1
         response.raise_for_status()
         return response.json()
 
@@ -174,6 +202,17 @@ class OpenAICompatCompleter:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """Seconds to wait before retry ``attempt + 1``: a numeric ``Retry-After`` if the provider
+    sent one, else exponential backoff — either way capped at ``_BACKOFF_CAP_S``."""
+    raw = response.headers.get("retry-after")
+    try:
+        delay = float(raw) if raw is not None else _BACKOFF_BASE_S * 2**attempt
+    except ValueError:  # an HTTP-date form: fall back to the backoff schedule
+        delay = _BACKOFF_BASE_S * 2**attempt
+    return min(max(delay, 0.0), _BACKOFF_CAP_S)
 
 
 # --- content normalization (D40 amendment: BUG #2) --------------------------------------------

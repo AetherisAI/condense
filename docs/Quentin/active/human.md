@@ -1,10 +1,10 @@
-> **Desktop WP COMPLETE on `feat/desktop-standalone`** (D60–D67), merge pending → v0.4.0 (its docs archive at that merge). This file now tracks the parallel **eval-harness** WP.
+> **Desktop WP COMPLETE on `feat/desktop-standalone`** (D60–D67), merge pending → v0.4.0. This file now tracks the parallel **eval-harness** WP.
 
 # Eval harness (`sift-eval`) — Human Doc
 
 > **≤500 words. Decision-first.** This is the fast-read companion to `machine.md`. If you only have two minutes, read this.
 
-**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-05
+**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-07
 
 ## What & why
 Condense had no way to measure quality: every tuning change (chunk size, rerank, RETRIEVE_K, LLM)
@@ -31,6 +31,8 @@ JSON + HTML report; `compare` diffs two runs.
   the reference omits. References now hold only what the question asks.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
   `complete@k` asks if all were found. `compare` warns when the set changed.
+- **D79:** the LLM client **retries 429/502/503/504** (~1 min backoff), the judge 10×:
+  Mistral's rate cap failed half the first MITRE run.
 
 ## Ports / interfaces touched
 - No `core/` changes.
@@ -41,15 +43,14 @@ JSON + HTML report; `compare` diffs two runs.
   chat history. `factory.build_completer()` is now public, for the judge LLM.
 
 ## Risks / open questions
-- Small local judge models often fail RAGAS's structured output. Failures count as `None` and are
-  reported per metric. Use a strong judge, ideally not the generator model (the report warns if
-  they're the same).
-- Measured latency is in-process and leaves out HTTP, auth and serialization.
-- Bootstrapped questions copy their source chunk's wording, which flatters retrieval. Rewrite them.
+- Small local judges often fail RAGAS's structured output; failures count as `None`, reported
+  per metric. Use a strong judge, ideally not the generator (the report warns).
+- Latency is in-process (no HTTP/auth) and includes any rate-limit backoff.
+- Bootstrapped questions copy chunk wording (flatters retrieval). Rewrite them.
 - `factory.py` is a shared seam, so the change is flagged to Arthur in the channel.
 
 ## Status / next action
-- Plan approved. Implementing task by task (see `machine.md` §3).
+- Implementing task by task (`machine.md` §3).
 
 ## Pointer
 - Full plan, tasks, and code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)
