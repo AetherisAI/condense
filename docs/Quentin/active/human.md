@@ -7,12 +7,11 @@
 **Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-05
 
 ## What & why
-Condense had no way to measure quality, so every tuning change (chunk size, rerank strategy,
-RETRIEVE_K, LLM) was judged by eye. `sift-eval` scores both Find (`/search`) and Ask
-(`/v1/answer`) against a golden question set. Metrics: recall/precision@k (plus hit@k and MRR),
-answer relevancy, faithfulness, answer correctness, context utilization, noise robustness,
-abstention on unanswerable questions, and per-stage latency. Each run writes a JSON + HTML report,
-and `compare` diffs two runs.
+Condense had no way to measure quality: every tuning change (chunk size, rerank, RETRIEVE_K, LLM)
+was judged by eye. `sift-eval` scores Find (`/search`) and Ask (`/v1/answer`) against a golden
+set: recall/precision@k, hit@k, MRR, answer relevancy, faithfulness, answer correctness and
+recall, context utilization, noise robustness, abstention, per-stage latency. Each run writes a
+JSON + HTML report; `compare` diffs two runs.
 
 ## Key decisions
 - **D73:** a **CLI, not an app feature**. It runs the real pipeline in-process through
@@ -28,9 +27,8 @@ and `compare` diffs two runs.
 - **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
   `(file.md, p.1)` as an unsupported claim (live: 0.5 → 1.0 on a correct answer). Stored answers
   stay verbatim.
-- **D77:** **answer recall** joins answer correctness. Correctness is an F1, so it also charges
-  for true details the reference doesn't list and moves with verbosity. Recall only asks whether
-  the reference's facts are there. References now hold just what the question asks.
+- **D77:** **answer recall** joins answer correctness, an F1 that also charges for true details
+  the reference omits. References now hold only what the question asks.
 
 ## Ports / interfaces touched
 - No `core/` changes.
@@ -45,8 +43,7 @@ and `compare` diffs two runs.
   reported per metric. Use a strong judge, ideally not the generator model (the report warns if
   they're the same).
 - Measured latency is in-process and leaves out HTTP, auth and serialization.
-- Bootstrapped questions copy the wording of their source chunk, so retrieval looks better than it
-  is. Rewrite them before trusting the numbers.
+- Bootstrapped questions copy their source chunk's wording, which flatters retrieval. Rewrite them.
 - `factory.py` is a shared seam, so the change is flagged to Arthur in the channel.
 
 ## Status / next action
