@@ -49,9 +49,9 @@ JSON + HTML report; `compare` diffs two runs.
 - `factory.py` is a shared seam, so the change is flagged to Arthur in the channel.
 
 ## Status / next action
-- First MITRE eval done (332 items, 0 errors; `machine.md` §5). The LLM reranker broke 60
-  top-1s and fixed 41: it sees only each candidate's 240-char header. Find answered 12 of 26
-  unanswerable items. Next: Haiku 5.5 as reranker.
+- MITRE eval done (332 items; `machine.md` §5). A Mistral Small reranker broke
+  60 top-1s and fixed 41; Haiku 5.5 on the same snippets fixed 59, broke 15 (base top-1 0.62 →
+  0.89). Find answered 12 of 26 unanswerable items.
 
 ## Pointer
 - Full plan, tasks, and code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)
