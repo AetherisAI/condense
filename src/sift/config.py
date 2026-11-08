@@ -12,7 +12,7 @@ import logging
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,9 @@ class Settings(BaseSettings):
     recap_enabled: bool = True
     recap_context_k: int = 3
     recap_max_tokens: int | None = 512
-    recap_temperature: float = 0.3
+    # Blank (`RECAP_TEMPERATURE=`) → None → no `temperature` field sent: some chat models (Claude
+    # Haiku 5.5) reject the field outright (D81). Shared with the `/v1/answer` loop.
+    recap_temperature: float | None = 0.3
     source_snippet_chars: int = 300
 
     llm_base_url: str | None = None
@@ -189,6 +191,11 @@ class Settings(BaseSettings):
     cors_origins: str = "tauri://localhost,http://tauri.localhost,https://tauri.localhost"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("recap_temperature", mode="before")
+    @classmethod
+    def _blank_is_none(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 @lru_cache

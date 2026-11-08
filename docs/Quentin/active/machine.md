@@ -149,6 +149,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 | 2026-11-07 | 7119f9f | D79 `OpenAICompatCompleter._post` retries 429/502/503/504 (exponential 2→32 s, numeric `Retry-After` honoured, 500 never retried); RAGAS judge client `max_retries=10`. Found by the first MITRE run (2,298 files, 7,278 chunks): `validate` OK, then Mistral 429s errored ~half of Find questions and would have silently truncated Ask answers |
 | 2026-11-07 | 5e39daa | D80 RAGAS judge `llm_factory(..., max_tokens=4096)`: the base MITRE run's judge logged `IncompleteOutputException` (max_tokens) on faithfulness, answer correctness/recall and noise sensitivity |
 | 2026-11-07 | — | **First MITRE eval** (silver set, 332 items; `condense_test_mitre/mitre.db`; bge-m3 via Ollama; `mistral-small-latest` as generator, LLM reranker and judge; judge concurrency 2). Three runs, all 0 errors and 0 judge failures (base re-judged under D80). Find doc hit@1 retrieved → final, Ask correctness: **base** (112) 0.78 → 0.62, 0.68 · **derivatives** (155: keywords, scenario, paraphrase, reword) 0.64 → 0.64, 0.59 · **German** (65) 0.68 → 0.64, 0.67. Findings: (1) the LLM reranker fixed 41 and broke 60 top-1s over the 306 answerable items, because it judges only the first 240 chars of each candidate, which in this corpus is the metadata header (`llm_judge._SNIPPET_LEN`), e.g. OnionDuke → MiniDuke; it helps only where retrieval missed (paraphrase: 5 fixed, 0 broke). (2) Find answered 12 of 26 unanswerable items, partly from the model's own knowledge; Ask abstained on 25 of 26. (3) Paraphrases avoiding ATT&CK vocabulary are bge-m3's weak spot (retrieved hit@1 0.77 → 0.31 vs their bases); German needs no special handling. (4) Re-judging with 4096 tokens moved every mean ≤ 0.03, a floor for meaningful run-to-run differences. Runs: `eval-runs/20261107-{130230-mitre-base,160648-mitre-derivatives,173114-mitre-de}`; scripts in `condense_test_mitre/scripts/` |
+| 2026-11-08 | (this commit) | D81 `recap_temperature: float \| None`, blank env → `None` → no `temperature` sent. Found by the first Haiku 5.5 rerank smoke test: Anthropic's OpenAI-compatible endpoint answered 400 "`temperature` is deprecated for this model" |
 
 ## 6. Decisions
 - D73: eval is a separate in-process CLI app with its own `EvalSettings`.
@@ -159,6 +160,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - D78: gold alternatives via `group`; recall counts required groups; `complete@k`.
 - D79: transient-HTTP retry with backoff in the LLM client and the RAGAS judge client.
 - D80: RAGAS judge `max_tokens=4096` (default 1024 truncated long answers' claim lists).
+- D81: blank `RECAP_TEMPERATURE` sends no temperature (Claude Haiku 5.5 rejects the field).
 
 ## 7. Changelog
 - (on merge)

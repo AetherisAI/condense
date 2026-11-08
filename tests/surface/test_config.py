@@ -45,6 +45,7 @@ _ENV_KEYS = (
     "ANSWER_HISTORY_MAX_TURNS",
     "ANSWER_HISTORY_TTL_DAYS",
     "ANSWER_GROUNDING_DEFAULT",
+    "RECAP_TEMPERATURE",
 )
 
 
@@ -109,6 +110,19 @@ def test_missing_ingest_token_raises() -> None:
     # construction must fail. pyright can't see the env source and flags the call — expected.
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+
+
+def test_recap_temperature_defaults_and_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings(ingest_token="t").recap_temperature == 0.3
+    monkeypatch.setenv("RECAP_TEMPERATURE", "0.7")
+    assert Settings(ingest_token="t").recap_temperature == 0.7
+
+
+def test_blank_recap_temperature_means_send_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    # D81: some chat models (Claude Haiku 5.5) reject a `temperature` field outright, so a
+    # blank RECAP_TEMPERATURE= must mean "omit it from the request", not a parse error.
+    monkeypatch.setenv("RECAP_TEMPERATURE", "")
+    assert Settings(ingest_token="t").recap_temperature is None
 
 
 def test_bogus_rerank_strategy_raises(monkeypatch: pytest.MonkeyPatch) -> None:
