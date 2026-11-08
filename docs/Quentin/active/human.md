@@ -2,9 +2,9 @@
 
 # Eval harness (`sift-eval`) — Human Doc
 
-> **≤500 words. Decision-first.** This is the fast-read companion to `machine.md`. If you only have two minutes, read this.
+> **≤500 words. Decision-first.** The fast read; full detail in `machine.md`.
 
-**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-07
+**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-08
 
 ## What & why
 Condense had no way to measure quality: every tuning change (chunk size, rerank, RETRIEVE_K, LLM)
@@ -15,13 +15,12 @@ JSON + HTML report; `compare` diffs two runs.
 
 ## Key decisions
 - **D73:** a **CLI, not an app feature**. It runs the real pipeline in-process through
-  `factory.build_container`, because `/search` returns only FINAL_K=1, and recall@k, per-stage
-  timings and noise injection all need internals HTTP doesn't expose. It is its own little app
-  (like `agent/`) with its own `EvalSettings` (`EVAL_*`). Product code never imports `sift.eval`.
+  `factory.build_container`, because `/search` returns only FINAL_K=1, and recall@k, stage
+  timings and noise injection need internals. Own `EvalSettings` (`EVAL_*`); product code
+  never imports `sift.eval`.
 - **D74:** LLM-judged metrics use **RAGAS 0.4 (collections API)** as an optional `[eval]` extra
   behind a small `Judge` protocol (`FakeJudge` in tests). `langchain-community<0.4` is pinned
-  because RAGAS 0.4.3 won't import against 0.4.x. Bootstrap and the abstention check use our own
-  small prompts through the existing `Completer`.
+  because RAGAS 0.4.3 won't import against 0.4.x.
 - **D75:** gold relevance is keyed by **path (+ optional page, + optional evidence quote)**, not
   chunk IDs, so a golden set survives re-chunking.
 - **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
@@ -50,7 +49,9 @@ JSON + HTML report; `compare` diffs two runs.
 - `factory.py` is a shared seam, so the change is flagged to Arthur in the channel.
 
 ## Status / next action
-- Implementing task by task (`machine.md` §3).
+- First MITRE eval done (332 items, 0 errors; `machine.md` §5). The LLM reranker broke 60
+  top-1s and fixed 41: it sees only each candidate's 240-char header. Find answered 12 of 26
+  unanswerable items. Next: Haiku 5.5 as reranker.
 
 ## Pointer
 - Full plan, tasks, and code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)
