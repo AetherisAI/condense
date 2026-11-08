@@ -31,8 +31,7 @@ JSON + HTML report; `compare` diffs two runs.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
   `complete@k` asks if all were found. `compare` warns when the set changed.
 - **D79/D80:** LLM client **retries 429/502/503/504** (~1 min backoff); judge retries 10×,
-  4096 output tokens. Found by the first MITRE run. **D81:** blank `RECAP_TEMPERATURE` sends
-  none (Haiku 5.5 rejects it).
+  4096 output tokens. **D81:** blank `RECAP_TEMPERATURE` sends none (Haiku 5.5 rejects it).
 
 ## Ports / interfaces touched
 - No `core/` changes.
