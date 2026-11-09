@@ -61,10 +61,12 @@ def test_rerank_strategy_crossencoder_selects_crossencoder() -> None:
             ingest_token="t",
             rerank_strategy="crossencoder",
             rerank_base_url="http://tei.local",
+            rerank_timeout_s=90.0,
         )
     )
 
     assert isinstance(container.search._reranker, CrossEncoderReranker)
+    assert container.search._reranker._timeout_s == 90.0
 
 
 def test_build_container_exposes_store_and_ingest() -> None:

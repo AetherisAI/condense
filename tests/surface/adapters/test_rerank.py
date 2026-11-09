@@ -131,3 +131,19 @@ async def test_crossencoder_empty_candidates_skips_request(
 
     assert await reranker.rerank("query", []) == []
     assert seen == []
+
+
+async def test_crossencoder_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    # httpx's 5 s default timed out a CPU TEI scoring 30 full chunks (D83).
+    seen = _patch_transport(monkeypatch, _ranked)
+    reranker = CrossEncoderReranker(base_url="http://tei", timeout_s=90.0)
+
+    await reranker.rerank("query", [_hit("a"), _hit("b")])
+
+    (request,) = seen
+    assert request.extensions["timeout"] == {
+        "connect": 90.0,
+        "read": 90.0,
+        "write": 90.0,
+        "pool": 90.0,
+    }

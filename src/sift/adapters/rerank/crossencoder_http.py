@@ -4,7 +4,9 @@ Implements the :class:`~sift.core.ports.Reranker` port by POSTing ``{query, text
 Text-Embeddings-Inference ``/rerank`` endpoint, which returns a bare list of ``{index, score}``
 ordered by descending relevance. Each candidate :class:`~sift.core.types.Hit` is reordered to
 match and re-scored with the cross-encoder score (via :func:`dataclasses.replace`). One
-``httpx.AsyncClient`` per call (no shared state), mirroring the embeddings/chat adapters.
+``httpx.AsyncClient`` per call (no shared state), mirroring the embeddings/chat adapters, with
+``RERANK_TIMEOUT_S`` as its budget: httpx's 5 s default is too short for a CPU cross-encoder
+scoring up to ``RETRIEVE_K`` full chunks (D83).
 """
 
 from __future__ import annotations
@@ -19,14 +21,15 @@ from sift.core.types import Hit
 class CrossEncoderReranker:
     """Reranker backed by a TEI ``/rerank`` HTTP endpoint."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, timeout_s: float = 120.0) -> None:
         self._base_url = base_url.rstrip("/")
+        self._timeout_s = timeout_s
 
     async def rerank(self, query: str, candidates: list[Hit]) -> list[Hit]:
         if not candidates:
             return []
         payload = {"query": query, "texts": [candidate.text for candidate in candidates]}
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.post(f"{self._base_url}/rerank", json=payload)
             response.raise_for_status()
             ranked = response.json()

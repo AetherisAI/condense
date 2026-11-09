@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     rerank_strategy: Literal["none", "llm", "crossencoder"] = "none"
     rerank_base_url: str | None = None
     rerank_model: str = "bge-reranker-v2-m3"
+    # Budget for one cross-encoder /rerank call. httpx's 5 s default timed out a CPU TEI scoring
+    # RETRIEVE_K full chunks (D83); the LLM judge uses the LLM client's own timeout instead.
+    rerank_timeout_s: float = Field(default=120.0, gt=0)
 
     retrieve_k: int = 30
     final_k: int = 1

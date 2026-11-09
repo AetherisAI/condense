@@ -159,7 +159,8 @@ container from the same `.env` and drives the pipelines in-process. The product 
 | 2026-11-08 | fcb5b58 | D81 `recap_temperature: float \| None`, blank env → `None` → no `temperature` sent. Found by the first Haiku 5.5 rerank smoke test: Anthropic's OpenAI-compatible endpoint answered 400 "`temperature` is deprecated for this model" |
 | 2026-11-08 | — | **Haiku 5.5 as LLM reranker** (same three question sets, `--surfaces find --skip-judge`, recap off; `condense_test_mitre/scripts/run_haiku_rerank.sh`). Retrieval identical to the Mistral runs on all 306 answerable items (same top-12), so only the reranker model differs; same 240-char snippets. Find doc hit@1, none → Mistral Small → Haiku: **base** 0.78 → 0.62 → 0.89 · **derivatives** 0.64 → 0.64 → 0.79 · **German** 0.68 → 0.64 → 0.87. Haiku fixed 59 and broke 15 top-1s (Mistral: 41 / 60). Rerank latency mean 1.38 s, p95 2.7 s (Mistral 0.54 s / 1.0 s). This revises the first run's diagnosis: the reranking model, not the 240-char snippet, was the main cause (Haiku still misses `mitre-m07`, picking Rifdoor for Ritsol from the header). Caveat: ATT&CK is public, so part of the gain may be Haiku's own knowledge of it rather than reading the snippets; a private corpus or the cross-encoder is the fair check. Runs: `eval-runs/20261108-{095518-mitre-base,095934-mitre-derivatives,100115-mitre-de}-haiku-rerank` |
 | 2026-11-09 | 271350c | D82 `EVAL_JUDGE_PROVIDER=anthropic`: RAGAS judge via `AsyncAnthropic` + `llm_factory(provider="anthropic")` with `temperature`/`top_p` removed; base URL `/v1` stripped for the SDK; abstention completer sends no temperature; `anthropic` in `[eval]`. Found when re-judging with Haiku 5.5: its OpenAI-compatible endpoint rejects RAGAS's sampling params and JSON mode |
-| 2026-11-09 | (this commit) | `test_ranking_metrics.py`: hit@k / recall@k / MRR vs hand tables, a random-ranking oracle and invariants (§4). No metric bug found; closes the old suite's blind spot (last-relevant MRR) |
+| 2026-11-09 | cf1da4d | `test_ranking_metrics.py`: hit@k / recall@k / MRR vs hand tables, a random-ranking oracle and invariants (§4). No metric bug found; closes the old suite's blind spot (last-relevant MRR) |
+| 2026-11-09 | (this commit) | D83 `RERANK_TIMEOUT_S` (default 120 s) → `CrossEncoderReranker`'s httpx client, which had httpx's 5 s default. Found starting the cross-encoder MITRE run: CPU TEI (`cpu-arm64-1.9.4`, 4-vCPU Docker VM) takes ~50 s per question for 30 chunks, and the 5 s default raised `ReadTimeout`. TEI also needs `--max-batch-tokens 1024` in a 5.8 GiB Docker VM (the 16384 default OOM-kills warmup; the amd64 `cpu-latest` image is emulated on Apple Silicon and never finished warming up) |
 
 ## 6. Decisions
 - D73: eval is a separate in-process CLI app with its own `EvalSettings`.
@@ -172,6 +173,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - D80: RAGAS judge `max_tokens=4096` (default 1024 truncated long answers' claim lists).
 - D81: blank `RECAP_TEMPERATURE` sends no temperature (Claude Haiku 5.5 rejects the field).
 - D82: `EVAL_JUDGE_PROVIDER=anthropic` → RAGAS via the native Anthropic SDK, no sampling params.
+- D83: `RERANK_TIMEOUT_S` (default 120 s) bounds the cross-encoder call; httpx's 5 s default timed out on CPU TEI.
 
 ## 7. Changelog
 - (on merge)
