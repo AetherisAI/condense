@@ -52,6 +52,7 @@ JSON + HTML report; `compare` diffs two runs.
 - MITRE eval done (332 items; `machine.md` §5). A Mistral Small reranker broke
   60 top-1s and fixed 41; Haiku 5.5 on the same snippets fixed 59, broke 15 (base top-1 0.62 →
   0.89). Find answered 12 of 26 unanswerable items.
+- hit@k, R@k, MRR: oracle-tested (`machine.md` §4).
 
 ## Pointer
-- Full plan, tasks, and code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)
+- Plan + code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)
