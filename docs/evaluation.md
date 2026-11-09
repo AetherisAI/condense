@@ -24,7 +24,7 @@ took. Design decisions: D73 to D75 in `docs/Quentin/DECISIONS.md`.
 | **answer relevancy** | does the answer address the question? (RAGAS: questions generated back from the answer, compared with the real one) | ↑ | both |
 | **faithfulness** | share of the answer's claims supported by the passages the generator actually saw | ↑ | both |
 | **answer correctness** | agreement with your `reference` answer (RAGAS: claim-level F1 plus semantic similarity). An F1, so true details the reference doesn't list also cost points | ↑ | both |
-| **answer recall** | share of the `reference`'s facts the answer states; extra details don't count against it (RAGAS `FactualCorrectness`, recall mode). With references that hold only what's asked, this is the "did it answer correctly?" number | ↑ | both |
+| **answer recall** | share of the `reference`'s facts the answer states; extra details don't count against it (the reference is split into claims and each is checked against the answer, using RAGAS `FactualCorrectness`'s prompts). With references that hold only what's asked, this is the "did it answer correctly?" number. RAGAS's own recall mode isn't used: it scored correct answers 0 under a strict judge (D84) | ↑ | both |
 | **context utilization** | were the passages given to the generator actually useful for its answer? (rank-weighted) | ↑ | both |
 | **noise sensitivity** | share of the answer's claims that are wrong, given what was retrieved (RAGAS) | ↓ | both |
 | **noise robustness** | `--noise`: answer correctness as irrelevant passages are mixed into the recap context, and the ratio correctness@max-noise ÷ correctness@clean | ↑ | Find |
@@ -178,6 +178,9 @@ sift-eval run --golden evals/golden.jsonl --tags policy,hr --limit 20
 
 # Re-score an existing run with a different judge (no system calls)
 EVAL_JUDGE_MODEL=other-model sift-eval judge eval-runs/20261105-101500-baseline
+
+# Re-score only some metrics; every other score (abstention too) is kept
+sift-eval judge eval-runs/20261105-101500-baseline --metrics answer_recall
 
 # What changed between two runs (▲ better / ▼ worse, direction-aware)
 sift-eval compare eval-runs/<baseline> eval-runs/<candidate>

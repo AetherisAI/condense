@@ -29,8 +29,8 @@ from sift.config import Settings
 from sift.eval.collect import Progress, collect
 from sift.eval.config import EvalSettings
 from sift.eval.golden import GoldenItem, load_golden
-from sift.eval.judge import AbstentionCheck, Judge, judge_results
-from sift.eval.noise import NoiseTrial, judge_trials, run_noise_sweep
+from sift.eval.judge import METRICS, AbstentionCheck, Judge, judge_results
+from sift.eval.noise import NOISE_METRICS, NoiseTrial, judge_trials, run_noise_sweep
 from sift.eval.records import Passage, Surface, SurfaceResult, record_from_dict
 from sift.eval.report import render_html, render_markdown, summarize
 from sift.factory import Container, build_completer, build_container
@@ -268,8 +268,13 @@ async def rejudge(
     *,
     progress: Progress | None = None,
     judges: tuple[Judge, AbstentionCheck] | None = None,
+    metrics: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Re-score an existing run with the currently configured judge; rewrites its reports."""
+    """Re-score an existing run with the currently configured judge; rewrites its reports.
+
+    ``metrics`` re-scores only those answer metrics and keeps every other score, abstention
+    included (D84), so fixing one metric doesn't pay for re-judging the rest.
+    """
     say = progress or (lambda _msg: None)
     run = json.loads((run_dir / "config.json").read_text())
     rows = [record_from_dict(r) for r in _read_jsonl(run_dir / "results.jsonl")]
@@ -279,18 +284,22 @@ async def rejudge(
     trials = [_trial_from_dict(t) for t in _read_jsonl(run_dir / "noise.jsonl")]
     judge, abstention = judges or build_judges(app, es)
     for row in rows:
-        row.scores = {}
+        row.scores = {k: v for k, v in row.scores.items() if metrics and k not in metrics}
     await judge_results(
         rows,
         {i.id: i for i in items},
         judge=judge,
-        abstention=abstention,
+        abstention=None if metrics else abstention,
+        metrics=metrics or METRICS,
         concurrency=es.judge_concurrency,
         strip=es.strip_citations,
         progress=say,
     )
-    await judge_trials(trials, items, judge, es.judge_concurrency, es.strip_citations)
+    if not metrics or set(metrics) & set(NOISE_METRICS):
+        await judge_trials(trials, items, judge, es.judge_concurrency, es.strip_citations)
     run["judge"] = judge.name
     run["judge_model"] = es.judge_model_name(app)
     run["rejudged_at"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    if metrics:
+        run["rejudged_metrics"] = list(metrics)
     return write_reports(run_dir, run, items, rows, trials, run.get("noise_skipped", []), es)

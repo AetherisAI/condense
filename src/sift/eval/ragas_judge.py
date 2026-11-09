@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from sift.eval.judge import METRICS, JudgeSample
@@ -50,6 +51,26 @@ def _metric_kwargs(metric: str, sample: JudgeSample) -> dict[str, Any]:
                 "retrieved_contexts": contexts,
             }
     raise ValueError(f"unknown metric {metric!r}")
+
+
+class _ReferenceRecall:
+    """Share of the reference's claims the response states: true recall (D84).
+
+    RAGAS's ``FactualCorrectness(mode="recall")`` isn't that. Its numerator counts the
+    *response's* claims the reference supports, so a correct answer to a terse reference
+    ("Port 502.") scores 0 ÷ 0 → 0 once a strict judge says the bare port number doesn't
+    support "FrostyGoop uses port 502". Only the metric's reference-side half is kept here.
+    """
+
+    def __init__(self, metric: Any) -> None:
+        self._metric = metric
+
+    async def ascore(self, *, response: str, reference: str) -> Any:
+        # Private, but pinned by ragas<0.5: decompose the reference, verify each claim (NLI)
+        # against the response. No claims → NaN → reported as failed, not as 0.
+        verdicts = await self._metric._decompose_and_verify_claims(reference, response)
+        value = sum(bool(v) for v in verdicts) / len(verdicts) if len(verdicts) else float("nan")
+        return SimpleNamespace(value=value)  # duck-types RAGAS's MetricResult
 
 
 class RagasJudge:
@@ -131,8 +152,11 @@ class RagasJudge:
             "answer_correctness": lambda: collections.AnswerCorrectness(
                 llm=llm, embeddings=embeddings
             ),
-            # Share of the reference's claims the answer covers; extra details don't count (D77).
-            "answer_recall": lambda: collections.FactualCorrectness(llm=llm, mode="recall"),
+            # Share of the reference's claims the answer covers; extra details don't count
+            # (D77). RAGAS's own recall mode doesn't compute that (D84).
+            "answer_recall": lambda: _ReferenceRecall(
+                collections.FactualCorrectness(llm=llm, mode="recall")
+            ),
             "context_utilization": lambda: collections.ContextUtilization(llm=llm),
             "noise_sensitivity": lambda: collections.NoiseSensitivity(llm=llm, mode="relevant"),
         }

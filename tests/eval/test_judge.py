@@ -14,6 +14,7 @@ from sift.eval.judge import (
     judge_results,
     strip_citations,
 )
+from sift.eval.ragas_judge import _ReferenceRecall
 from sift.eval.records import Passage, SurfaceResult
 
 ANSWERABLE = GoldenItem(id="a", question="How long?", reference="Two days.")
@@ -137,7 +138,7 @@ def test_ragas_judge_builds_every_metric_without_network() -> None:
         "noise_sensitivity",
     }
     assert judge.name.startswith("ragas 0.4")
-    assert judge._metrics["answer_recall"].mode == "recall"
+    assert isinstance(judge._metrics["answer_recall"], _ReferenceRecall)
 
 
 async def test_ragas_judge_maps_sample_onto_ascore_kwargs() -> None:
@@ -163,6 +164,37 @@ async def test_ragas_judge_answer_recall_takes_response_and_reference_only() -> 
 
     assert await judge.score(sample, "answer_recall") == 1.0
     assert stub.kwargs == {"response": "r", "reference": "ref"}
+
+
+class _StubFactualCorrectness:
+    def __init__(self, verdicts: list[bool]) -> None:
+        self.verdicts = verdicts
+        self.args: tuple[str, str] | None = None
+
+    async def _decompose_and_verify_claims(self, text: str, premise: str) -> list[bool]:
+        self.args = (text, premise)
+        return self.verdicts
+
+
+async def test_answer_recall_is_the_share_of_reference_claims_the_response_states() -> None:
+    # The live case behind D84: RAGAS's recall mode scored this correct answer 0.
+    stub = _StubFactualCorrectness([True, False])
+
+    result = await _ReferenceRecall(stub).ascore(
+        response="FrostyGoop uses TCP port 502.", reference="Port 502. It speaks Modbus."
+    )
+
+    assert result.value == 0.5
+    # The reference is decomposed; the response is only the premise, its extras never count.
+    assert stub.args == ("Port 502. It speaks Modbus.", "FrostyGoop uses TCP port 502.")
+
+
+async def test_answer_recall_with_no_reference_claims_is_none() -> None:
+    judge = _ragas_judge()
+    judge._metrics["answer_recall"] = _ReferenceRecall(_StubFactualCorrectness([]))
+
+    sample = JudgeSample(question="q", response="r", reference="ref")
+    assert await judge.score(sample, "answer_recall") is None
 
 
 @pytest.mark.parametrize("value", [ValueError("unparseable judge output"), float("nan")])

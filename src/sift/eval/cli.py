@@ -1,7 +1,7 @@
 """``sift-eval`` — the command line (argparse, like ``agent/cli.py``).
 
     sift-eval run --golden evals/golden.jsonl [--surfaces find,ask] [--skip-judge] [--noise]
-    sift-eval judge eval-runs/<run>            # re-score a run with the current judge
+    sift-eval judge eval-runs/<run> [--metrics answer_recall]   # re-score with the current judge
     sift-eval compare eval-runs/<a> eval-runs/<b>
     sift-eval validate --golden evals/golden.jsonl
     sift-eval bootstrap --out evals/draft.jsonl [--n 30]
@@ -24,6 +24,7 @@ from typing import cast
 from sift.core.errors import SiftError
 from sift.eval.config import load_settings
 from sift.eval.golden import GoldenError
+from sift.eval.judge import METRICS
 from sift.eval.records import SURFACES, Surface
 from sift.eval.report import compare
 
@@ -44,6 +45,14 @@ def _surfaces(raw: str) -> list[Surface]:
     return cast(list[Surface], chosen)
 
 
+def _metrics(raw: str) -> list[str]:
+    chosen = _csv(raw)
+    unknown = set(chosen) - set(METRICS)
+    if unknown or not chosen:
+        raise argparse.ArgumentTypeError(f"metrics must be a subset of {', '.join(METRICS)}")
+    return chosen
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sift-eval", description="Evaluate Condense quality")
     parser.add_argument("--env-file", type=Path, help="config file (default: ./.env)")
@@ -61,6 +70,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     judge = sub.add_parser("judge", help="re-score an existing run with the current judge")
     judge.add_argument("run_dir", type=Path)
+    judge.add_argument(
+        "--metrics", type=_metrics, default=[], help="only these; keep the other scores (D84)"
+    )
 
     comp = sub.add_parser("compare", help="diff two runs' summaries (B relative to A)")
     comp.add_argument("run_a", type=Path)
@@ -118,7 +130,7 @@ async def _dispatch(args: argparse.Namespace) -> int:
         print(_headline(run_dir))
         return 0
     if args.command == "judge":
-        await runner.rejudge(args.run_dir, app, es, progress=_progress)
+        await runner.rejudge(args.run_dir, app, es, progress=_progress, metrics=args.metrics)
         print(_headline(args.run_dir))
         return 0
     if args.command == "validate":

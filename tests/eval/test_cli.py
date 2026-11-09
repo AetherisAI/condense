@@ -123,6 +123,47 @@ async def test_rejudge_rescores_and_compare_diffs(
     assert "find.retrieval.final.doc.complete@1" in table
 
 
+async def test_rejudge_with_metrics_keeps_every_other_score(
+    container: Container, golden: Path, tmp_path: Path
+) -> None:
+    es = EvalSettings(warmup=0)
+    first = await run(
+        golden,
+        container.settings,
+        es,
+        surfaces=["find"],
+        out_dir=tmp_path,
+        label="a",
+        judges=(FakeJudge({"answer_recall": 0.0}), AbstentionCheck(FakeCompleter("NO"))),
+        container=container,
+    )
+    judge = FakeJudge({"answer_recall": 1.0, "faithfulness": 0.1})
+
+    after = await rejudge(
+        first,
+        container.settings,
+        es,
+        judges=(judge, AbstentionCheck(FakeCompleter("YES"))),
+        metrics=["answer_recall"],
+    )
+
+    answer = after["surfaces"]["find"]["answer"]
+    assert answer["answer_recall"]["mean"] == 1.0
+    assert answer["faithfulness"]["mean"] == 0.5  # the first judge's score, not re-scored
+    assert {metric for metric, _ in judge.calls} == {"answer_recall"}
+    # Abstention isn't re-asked either: still the first run's "NO".
+    assert after["surfaces"]["find"]["abstention"]["correct_abstention"]["mean"] == 0.0
+    config = json.loads((first / "config.json").read_text())
+    assert config["rejudged_metrics"] == ["answer_recall"]
+
+
+def test_judge_rejects_unknown_metrics(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        main(["judge", "eval-runs/x", "--metrics", "answer_recal"])
+
+    assert "metrics must be a subset of" in capsys.readouterr().err
+
+
 def test_compare_warns_when_the_golden_set_changed() -> None:
     def summary(sha: str, n: int) -> dict[str, object]:
         return {

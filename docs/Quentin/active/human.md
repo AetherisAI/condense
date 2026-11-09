@@ -24,10 +24,10 @@ JSON + HTML report; `compare` diffs two runs.
 - **D75:** gold relevance is keyed by **path (+ optional page, + optional evidence quote)**, not
   chunk IDs, so a golden set survives re-chunking.
 - **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
-  `(file.md, p.1)` as an unsupported claim (live: 0.5 → 1.0 on a correct answer). Stored answers
-  stay verbatim.
+  `(file.md, p.1)` as an unsupported claim. Stored answers stay verbatim.
 - **D77:** **answer recall** joins answer correctness, an F1 that also charges for true details
-  the reference omits. References now hold only what the question asks.
+  the reference omits. References now hold only what the question asks. **D84:** we compute
+  recall ourselves; RAGAS's recall mode scored correct answers 0 under a strict judge.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
   `complete@k` asks if all were found. `compare` warns when the set changed.
 - **D79–D82:** LLM client **retries 429/502/503/504** (~1 min backoff); judge retries 10×,
@@ -46,7 +46,7 @@ JSON + HTML report; `compare` diffs two runs.
   per metric. Use a strong judge, ideally not the generator (the report warns).
 - Latency is in-process (no HTTP/auth) and includes any rate-limit backoff.
 - Bootstrapped questions copy chunk wording (flatters retrieval). Rewrite them.
-- `factory.py` is a shared seam, so the change is flagged to Arthur in the channel.
+- `factory.py` changes are flagged to Arthur.
 
 ## Status / next action
 - MITRE eval done (332 items; `machine.md` §5). A Mistral Small reranker broke
