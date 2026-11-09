@@ -64,6 +64,15 @@ EVAL_JUDGE_API_KEY=...
 # EVAL_EMBED_*  defaults to EMBED_* (used by answer relevancy / correctness)
 ```
 
+For a Claude judge, use the native SDK. Anthropic's OpenAI-compatible endpoint rejects the
+JSON mode and the `temperature`/`top_p` values RAGAS sends (D82):
+
+```bash
+EVAL_JUDGE_PROVIDER=anthropic
+EVAL_JUDGE_BASE_URL=https://api.anthropic.com/v1
+EVAL_JUDGE_MODEL=claude-haiku-5-5
+```
+
 **Use a judge stronger than, and different from, the generator.** Models grade their own
 answers generously, and the report warns when the judge and the generator are the same model.
 Small local models often return output RAGAS can't parse. Those scores show up as `failed`

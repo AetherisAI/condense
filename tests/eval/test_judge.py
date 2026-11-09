@@ -174,6 +174,31 @@ async def test_ragas_judge_failure_or_nan_is_none(value: float | Exception) -> N
     assert await judge.score(sample, "faithfulness") is None
 
 
+def test_ragas_judge_anthropic_provider_sends_no_sampling_params() -> None:
+    # D82: Claude Haiku 5.5 rejects `temperature` and `top_p` (RAGAS sends 0.01 / 0.1), and
+    # the OpenAI-compatible endpoint rejects the JSON mode RAGAS uses — so Anthropic judges go
+    # through the native SDK (structured output via tool use) with both params dropped.
+    pytest.importorskip("ragas")
+    pytest.importorskip("anthropic")
+    from sift.eval.ragas_judge import RagasJudge
+
+    judge = RagasJudge(
+        base_url="https://api.anthropic.com/v1",
+        model="claude-haiku-5-5",
+        api_key="k",
+        embed_base_url="http://embed.invalid/v1",
+        embed_model="bge-m3",
+        embed_api_key="",
+        provider="anthropic",
+    )
+
+    llm = judge._metrics["faithfulness"].llm
+    assert llm.provider == "anthropic"
+    assert llm.model_args == {"max_tokens": 4096}
+    # The OpenAI-compatible URL (used by the abstention check) minus `/v1` is the SDK's root.
+    assert str(llm.client.client.base_url).rstrip("/") == "https://api.anthropic.com"
+
+
 def test_ragas_judge_requires_a_judge_model() -> None:
     pytest.importorskip("ragas")
     from sift.eval.ragas_judge import RagasJudge

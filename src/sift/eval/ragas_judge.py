@@ -1,17 +1,17 @@
 """RAGAS 0.4 collections metrics behind the :class:`~sift.eval.judge.Judge` protocol (D74).
 
-``ragas`` and ``openai`` are imported lazily, inside :class:`RagasJudge` only — they come from
-the optional ``[eval]`` extra, so the base install, CI, and the frozen engine bundle never load
-them. Any OpenAI-compatible endpoint works for both the judge LLM and the embeddings
-``AnswerRelevancy``/``AnswerCorrectness`` need: each gets its own ``AsyncOpenAI`` client at a
-custom ``base_url``.
+``ragas``, ``openai`` and ``anthropic`` are imported lazily, inside :class:`RagasJudge` only —
+they come from the optional ``[eval]`` extra, so the base install, CI, and the frozen engine
+bundle never load them. Any OpenAI-compatible endpoint works for both the judge LLM and the
+embeddings ``AnswerRelevancy``/``AnswerCorrectness`` need: each gets its own ``AsyncOpenAI``
+client at a custom ``base_url``. Claude judges use the native Anthropic SDK instead (D82).
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Literal
 
 from sift.eval.judge import METRICS, JudgeSample
 
@@ -65,6 +65,7 @@ class RagasJudge:
         embed_model: str,
         embed_api_key: str,
         metrics: Sequence[str] = METRICS,
+        provider: Literal["openai", "anthropic"] = "openai",
     ) -> None:
         try:
             import ragas  # pyright: ignore[reportMissingImports]
@@ -84,14 +85,37 @@ class RagasJudge:
         # Local OpenAI-compatible servers (Ollama, llama.cpp) take any key; the client insists
         # on a non-empty one. The SDK's default 2 retries (~1.5 s) can't outlast a hosted judge's
         # per-minute rate-limit window; 10 retries back off for ~1 min (D79). RAGAS's default
-        # 1024 output tokens truncates the claim lists of long answers (D80).
-        llm = llm_factory(
-            model,
-            client=AsyncOpenAI(
-                base_url=base_url, api_key=api_key or "none", max_retries=_JUDGE_MAX_RETRIES
-            ),
-            max_tokens=_JUDGE_MAX_TOKENS,
-        )
+        # 1024 output tokens truncates the claim lists of long answers (D80). `Any`:
+        # `llm_factory` is typed as the abstract base; `model_args` lives on what it returns.
+        llm: Any
+        if provider == "anthropic":
+            try:
+                from anthropic import AsyncAnthropic  # pyright: ignore[reportMissingImports]
+            except ImportError as exc:
+                raise RuntimeError(_INSTALL_HINT) from exc
+            # One EVAL_JUDGE_BASE_URL serves both: the abstention check calls Anthropic's
+            # OpenAI-compatible `/v1`, the SDK wants the root and appends `/v1/messages` itself.
+            llm = llm_factory(
+                model,
+                provider="anthropic",
+                client=AsyncAnthropic(
+                    base_url=base_url.rstrip("/").removesuffix("/v1"),
+                    api_key=api_key,
+                    max_retries=_JUDGE_MAX_RETRIES,
+                ),
+                max_tokens=_JUDGE_MAX_TOKENS,
+            )
+            # Current Claude models reject `temperature` and `top_p` outright (D82).
+            llm.model_args.pop("temperature", None)
+            llm.model_args.pop("top_p", None)
+        else:
+            llm = llm_factory(
+                model,
+                client=AsyncOpenAI(
+                    base_url=base_url, api_key=api_key or "none", max_retries=_JUDGE_MAX_RETRIES
+                ),
+                max_tokens=_JUDGE_MAX_TOKENS,
+            )
         # `Any`: ragas's own embedding unions don't line up with each metric's parameter type,
         # and in CI (no [eval] extra) these names don't resolve at all.
         embeddings: Any = None

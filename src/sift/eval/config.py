@@ -45,6 +45,8 @@ class EvalSettings(BaseSettings):
     judge_base_url: str = ""
     judge_model: str = ""
     judge_api_key: str = ""
+    # "anthropic": RAGAS drives Claude through the native SDK, with no sampling params (D82).
+    judge_provider: Literal["openai", "anthropic"] = "openai"
     judge_concurrency: int = Field(default=4, ge=1)
     embed_base_url: str = ""
     embed_model: str = ""
@@ -87,13 +89,15 @@ class EvalSettings(BaseSettings):
 
     def judge_settings(self, app: Settings) -> Settings:
         """``app`` with ``LLM_*`` swapped for the judge's — the input to ``build_completer``."""
-        return app.model_copy(
-            update={
-                "llm_base_url": self.judge_base_url or app.llm_base_url,
-                "llm_model": self.judge_model or app.llm_model,
-                "llm_api_key": self.judge_api_key or app.llm_api_key,
-            }
-        )
+        update: dict[str, Any] = {
+            "llm_base_url": self.judge_base_url or app.llm_base_url,
+            "llm_model": self.judge_model or app.llm_model,
+            "llm_api_key": self.judge_api_key or app.llm_api_key,
+        }
+        if self.judge_provider == "anthropic":
+            # The completer reuses the recap's temperature, which Claude rejects (D81, D82).
+            update["recap_temperature"] = None
+        return app.model_copy(update=update)
 
     def judge_model_name(self, app: Settings) -> str:
         return self.judge_model or app.llm_model or ""

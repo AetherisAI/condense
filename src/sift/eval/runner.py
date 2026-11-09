@@ -105,6 +105,7 @@ def build_judges(app: Settings, es: EvalSettings) -> tuple[Judge, AbstentionChec
         embed_base_url=embed_url,
         embed_model=embed_model,
         embed_api_key=embed_key,
+        provider=es.judge_provider,
     )
     return judge, AbstentionCheck(build_completer(judge_app))
 

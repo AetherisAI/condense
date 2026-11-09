@@ -4,7 +4,7 @@
 
 > **≤500 words. Decision-first.** The fast read; full detail in `machine.md`.
 
-**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-08
+**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-09
 
 ## What & why
 Condense had no way to measure quality: every tuning change (chunk size, rerank, RETRIEVE_K, LLM)
@@ -30,14 +30,14 @@ JSON + HTML report; `compare` diffs two runs.
   the reference omits. References now hold only what the question asks.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
   `complete@k` asks if all were found. `compare` warns when the set changed.
-- **D79/D80:** LLM client **retries 429/502/503/504** (~1 min backoff); judge retries 10×,
-  4096 output tokens. **D81:** blank `RECAP_TEMPERATURE` sends none (Haiku 5.5 rejects it).
+- **D79–D82:** LLM client **retries 429/502/503/504** (~1 min backoff); judge retries 10×,
+  4096 output tokens. Haiku 5.5 rejects sampling params: blank `RECAP_TEMPERATURE` sends none;
+  `EVAL_JUDGE_PROVIDER=anthropic` uses its SDK.
 
 ## Ports / interfaces touched
 - No `core/` changes.
-- `SearchPipeline` gains an additive `trace()`, which returns the raw retrieval list, the
-  reranked list, the recap context and per-stage timings, plus a public `recap()`. `search()` is a
-  thin wrapper with identical behavior.
+- `SearchPipeline` gains an additive `trace()` (raw retrieval, reranked list, recap context,
+  stage timings) and a public `recap()`. `search()` is a thin wrapper, behavior unchanged.
 - `factory.build_container(..., ephemeral_conversations=False)`: Ask eval runs don't touch real
   chat history. `factory.build_completer()` is now public, for the judge LLM.
 
