@@ -7,11 +7,10 @@
 **Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-10
 
 ## What & why
-Condense had no way to measure quality: every tuning change (chunk size, rerank, RETRIEVE_K, LLM)
-was judged by eye. `sift-eval` scores Find (`/search`) and Ask (`/v1/answer`) against a golden
-set: recall/precision@k, hit@k, MRR, answer relevancy, faithfulness, answer correctness and
-recall, context utilization, noise robustness, abstention, per-stage latency. Each run writes a
-JSON + HTML report; `compare` diffs two runs.
+Every tuning change (chunk size, rerank, RETRIEVE_K, LLM) was judged by eye. `sift-eval` scores
+Find (`/search`) and Ask (`/v1/answer`) against a golden set: retrieval (recall/precision@k,
+hit@k, MRR), LLM-judged answer quality, noise robustness, abstention, per-stage latency. Each
+run writes a JSON + HTML report; `compare` diffs two runs.
 
 ## Key decisions
 - **D73:** a **CLI, not an app feature**. It runs the real pipeline in-process through
@@ -20,7 +19,7 @@ JSON + HTML report; `compare` diffs two runs.
   never imports `sift.eval`.
 - **D74:** LLM-judged metrics use **RAGAS 0.4 (collections API)** as an optional `[eval]` extra
   behind a small `Judge` protocol (`FakeJudge` in tests). `langchain-community<0.4` is pinned
-  because RAGAS 0.4.3 won't import against 0.4.x.
+  (RAGAS 0.4.3 breaks on 0.4.x).
 - **D75:** gold relevance is keyed by **path (+ optional page, + optional evidence quote)**, not
   chunk IDs, so a golden set survives re-chunking.
 - **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
@@ -31,9 +30,8 @@ JSON + HTML report; `compare` diffs two runs.
   references wrong.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
   `complete@k` asks if all were found. `compare` warns when the set changed.
-- **D79–D82:** LLM client **retries 429/502/503/504** (~1 min backoff); judge retries 10×,
-  4096 output tokens. Haiku 5.5 rejects sampling params: blank `RECAP_TEMPERATURE` sends none;
-  `EVAL_JUDGE_PROVIDER=anthropic` uses its SDK.
+- **D79–D82:** LLM client **retries 429/502/503/504**; judge retries 10×, 4096 output tokens.
+  Claude rejects sampling params: blank `RECAP_TEMPERATURE` sends none; Claude judges use its SDK.
 
 ## Ports / interfaces touched
 - No `core/` changes.
@@ -43,8 +41,8 @@ JSON + HTML report; `compare` diffs two runs.
   chat history. `factory.build_completer()` is now public, for the judge LLM.
 
 ## Risks / open questions
-- Small local judges often fail RAGAS's structured output; failures count as `None`, reported
-  per metric. Use a strong judge, ideally not the generator (the report warns).
+- Weak judges fail RAGAS's structured output; failures count as `None`, reported per metric.
+  Use a strong judge, not the generator (the report warns).
 - Latency is in-process (no HTTP/auth) and includes any rate-limit backoff.
 - Bootstrapped questions copy chunk wording (flatters retrieval). Rewrite them.
 - `factory.py` changes are flagged to Arthur.
@@ -53,6 +51,8 @@ JSON + HTML report; `compare` diffs two runs.
 - MITRE eval done (332 items; `machine.md` §5). Top-1 over 306 answerable: none 0.69,
   Haiku 5.5 0.84, the bge-reranker-v2-m3 cross-encoder 0.82 (a tie; no LLM, but ~46 s/query
   on CPU). Find answered 12 of 26 unanswerable items.
+- A Haiku 5.5 re-judge matches Mistral's means within 0.11 after D84–D85, except faithfulness
+  (Haiku 0.09–0.14 stricter; right in 3 of 4 hand checks).
 - hit@k, R@k, MRR: oracle-tested (`machine.md` §4).
 
 ## Pointer
