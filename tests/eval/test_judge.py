@@ -14,7 +14,7 @@ from sift.eval.judge import (
     judge_results,
     strip_citations,
 )
-from sift.eval.ragas_judge import _ReferenceRecall
+from sift.eval.ragas_judge import _AnchoredNoiseSensitivity, _ReferenceRecall
 from sift.eval.records import Passage, SurfaceResult
 
 ANSWERABLE = GoldenItem(id="a", question="How long?", reference="Two days.")
@@ -139,6 +139,7 @@ def test_ragas_judge_builds_every_metric_without_network() -> None:
     }
     assert judge.name.startswith("ragas 0.4")
     assert isinstance(judge._metrics["answer_recall"], _ReferenceRecall)
+    assert isinstance(judge._metrics["noise_sensitivity"], _AnchoredNoiseSensitivity)
 
 
 async def test_ragas_judge_maps_sample_onto_ascore_kwargs() -> None:
@@ -195,6 +196,59 @@ async def test_answer_recall_with_no_reference_claims_is_none() -> None:
 
     sample = JudgeSample(question="q", response="r", reference="ref")
     assert await judge.score(sample, "answer_recall") is None
+
+
+class _StubNoiseSensitivity:
+    """``supports`` holds the (premise, statement) pairs the NLI judge accepts."""
+
+    def __init__(self, statements: dict[str, list[str]], supports: set[tuple[str, str]]) -> None:
+        self.statements = statements
+        self.supports = supports
+        self.premises: list[str] = []
+
+    async def _decompose_answer_into_statements(self, text: str, question: str) -> list[str]:
+        return self.statements[text]
+
+    async def _evaluate_statement_faithfulness(
+        self, statements: list[str], context: str
+    ) -> list[int]:
+        self.premises.append(context)
+        return [int((context, s) in self.supports) for s in statements]
+
+
+async def test_noise_sensitivity_counts_relevant_grounded_claims_the_reference_lacks() -> None:
+    q, ref = "Which incident cut heating?", "FrostyGoop (C0041)."
+    stub = _StubNoiseSensitivity(
+        {ref: ["G"], "resp": ["right", "misled", "off-topic"]},
+        {
+            ("gold", "G"),
+            ("gold", "right"),
+            ("gold", "misled"),
+            ("noise", "off-topic"),  # backed only by a passage that supports no reference claim
+            (f"Question: {q}\nAnswer: {ref}", "right"),
+        },
+    )
+
+    result = await _AnchoredNoiseSensitivity(stub).ascore(
+        user_input=q, response="resp", reference=ref, retrieved_contexts=["gold", "noise"]
+    )
+
+    assert result.value == pytest.approx(1 / 3)  # only "misled"
+    # D85: correctness is judged against the question + reference, never the bare reference.
+    assert ref not in stub.premises
+
+
+@pytest.mark.parametrize("statements", [{"ref": [], "r": ["a"]}, {"ref": ["G"], "r": []}])
+async def test_noise_sensitivity_without_statements_is_none(
+    statements: dict[str, list[str]],
+) -> None:
+    judge = _ragas_judge()
+    judge._metrics["noise_sensitivity"] = _AnchoredNoiseSensitivity(
+        _StubNoiseSensitivity(statements, set())
+    )
+
+    sample = JudgeSample(question="q", response="r", contexts=("c",), reference="ref")
+    assert await judge.score(sample, "noise_sensitivity") is None
 
 
 @pytest.mark.parametrize("value", [ValueError("unparseable judge output"), float("nan")])

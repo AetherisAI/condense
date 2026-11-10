@@ -14,7 +14,9 @@ answer loses points both for reference facts it misses *and* for true details th
 doesn't list, so it moves with verbosity. ``answer_recall`` asks only whether the answer
 contains the reference's facts — with a reference that holds just what the question asks, that's
 "did it answer correctly", whatever else it adds. Unsupported extras are faithfulness's job. It
-reuses RAGAS ``FactualCorrectness``'s prompts but not its recall arithmetic (D84).
+reuses RAGAS ``FactualCorrectness``'s prompts but not its recall arithmetic (D84). Likewise,
+``noise_sensitivity`` judges a claim correct against the question + reference, not the bare
+reference (D85).
 
 Separately, :class:`AbstentionCheck` asks the judge LLM whether a response declined to answer,
 recorded as ``abstained`` (1.0/0.0) on every result: on ``answerable: false`` items that's the

@@ -73,6 +73,44 @@ class _ReferenceRecall:
         return SimpleNamespace(value=value)  # duck-types RAGAS's MetricResult
 
 
+class _AnchoredNoiseSensitivity:
+    """RAGAS ``NoiseSensitivity(mode="relevant")``, the reference read as an answer (D85).
+
+    The score is the share of the response's statements that a *relevant* passage (one
+    supporting a reference statement) backs but the reference doesn't. RAGAS writes those
+    statements to stand alone, so they restate the question ("In the FrostyGoop Incident,
+    attackers cut heating to Ukrainian civilians…"), then checks them against the bare
+    reference ("The FrostyGoop Incident (C0041).") — which supports none of the restated
+    question: correct, grounded answers scored 1.0, the worst. The premise here is
+    ``Question: …\\nAnswer: <reference>``; the arithmetic is RAGAS's.
+    """
+
+    def __init__(self, metric: Any) -> None:
+        self._metric = metric
+
+    async def ascore(
+        self, *, user_input: str, response: str, reference: str, retrieved_contexts: list[str]
+    ) -> Any:
+        # Private, but pinned by ragas<0.5: statement splitting and per-statement NLI verdicts.
+        m = self._metric
+        reference_statements = await m._decompose_answer_into_statements(reference, user_input)
+        statements = await m._decompose_answer_into_statements(response, user_input)
+        if not reference_statements or not statements:
+            return SimpleNamespace(value=float("nan"))
+        grounded = [False] * len(statements)
+        for context in retrieved_contexts:
+            if not any(await m._evaluate_statement_faithfulness(reference_statements, context)):
+                continue  # an irrelevant passage: what it backs isn't counted
+            verdicts = await m._evaluate_statement_faithfulness(statements, context)
+            grounded = [g or bool(v) for g, v in zip(grounded, verdicts, strict=True)]
+        if not any(grounded):
+            return SimpleNamespace(value=0.0)
+        premise = f"Question: {user_input}\nAnswer: {reference}"
+        correct = await m._evaluate_statement_faithfulness(statements, premise)
+        wrong = [g and not c for g, c in zip(grounded, correct, strict=True)]
+        return SimpleNamespace(value=sum(wrong) / len(wrong))
+
+
 class RagasJudge:
     """Scores one sample × metric with RAGAS; a failed metric is ``None``, never an exception."""
 
@@ -158,7 +196,11 @@ class RagasJudge:
                 collections.FactualCorrectness(llm=llm, mode="recall")
             ),
             "context_utilization": lambda: collections.ContextUtilization(llm=llm),
-            "noise_sensitivity": lambda: collections.NoiseSensitivity(llm=llm, mode="relevant"),
+            # Wrong claims a relevant passage led to; correctness is judged against the
+            # question + reference, not the bare reference (D85).
+            "noise_sensitivity": lambda: _AnchoredNoiseSensitivity(
+                collections.NoiseSensitivity(llm=llm, mode="relevant")
+            ),
         }
         # AnswerCorrectness's similarity term (weight 0.25) needs embeddings too; without them
         # its constructor raises, so skip it like answer relevancy instead of crashing the run.

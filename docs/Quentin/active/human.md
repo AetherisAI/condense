@@ -4,7 +4,7 @@
 
 > **≤500 words. Decision-first.** The fast read; full detail in `machine.md`.
 
-**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-09
+**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-10
 
 ## What & why
 Condense had no way to measure quality: every tuning change (chunk size, rerank, RETRIEVE_K, LLM)
@@ -26,8 +26,9 @@ JSON + HTML report; `compare` diffs two runs.
 - **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
   `(file.md, p.1)` as an unsupported claim. Stored answers stay verbatim.
 - **D77:** **answer recall** joins answer correctness, an F1 that also charges for true details
-  the reference omits. References now hold only what the question asks. **D84:** we compute
-  recall ourselves; RAGAS's recall mode scored correct answers 0 under a strict judge.
+  the reference omits. References now hold only what the question asks. **D84–D85:** we fix
+  RAGAS's recall and noise-sensitivity scoring, which marked correct answers to terse
+  references wrong.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
   `complete@k` asks if all were found. `compare` warns when the set changed.
 - **D79–D82:** LLM client **retries 429/502/503/504** (~1 min backoff); judge retries 10×,
