@@ -50,9 +50,9 @@ JSON + HTML report; `compare` diffs two runs.
 - `factory.py` changes are flagged to Arthur.
 
 ## Status / next action
-- MITRE eval done (332 items; `machine.md` §5). Base top-1, none 0.78 → reranked by
-  Mistral Small 0.62, Haiku 5.5 0.89, the bge-reranker-v2-m3 cross-encoder 0.87 (no LLM;
-  ~46 s/query on CPU). Find answered 12 of 26 unanswerable items.
+- MITRE eval done (332 items; `machine.md` §5). Top-1 over 306 answerable: none 0.69,
+  Haiku 5.5 0.84, the bge-reranker-v2-m3 cross-encoder 0.82 (a tie; no LLM, but ~46 s/query
+  on CPU). Find answered 12 of 26 unanswerable items.
 - hit@k, R@k, MRR: oracle-tested (`machine.md` §4).
 
 ## Pointer
