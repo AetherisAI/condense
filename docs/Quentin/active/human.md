@@ -7,7 +7,7 @@
 **Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-15
 
 ## What & why
-Tuning changes (chunking, rerank, RETRIEVE_K, LLM) were judged by eye. `sift-eval` scores
+Tuning changes were judged by eye. `sift-eval` scores
 Find (`/search`) and Ask (`/v1/answer`) against a golden set: retrieval (recall/precision@k,
 hit@k, MRR), LLM-judged answer quality, noise robustness, abstention, per-stage latency. Each
 run writes a JSON + HTML report; `compare` diffs two runs.
@@ -23,7 +23,7 @@ run writes a JSON + HTML report; `compare` diffs two runs.
 - **D75:** gold relevance is keyed by **path (+ optional page, + optional evidence quote)**, not
   chunk IDs, so a golden set survives re-chunking.
 - **D76:** the judge scores answers with **inline citations stripped**, because RAGAS counted
-  `(file.md, p.1)` as an unsupported claim. Stored answers stay verbatim.
+  `(file.md, p.1)` as an unsupported claim.
 - **D77:** **answer recall** joins answer correctness, an F1 that also charges for true details
   the reference omits. References now hold only what the question asks. **D84–D85:** we fix
   RAGAS's recall and noise-sensitivity scoring, which marked correct answers to terse
@@ -38,7 +38,7 @@ run writes a JSON + HTML report; `compare` diffs two runs.
 - **D86:** `EMBED_QUERY_PREFIX` / `EMBED_DOCUMENT_PREFIX`; `factory.py` builds one embedder
   per role, so instruction-tuned embedders (Qwen3) compare fairly with bge-m3.
 - `SearchPipeline` gains an additive `trace()` (raw retrieval, reranked list, recap context,
-  stage timings) and a public `recap()`. `search()` is a thin wrapper, behavior unchanged.
+  stage timings) and a public `recap()`; `search()` is unchanged.
 - `factory.build_container(..., ephemeral_conversations=False)`: Ask eval runs don't touch real
   chat history. `factory.build_completer()` is now public, for the judge LLM.
 
@@ -51,10 +51,12 @@ run writes a JSON + HTML report; `compare` diffs two runs.
 
 ## Status / next action
 - MITRE eval done (332 items; `machine.md` §5). Top-1 over 306 answerable: none 0.69,
-  Haiku 5.5 0.84, the bge-reranker-v2-m3 cross-encoder 0.82 (a tie; no LLM, but ~46 s/query
-  on CPU). Find answered 12 of 26 unanswerable items.
-- A Haiku 5.5 re-judge matches Mistral's means within 0.11 after D84–D85, except faithfulness
-  (Haiku 0.09–0.14 stricter; right in 3 of 4 hand checks).
+  Haiku 5.5 0.84, the bge-reranker-v2-m3 cross-encoder 0.82 (a tie; ~46 s/query on CPU).
+  Find answered 12 of 26 unanswerable items.
+- A Haiku 5.5 re-judge matches Mistral's means within 0.11, except faithfulness (Haiku
+  stricter, mostly rightly).
+- Embedders: Qwen3-Embedding-0.6B ties bge-m3 on top-1 (0.68 vs 0.69) but loses top-30
+  coverage (0.92 vs 0.97), missing exact-ID lookups. Keep bge-m3.
 - Retrieval metrics are oracle-tested (`machine.md` §4).
 
 ## Pointer
