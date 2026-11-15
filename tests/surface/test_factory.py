@@ -97,6 +97,39 @@ def test_embedder_wired_with_configured_batch_size_and_timeouts() -> None:
     assert embedder._timeout.connect == 2.0
 
 
+def test_query_and_document_prefixes_reach_the_right_embedders(tmp_path) -> None:
+    # D86: queries (search + the toolbox's `search` tool) get EMBED_QUERY_PREFIX, ingested
+    # chunks get EMBED_DOCUMENT_PREFIX — asymmetric prompts for instruction-tuned embedders.
+    settings = Settings(
+        ingest_token="t",
+        embed_base_url="http://embed.local/v1",
+        embed_query_prefix="Instruct: find\nQuery:",
+        embed_document_prefix="passage: ",
+        store_backend="libsql",
+        turso_database_url=str(tmp_path / "sift.db"),
+    )
+
+    container = build_container(settings)
+
+    search_embedder = container.search._embedder
+    tool_spec = container.tools.get("search")
+    assert tool_spec is not None
+    tool_embedder = tool_spec.executor.args[0]  # pyright: ignore[reportFunctionMemberAccess]
+    ingest_embedder = container.ingest._embedder  # pyright: ignore[reportAttributeAccessIssue]
+    assert isinstance(search_embedder, OpenAICompatEmbedder)
+    assert isinstance(ingest_embedder, OpenAICompatEmbedder)
+    assert search_embedder._prefix == "Instruct: find\nQuery:"
+    assert tool_embedder is search_embedder
+    assert ingest_embedder._prefix == "passage: "
+
+
+def test_prefixes_default_to_empty() -> None:
+    settings = Settings(ingest_token="t")
+
+    assert settings.embed_query_prefix == ""
+    assert settings.embed_document_prefix == ""
+
+
 def test_ocr_adapter_wired_with_configured_timeouts(tmp_path) -> None:
     settings = Settings(
         ingest_token="t",

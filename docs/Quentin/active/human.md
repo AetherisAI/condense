@@ -4,18 +4,18 @@
 
 > **≤500 words. Decision-first.** The fast read; full detail in `machine.md`.
 
-**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-10
+**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-15
 
 ## What & why
-Every tuning change (chunk size, rerank, RETRIEVE_K, LLM) was judged by eye. `sift-eval` scores
+Tuning changes (chunking, rerank, RETRIEVE_K, LLM) were judged by eye. `sift-eval` scores
 Find (`/search`) and Ask (`/v1/answer`) against a golden set: retrieval (recall/precision@k,
 hit@k, MRR), LLM-judged answer quality, noise robustness, abstention, per-stage latency. Each
 run writes a JSON + HTML report; `compare` diffs two runs.
 
 ## Key decisions
-- **D73:** a **CLI, not an app feature**. It runs the real pipeline in-process through
-  `factory.build_container`, because `/search` returns only FINAL_K=1, and recall@k, stage
-  timings and noise injection need internals. Own `EvalSettings` (`EVAL_*`); product code
+- **D73:** a **CLI, not an app feature**. It runs the real pipeline in-process
+  (`factory.build_container`): `/search` returns only FINAL_K=1, and recall@k, stage timings
+  and noise injection need internals. Own `EvalSettings` (`EVAL_*`); product code
   never imports `sift.eval`.
 - **D74:** LLM-judged metrics use **RAGAS 0.4 (collections API)** as an optional `[eval]` extra
   behind a small `Judge` protocol (`FakeJudge` in tests). `langchain-community<0.4` is pinned
@@ -29,22 +29,24 @@ run writes a JSON + HTML report; `compare` diffs two runs.
   RAGAS's recall and noise-sensitivity scoring, which marked correct answers to terse
   references wrong.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
-  `complete@k` asks if all were found. `compare` warns when the set changed.
-- **D79–D82:** LLM client **retries 429/502/503/504**; judge retries 10×, 4096 output tokens.
-  Claude rejects sampling params: blank `RECAP_TEMPERATURE` sends none; Claude judges use its SDK.
+  `complete@k` asks if all were found.
+- **D79–D82:** LLM client and judge **retry transient errors**; judge gets 4096 output tokens.
+  Claude: blank `RECAP_TEMPERATURE` sends no sampling params; Claude judges use its SDK.
 
 ## Ports / interfaces touched
 - No `core/` changes.
+- **D86:** `EMBED_QUERY_PREFIX` / `EMBED_DOCUMENT_PREFIX`; `factory.py` builds one embedder
+  per role, so instruction-tuned embedders (Qwen3) compare fairly with bge-m3.
 - `SearchPipeline` gains an additive `trace()` (raw retrieval, reranked list, recap context,
   stage timings) and a public `recap()`. `search()` is a thin wrapper, behavior unchanged.
 - `factory.build_container(..., ephemeral_conversations=False)`: Ask eval runs don't touch real
   chat history. `factory.build_completer()` is now public, for the judge LLM.
 
 ## Risks / open questions
-- Weak judges fail RAGAS's structured output; failures count as `None`, reported per metric.
-  Use a strong judge, not the generator (the report warns).
-- Latency is in-process (no HTTP/auth) and includes any rate-limit backoff.
-- Bootstrapped questions copy chunk wording (flatters retrieval). Rewrite them.
+- Weak judges fail RAGAS's structured output (counted `None`, reported). Use a strong judge,
+  not the generator.
+- Latency is in-process (no HTTP/auth), including rate-limit backoff.
+- Bootstrapped questions copy chunk wording, which flatters retrieval.
 - `factory.py` changes are flagged to Arthur.
 
 ## Status / next action
@@ -53,7 +55,7 @@ run writes a JSON + HTML report; `compare` diffs two runs.
   on CPU). Find answered 12 of 26 unanswerable items.
 - A Haiku 5.5 re-judge matches Mistral's means within 0.11 after D84–D85, except faithfulness
   (Haiku 0.09–0.14 stricter; right in 3 of 4 hand checks).
-- hit@k, R@k, MRR: oracle-tested (`machine.md` §4).
+- Retrieval metrics are oracle-tested (`machine.md` §4).
 
 ## Pointer
 - Plan + code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)

@@ -234,3 +234,33 @@ async def test_non_429_error_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> 
         await embedder.embed(["alpha"])
 
     assert len(seen) == 1  # no retry on a non-429 failure
+
+
+async def test_prefix_is_prepended_to_every_input_in_every_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # D86: instruction-tuned embedders (Qwen3-Embedding, Nomic) expect a role prompt on each
+    # text; the adapter adds it so the pipelines keep calling `embed(texts)` unchanged.
+    seen = _patch_transport(monkeypatch, _ok)
+    embedder = OpenAICompatEmbedder(
+        base_url="http://emb/v1", model="qwen3", batch_size=2, prefix="Instruct: find\nQuery:"
+    )
+
+    await embedder.embed(["alpha", "beta", "gamma"])
+
+    assert [json.loads(r.content)["input"] for r in seen] == [
+        ["Instruct: find\nQuery:alpha", "Instruct: find\nQuery:beta"],
+        ["Instruct: find\nQuery:gamma"],
+    ]
+
+
+async def test_no_prefix_by_default_sends_texts_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _patch_transport(monkeypatch, _ok)
+    embedder = OpenAICompatEmbedder(base_url="http://emb/v1", model="bge-m3")
+
+    await embedder.embed(["alpha"])
+
+    (request,) = seen
+    assert json.loads(request.content)["input"] == ["alpha"]

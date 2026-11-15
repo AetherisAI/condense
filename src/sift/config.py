@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # ge=1: a 0-attempt budget isn't "no retry", it's a config value the embedder's retry loop
     # can't handle (D36 — reached an ``AssertionError`` mid-request instead of failing fast here).
     embed_retry_attempts: int = Field(default=3, ge=1)
+    # Asymmetric retrieval prompts (D86), prepended to each text before embedding: the query
+    # prefix to search queries (``/search`` and the toolbox's ``search`` tool), the document
+    # prefix to every ingested chunk. Empty for bge-m3. Changing the document prefix needs a
+    # re-ingest: stored vectors keep the old one and the model pin doesn't record it.
+    embed_query_prefix: str = ""
+    embed_document_prefix: str = ""
 
     rerank_strategy: Literal["none", "llm", "crossencoder"] = "none"
     rerank_base_url: str | None = None

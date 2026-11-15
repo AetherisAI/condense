@@ -10,6 +10,11 @@ loudly here rather than corrupting a base. One ``httpx.AsyncClient`` per call (n
 on ``/v1/embeddings`` — a batch with more inputs than free permits gets an instant 429 "Model is
 overloaded", which is retryable (not a real failure). A batch request is retried with a bounded,
 fixed backoff (0.5s/2s/8s) on HTTP 429 only; any other status still fails immediately.
+
+**Prefix (D86):** an optional ``prefix`` is prepended to every input text. Instruction-tuned
+embedders (Qwen3-Embedding, Nomic) want one prompt on queries and another (or none) on
+documents; ``factory.py`` builds one instance per role, so the ``Embedder`` port stays
+``embed(texts)``. Empty by default (bge-m3 embeds both sides as-is).
 """
 
 from __future__ import annotations
@@ -41,6 +46,7 @@ class OpenAICompatEmbedder:
         timeout_s: float = 60.0,
         connect_timeout_s: float = 5.0,
         retry_attempts: int = 3,
+        prefix: str = "",
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
@@ -56,6 +62,7 @@ class OpenAICompatEmbedder:
         # Total attempts (first try + retries) for a single batch's HTTP 429 — config-driven via
         # ``Settings.embed_retry_attempts``.
         self._retry_attempts = retry_attempts
+        self._prefix = prefix
 
     @property
     def dim(self) -> int:
@@ -63,7 +70,7 @@ class OpenAICompatEmbedder:
 
     async def embed(self, texts: Sequence[str]) -> list[Vector]:
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-        items = list(texts)
+        items = [self._prefix + text for text in texts]
         vectors: list[Vector] = []
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             for start in range(0, len(items), self._batch_size):

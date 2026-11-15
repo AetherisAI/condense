@@ -96,13 +96,15 @@ def build_container(settings: Settings, *, ephemeral_conversations: bool = False
     a Turso store is configured — the ``sift-eval`` harness drives the answer pipeline against
     the real corpus but must never write its throwaway turns into the user's chat history.
     """
-    embedder = _build_embedder(settings)
+    # One embedder per role (D86): queries and documents may need different prompt prefixes.
+    query_embedder = _build_embedder(settings, prefix=settings.embed_query_prefix)
+    document_embedder = _build_embedder(settings, prefix=settings.embed_document_prefix)
     store = _build_store(settings)
     completer = build_completer(settings)
     reranker = _build_reranker(settings, completer)
-    search = SearchPipeline(embedder, store, reranker, completer, settings)
-    ingest = _build_ingest(settings, embedder, store)
-    tools = build_tool_registry(embedder, store, settings)
+    search = SearchPipeline(query_embedder, store, reranker, completer, settings)
+    ingest = _build_ingest(settings, document_embedder, store)
+    tools = build_tool_registry(query_embedder, store, settings)
     auth_tokens = parse_auth_tokens(settings.auth_tokens)
     # Both `OpenAICompatCompleter` and `NullCompleter` implement `ToolCompleter` too (D40) — one
     # instance serves both the recap `Completer` port and the answer loop's `ToolCompleter` port,
@@ -133,7 +135,7 @@ def build_container(settings: Settings, *, ephemeral_conversations: bool = False
     )
 
 
-def _build_embedder(settings: Settings) -> Embedder:
+def _build_embedder(settings: Settings, *, prefix: str = "") -> Embedder:
     if settings.embed_base_url:
         return OpenAICompatEmbedder(
             settings.embed_base_url,
@@ -144,6 +146,7 @@ def _build_embedder(settings: Settings) -> Embedder:
             timeout_s=settings.embed_timeout_s,
             connect_timeout_s=settings.embed_connect_timeout_s,
             retry_attempts=settings.embed_retry_attempts,
+            prefix=prefix,
         )
     return FakeEmbedder(settings.embed_dim)
 
