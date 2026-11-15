@@ -54,9 +54,9 @@ run writes a JSON + HTML report; `compare` diffs two runs.
   Haiku 5.5 0.84, bge-reranker-v2-m3 cross-encoder 0.82 (a tie; ~46 s/query on CPU).
   Find answered 12 of 26 unanswerable items.
 - A Haiku 5.5 re-judge matches Mistral within 0.11, except faithfulness (Haiku stricter).
-- Embedders vs bge-m3 (top-1 0.69, top-30 0.97): Nomic-v2-MoE ties; Qwen3-0.6B loses top-30
-  (0.92); Qwen3-4B wins top-1 (0.74, paraphrases), top-30 0.95, 2× query cost. Fusing
-  bge-m3 + 4B (offline): 0.76 / 0.99.
+- Embedders, top-1/top-30 (bge-m3 0.69/0.97): Nomic-v2-MoE ties; Qwen3-0.6B 0.68/0.92 and
+  hosted mistral-embed 0.66/0.94 lose; Qwen3-4B 0.74/0.95 (paraphrases), 2× query cost.
+  bge-m3 + 4B fused (offline): 0.76/0.99.
 - Metrics oracle-tested (`machine.md` §4).
 
 ## Pointer
