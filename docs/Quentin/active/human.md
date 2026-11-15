@@ -45,19 +45,19 @@ run writes a JSON + HTML report; `compare` diffs two runs.
 ## Risks / open questions
 - Weak judges fail RAGAS's structured output (counted `None`, reported). Use a strong judge,
   not the generator.
-- Latency is in-process (no HTTP/auth), including rate-limit backoff.
+- Latency is in-process (no HTTP/auth), incl. backoff.
 - Bootstrapped questions copy chunk wording, which flatters retrieval.
-- `factory.py` changes are flagged to Arthur.
+- `factory.py` changes flagged to Arthur.
 
 ## Status / next action
 - MITRE eval done (332 items; `machine.md` §5). Top-1 over 306 answerable: none 0.69,
   Haiku 5.5 0.84, the bge-reranker-v2-m3 cross-encoder 0.82 (a tie; ~46 s/query on CPU).
   Find answered 12 of 26 unanswerable items.
 - A Haiku 5.5 re-judge matches Mistral's means within 0.11, except faithfulness (Haiku
-  stricter, mostly rightly).
-- Embedders: Qwen3-Embedding-0.6B ties bge-m3 on top-1 (0.68 vs 0.69) but loses top-30
-  coverage (0.92 vs 0.97), missing exact-ID lookups. Keep bge-m3.
-- Retrieval metrics are oracle-tested (`machine.md` §4).
+  stricter, rightly).
+- Embedders vs bge-m3 (top-1 0.69, top-30 0.97): Nomic v2 MoE ties on both; Qwen3-0.6B
+  ties on top-1 but loses top-30 coverage (0.92), missing exact-ID lookups. Keep bge-m3.
+- Metrics oracle-tested (`machine.md` §4).
 
 ## Pointer
 - Plan + code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)
