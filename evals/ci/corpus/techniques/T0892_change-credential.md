@@ -1,0 +1,38 @@
+# T0892 — Change Credential
+
+- **Type:** technique
+- **Domain:** ICS ATT&CK
+- **Tactics:** Inhibit Response Function
+- **Platforms:** Embedded, Windows, Linux, Network Devices
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T0892
+- **Last modified:** 2026-10-13
+
+## Description
+
+Adversaries may modify software and device credentials to prevent operator and responder access. Depending on the device, the modification or addition of this password could prevent any device configuration actions from being accomplished and may require a factory reset or replacement of hardware. These credentials are often built-in features provided by the device vendors as a means to restrict access to management interfaces.
+
+An adversary with access to valid or hardcoded credentials could change the credential to prevent future authorized device access. Change Credential may be especially damaging when paired with other techniques such as Modify Program, Data Destruction, or Modify Controller Tasking. In these cases, a device’s configuration may be destroyed or include malicious actions for the process environment, which cannot not be removed through normal device configuration actions. 
+
+Additionally, recovery of the device and original configuration may be difficult depending on the features provided by the device. In some cases, these passwords cannot be removed onsite and may require that the device be sent back to the vendor for additional recovery steps.
+
+A chain of incidents occurred in Germany, where adversaries locked operators out of their building automation system (BAS) controllers by enabling a previously unset BCU key.
+
+## Mitigations
+
+- **M0811 Redundancy of Service** — Retain cold-standby or replacement hardware of similar models to ensure continued operations of critical functions if the primary system is compromised or unavailable.
+- **M0927 Password Policies** — Applications and appliances that utilize default username and password should be changed immediately after the installation, and before deployment to a production environment.
+- **M0953 Data Backup** — Take and store data backups from end user systems and critical servers. Ensure backup and storage systems are hardened and kept separate from the corporate network to prevent compromise. Maintain and exercise incident response plans, including the management of gold-copy back-up images and configurations for key systems to enable quick recovery and response from adversarial activities that impact control, view, or availability.
+
+## Detection strategies
+
+- **DET0771 Detection of Change Credential**
+  - AN1903 (Embedded): Real-time monitoring identifies Industrial Control System (ICS) protocol commands changing device-level credentials or access codes from a source not in the approved security administration list, where the device subsequently rejects connections from legitimate control system components. OT operational-fidelity gate: Alert only when the action is not attributable to an authorized operator/engineering source for the specific target and function, and it is either outside an approved change/maintenance window or lacks matching change-control context; where telemetry permits, require corroborating device, configuration, or process-state effect. Suppress activity that fully matches approved maintenance, commissioning, failover, recovery, or tested control procedures. Log sources: NSM:Content (credential/access code change command from source not in approved security admin list).
+  - AN2143 (Linux): Real-time monitoring identifies passwd/chpasswd modification of Industrial Control System (ICS) service account credentials by a User Identifier (UID) that is not a designated system administrator, outside a formal credential rotation procedure. OT operational-fidelity gate: Alert only when the action is not attributable to an authorized operator/engineering source for the specific target and function, and it is either outside an approved change/maintenance window or lacks matching change-control context; where telemetry permits, require corroborating device, configuration, or process-state effect. Suppress activity that fully matches approved maintenance, commissioning, failover, recovery, or tested control procedures. Log sources: auditd:SYSCALL (Linux Audit SYSCALL/EXECVE/SOCKADDR records (configured audit rule): syscall=execve; passwd/chpasswd targets an ICS service account outside the approved credential-rotation workflow).
+  - AN2196 (Network Devices): Real-time monitoring identifies network device credential changes such as Authentication, Authorization, and Accounting (AAA) password modification or Simple Network Management Protocol (SNMP) community string modification from a source not in the approved Network Management System (NMS) Classless Inter-Domain Routing (CIDR) subnet, corroborated by syslog showing authentication failures from legitimate NMS systems following the change. OT operational-fidelity gate: Alert only when the action is not attributable to an authorized operator/engineering source for the specific target and function, and it is either outside an approved change/maintenance window or lacks matching change-control context; where telemetry permits, require corroborating device, configuration, or process-state effect. Suppress activity that fully matches approved maintenance, commissioning, failover, recovery, or tested control procedures. Log sources: networkdevice:syslog (AAA/Simple Network Management Protocol (SNMP) credential change from source not in approved Network Management System (NMS) Classless Inter-Domain Routing (CIDR) subnet, followed by authentication failures from legitimate NMS systems).
+  - AN2262 (Windows): Real-time monitoring identifies a password change event for an Industrial Control System (ICS) service or operator account performed by an account not in the authorized credential administration role, immediately followed by failed authentication attempts from the Industrial Control System (ICS) service itself. OT operational-fidelity gate: Alert only when the action is not attributable to an authorized operator/engineering source for the specific target and function, and it is either outside an approved change/maintenance window or lacks matching change-control context; where telemetry permits, require corroborating device, configuration, or process-state effect. Suppress activity that fully matches approved maintenance, commissioning, failover, recovery, or tested control procedures. Log sources: WinEventLog:Security (Windows Security Event ID 4624/4625: EventCode=4723, 4724 for Industrial Control Systems (ICS) service/operator account by account not in authorized credential admins outside credential rotation schedule); WinEventLog:System (Industrial Control Systems (ICS) service failing to start (authentication failure) within credential change impact window of the password change event).
+
+## Procedure examples
+
+- **C0063 2025 Poland Wiper Attacks** (campaign) — During the 2025 Poland Wiper Attacks, the adversaries changed the login password of Moxa NPort Serial Device Servers to impede system recovery.
+- **C0066 2026 U.S. Water Utilities Attacks** (campaign) — During the 2026 U.S. Water Utilities Attacks, the adversary remotely accessed internet-facing devices (e.g., MicroLogix 1100 and 1400 controllers, etc.) and changed passwords resulting in loss of monitoring and control for the affected utilities.
+- **G1027 CyberAv3ngers** (group) — During the 2026 Iranian Water Campaign, CyberAv3ngers locked out operators by changing the PLCs passwords and IP addresses.

@@ -1,0 +1,31 @@
+# T0823 — Graphical User Interface
+
+- **Type:** technique
+- **Domain:** ICS ATT&CK
+- **Tactics:** Execution
+- **Platforms:** Embedded, Windows, Linux, Network Devices
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T0823
+- **Last modified:** 2026-10-13
+
+## Description
+
+Adversaries may attempt to gain access to a machine via a Graphical User Interface (GUI) to enhance execution capabilities. Access to a GUI allows a user to interact with a computer in a more visual manner than a CLI. A GUI allows users to move a cursor and click on interface objects, with a mouse and keyboard as the main input devices, as opposed to just using the keyboard.
+
+If physical access is not an option, then access might be possible via protocols such as VNC on Linux-based and Unix-based operating systems, and RDP on Windows operating systems. An adversary can use this access to execute programs and applications on the target machine.
+
+## Mitigations
+
+- **M0816 Mitigation Limited or Not Effective** — Once an adversary has access to a remote GUI they can abuse system features, such as required HMI functions.
+
+## Detection strategies
+
+- **DET0772 Detection of Graphical User Interface**
+  - AN1904 (Windows): Real-time monitoring identifies an interactive desktop session Remote Desktop Protocol (RDP), Virtual Network Computing (VNC), or vendor remote console to an Human-Machine Interface (HMI) or engineering station from a source Internet Protocol (IP) addresses outside the approved Network Management System (NMS) Classless Inter-Domain Routing (CIDR) subnet, or from an account not in the approved operator/engineer list, where the session subsequently interacts with Industrial Control System (ICS) control elements. OT operational-fidelity gate: Alert only when the account/device/session violates the approved identity + source host/jump path/zone policy and is corroborated by access to a protected OT asset, execution, configuration change, or another security-relevant follow-on event. Suppress approved shift activity, vendor support, break-glass use, commissioning, and documented remote-access windows. Log sources: WinEventLog:Security (Windows Security Event ID 4624/4625: EventCode=4624, Type 2/10 to Industrial Control Systems (ICS) host from source not in approved operator workstations or account not in approved operator list); WinEventLog:Sysmon (EventCode=1 process execution associated with a remote session targets ICS application directories or initiates device-subnet activity); WinEventLog:Sysmon (EventCode=3 network connection to an RDP/VNC service on an ICS Windows host from a source outside the approved management CIDR baseline).
+  - AN2144 (Linux): Real-time monitoring identifies Secure Shell (SSH) sessions with X11 forwarding or Virtual Network Computing (VNC) connections to Industrial Control System (ICS) Linux hosts from unexpected source Internet Protocol (IP) addresses, combined with X11 application launches from the session. OT operational-fidelity gate: Alert only when the account/device/session violates the approved identity + source host/jump path/zone policy and is corroborated by access to a protected OT asset, execution, configuration change, or another security-relevant follow-on event. Suppress approved shift activity, vendor support, break-glass use, commissioning, and documented remote-access windows. Log sources: auditd:SYSCALL (Linux Audit SYSCALL/EXECVE/SOCKADDR records (configured audit rule): syscall=execve; ICS HMI/GUI application launched from an SSH-associated process/session outside the approved remote-administration baseline); syslog:auth (Secure Shell (SSH) session with X11 forwarding from source not in approved admin Classless Inter-Domain Routing (CIDR) subnet).
+  - AN2197 (Network Devices): Real-time monitoring identifies remote console or web management sessions to Industrial Control System (ICS) network devices from IP addresses that are not approved Network Management System (NMS) hosts, where the sessions access device configuration interfaces. OT operational-fidelity gate: Alert only when the account/device/session violates the approved identity + source host/jump path/zone policy and is corroborated by access to a protected OT asset, execution, configuration change, or another security-relevant follow-on event. Suppress approved shift activity, vendor support, break-glass use, commissioning, and documented remote-access windows. Log sources: networkdevice:syslog (remote console or web management session from source not in approved Network Management System (NMS) Classless Inter-Domain Routing (CIDR) subnet).
+  - AN2251 (Embedded): Real-time monitoring identifies Virtual Network Computing (VNC) or proprietary remote console sessions to embedded Human-Machine Interface (HMI) panels or operator terminals from IP addresses outside the approved Network Management System (NMS) Classless Inter-Domain Routing (CIDR) subnet, where the sessions access Industrial Control System (ICS) control interfaces with physical-plant impact. OT operational-fidelity gate: Alert only when the account/device/session violates the approved identity + source host/jump path/zone policy and is corroborated by access to a protected OT asset, execution, configuration change, or another security-relevant follow-on event. Suppress approved shift activity, vendor support, break-glass use, commissioning, and documented remote-access windows. Log sources: NSM:Content (Virtual Network Computing (VNC) or remote console session to embedded Human-Machine Interface (HMI) panel from source not in approved management Classless Inter-Domain Routing (CIDR) subnet).
+
+## Procedure examples
+
+- **C0028 2015 Ukraine Electric Power Attack** (campaign) — During the 2015 Ukraine Electric Power Attack, Sandworm Team utilized HMI GUIs in the SCADA environment to open breakers.
+- **C0063 2025 Poland Wiper Attacks** (campaign) — During the 2025 Poland Wiper Attacks, the adversaries used a graphical user interface (GUI) via the Remote Desktop Protocol (RDP) to access the Mikronika HMI and to execute commands. During the 2025 Poland Wiper Attacks, the adversaries used a graphical user interface (GUI) to connect to the domain controller via the Remote Desktop Protocol (RDP) to collect and exfiltrate data and attempt to destroy data on the system.

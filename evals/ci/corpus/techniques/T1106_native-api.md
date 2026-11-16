@@ -1,0 +1,271 @@
+# T1106 — Native API
+
+- **Type:** technique
+- **Domain:** Enterprise ATT&CK
+- **Tactics:** Execution
+- **Platforms:** Linux, macOS, Windows
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T1106
+- **Last modified:** 2026-11-03
+
+## Description
+
+Adversaries may interact with the native OS application programming interface (API) to execute behaviors. Native APIs provide a controlled means of calling low-level OS services within the kernel, such as those involving hardware/devices, memory, and processes. These native APIs are leveraged by the OS during system boot (when other system components are not yet initialized) as well as carrying out tasks and requests during routine operations.
+
+Adversaries may abuse these OS API functions as a means of executing behaviors. Similar to Command and Scripting Interpreter, the native API and its hierarchy of interfaces provide mechanisms to interact with and utilize various components of a victimized system.
+
+Native API functions (such as `NtCreateProcess`) may be directly invoked via system calls / syscalls, but these features are also often exposed to user-mode applications via interfaces and libraries. For example, functions such as the Windows API `CreateProcess()` or GNU `fork()` will allow programs and scripts to start other processes. This may allow API callers to execute a binary, run a CLI command, load modules, etc. as thousands of similar API functions exist for various system operations.
+
+Higher level software frameworks, such as Microsoft .NET and macOS Cocoa, are also available to interact with native APIs. These frameworks typically provide language wrappers/abstractions to API functionalities and are designed for ease-of-use/portability of code.
+
+Adversaries may use assembly to directly or indirectly invoke syscalls in an attempt to subvert defensive sensors and detection signatures such as user mode API-hooks. Adversaries may also attempt to tamper with sensors and defensive tools associated with API monitoring, such as unhooking monitored functions via Disable or Modify Tools.
+
+## Mitigations
+
+- **M1038 Execution Prevention** — Identify and block potentially malicious software executed that may be executed through this technique by using application control tools, like Windows Defender Application Control, AppLocker, or Software Restriction Policies where appropriate.
+- **M1040 Behavior Prevention on Endpoint** — On Windows 10, enable Attack Surface Reduction (ASR) rules to prevent Office VBA macros from calling Win32 APIs.
+
+## Detection strategies
+
+- **DET0529 Behavioral Detection of Native API Invocation via Unusual DLL Loads and Direct Syscalls**
+  - AN1465 (Windows): Unusual or suspicious processes loading critical native API DLLs (e.g., ntdll.dll, kernel32.dll) followed by direct syscall behavior, memory manipulation, or hollowing. Log sources: WinEventLog:Sysmon (EventCode=7); WinEventLog:Sysmon (EventCode=10); WinEventLog:Sysmon (EventCode=1).
+  - AN1466 (Linux): Userland processes invoking syscall-heavy libraries (libc, glibc) followed by fork, mmap, or ptrace behavior commonly associated with code injection or memory manipulation. Log sources: auditd:SYSCALL (execve, fork, mmap, ptrace); auditd:SYSCALL (module load or memory map path).
+  - AN1467 (macOS): Execution of processes that link to CoreServices or Foundation APIs followed by creation of memory regions, code execution, or abnormal library injection. Log sources: macos:unifiedlog (launch and dylib load); macos:endpointsecurity (ES_EVENT_TYPE_NOTIFY_EXEC).
+
+## Procedure examples
+
+- **C0006 Operation Honeybee** (campaign) — During Operation Honeybee, the threat actors deployed malware that used API calls, including `CreateProcessAsUser`.
+- **C0013 Operation Sharpshooter** (campaign) — During Operation Sharpshooter, the first stage downloader resolved various Windows libraries and APIs, including `LoadLibraryA()`, `GetProcAddress()`, and `CreateProcessA()`.
+- **C0014 Operation Wocao** (campaign) — During Operation Wocao, threat actors used the `CreateProcessA` and `ShellExecute` API functions to launch commands after being injected into a selected process.
+- **C0022 Operation Dream Job** (campaign) — During Operation Dream Job, Lazarus Group used Windows API `ObtainUserAgentString` to obtain the victim's User-Agent and used the value to connect to their C2 server.
+- **C0061 Operation Digital Eye** (campaign) — During Operation Digital Eye, threat actors used native API such as `GetUserInfo`.
+- **G0010 Turla** (group) — Turla and its RPC backdoors have used APIs calls for various tasks related to subverting AMSI and accessing then executing commands through RPC and/or named pipes.
+- **G0032 Lazarus Group** (group) — Lazarus Group has used the Windows API `ObtainUserAgentString` to obtain the User-Agent from a compromised host to connect to a C2 server. Lazarus Group has also used various, often lesser known, functions to perform various types of Discovery and Process Injection.
+- **G0034 Sandworm Team** (group) — Sandworm Team uses Prestige to disable and restore file system redirection by using the following functions: `Wow64DisableWow64FsRedirection()` and `Wow64RevertWow64FsRedirection()`.
+- **G0045 menuPass** (group) — menuPass has used native APIs including `GetModuleFileName`, `lstrcat`, `CreateFile`, and `ReadFile`.
+- **G0047 Gamaredon Group** (group) — Gamaredon Group malware has used `CreateProcess` to launch additional malicious components.
+- **G0067 APT37** (group) — APT37 leverages the Windows API calls: VirtualAlloc(), WriteProcessMemory(), and CreateRemoteThread() for process injection.
+- **G0078 Gorgon Group** (group) — Gorgon Group malware can leverage the Windows API call, CreateProcessA(), for execution.
+- **G0081 Tropic Trooper** (group) — Tropic Trooper has used multiple Windows APIs including HttpInitialize, HttpCreateHttpHandle, and HttpAddUrl.
+- **G0082 APT38** (group) — APT38 has used the Windows API to execute code within a victim's system.
+- **G0090 WIRTE** (group) — WIRTE has used the `RtlIpv4StringToAddressA` to convert IP-formatted string to a byte array.
+- **G0091 Silence** (group) — Silence has leveraged the Windows API, including using CreateProcess() or ShellExecute(), to perform a variety of tasks.
+- **G0092 TA505** (group) — TA505 has deployed payloads that use Windows API calls on a compromised host.
+- **G0094 Kimsuky** (group) — Kimsuky has utilized Native APIs to collect data from victim hosts and facilitate execution of malicious scripts.
+- **G0098 BlackTech** (group) — BlackTech has used built-in API functions.
+- **G0114 Chimera** (group) — Chimera has used direct Windows system calls by leveraging Dumpert.
+- **G0126 Higaisa** (group) — Higaisa has called various native OS APIs.
+- **G0129 Mustang Panda** (group) — Mustang Panda has used various Windows API calls during execution and defense evasion.
+- **G1008 SideCopy** (group) — SideCopy has executed malware by calling the API function `CreateProcessW`.
+- **G1022 ToddyCat** (group) — ToddyCat has used `WinExec` to execute commands received from C2 on compromised hosts.
+- **G1051 Medusa Group** (group) — Medusa Group has leveraged Windows Native API functions to execute payloads.
+- **G1059 NIMBUS MANTICORE** (group) — NIMBUS MANTICORE has utilized Native Windows API calls to execute on victim devices to include `GetModuleHandle`.
+- **S0011 Taidoor** (software) — Taidoor has the ability to use native APIs for execution including `GetProcessHeap`, `GetProcAddress`, and `LoadLibrary`.
+- **S0013 PlugX** (software) — PlugX can use the Windows API functions `GetProcAddress`, `LoadLibrary`, and `CreateProcess` to execute another process.
+- **S0022 Uroburos** (software) — Uroburos can use native Windows APIs including `GetHostByName`.
+- **S0032 gh0st RAT** (software) — gh0st RAT has used the `InterlockedExchange`, `SeShutdownPrivilege`, and `ExitWindowsEx` Windows API functions.
+- **S0045 ADVSTORESHELL** (software) — ADVSTORESHELL is capable of starting a process using CreateProcess.
+- **S0083 Misdat** (software) — Misdat has used Windows APIs, including `ExitWindowsEx` and `GetKeyboardType`.
+- **S0084 Mis-Type** (software) — Mis-Type has used Windows API calls, including `NetUserAdd` and `NetUserDel`.
+- **S0085 S-Type** (software) — S-Type has used Windows APIs, including `GetKeyboardType`, `NetUserAdd`, and `NetUserDel`.
+- **S0126 ComRAT** (software) — ComRAT can load a PE file from memory or the file system and execute it with `CreateProcessW`.
+- **S0128 BADNEWS** (software) — BADNEWS has a command to download an .exe and execute it via CreateProcess API. It can also run with ShellExecute.
+- **S0141 Winnti for Windows** (software) — Winnti for Windows can use Native API to create a new process and to start services.
+- **S0147 Pteranodon** (software) — Pteranodon has used various API calls.
+- **S0148 RTM** (software) — RTM can use the `FindNextUrlCacheEntryA` and `FindFirstUrlCacheEntryA` functions to search for specific strings within browser history.
+- **S0154 Cobalt Strike** (software) — Cobalt Strike's Beacon payload is capable of running shell commands without `cmd.exe` and PowerShell commands without `powershell.exe` Cobalt Strike can also use `CreateThreadpoolWait`, `SetThreadpoolWait`, and `MessageBoxA` for sandbox evasion and execution of embedded payloads in memory.
+- **S0161 XAgentOSX** (software) — XAgentOSX contains the execFile function to execute a specified file on the system using the NSTask:launch method.
+- **S0180 Volgmer** (software) — Volgmer executes payloads using the Windows API call CreateProcessW().
+- **S0198 NETWIRE** (software) — NETWIRE can use Native API including `CreateProcess` `GetProcessById`, and `WriteProcessMemory`.
+- **S0234 Bandook** (software) — Bandook has used the ShellExecuteW() function call.
+- **S0239 Bankshot** (software) — Bankshot creates processes using the Windows API calls: CreateProcessA() and CreateProcessAsUserA().
+- **S0240 ROKRAT** (software) — ROKRAT can use a variety of API calls to execute shellcode.
+- **S0242 SynAck** (software) — SynAck parses the export tables of system DLLs to locate and call various Windows API functions.
+- **S0256 Mosquito** (software) — Mosquito leverages the CreateProcess() and LoadLibrary() calls to execute files with the .dll and .exe extensions.
+- **S0259 InnaputRAT** (software) — InnaputRAT uses the API call ShellExecuteW for execution.
+- **S0260 InvisiMole** (software) — InvisiMole can use winapiexec tool for indirect execution of `ShellExecuteW` and `CreateProcessA`.
+- **S0266 TrickBot** (software) — TrickBot uses the Windows API call, CreateProcessW(), to manage execution flow. TrickBot has also used `Nt*` API functions to perform Process Injection.
+- **S0268 Bisonal** (software) — Bisonal has used the Windows API to communicate with the Service Control Manager to execute a thread.
+- **S0354 Denis** (software) — Denis used the `IsDebuggerPresent`, `OutputDebugString`, and `SetLastError` APIs to avoid debugging. Denis used `GetProcAddress` and `LoadLibrary` to dynamically resolve APIs. Denis also used the `Wow64SetThreadContext` API as part of a process hollowing process.
+- **S0356 KONNI** (software) — KONNI has hardcoded API calls within its functions to use on the victim's machine.
+- **S0363 Empire** (software) — Empire contains a variety of enumeration modules that have an option to use API calls to carry out tasks.
+- **S0367 Emotet** (software) — Emotet has used `CreateProcess` to create a new process to run its executable and `WNetEnumResourceW` to enumerate non-hidden shares.
+- **S0384 Dridex** (software) — Dridex has used the `OutputDebugStringW` function to avoid malware analysis as part of its anti-debugging technique.
+- **S0385 njRAT** (software) — njRAT has used the ShellExecute() function within a script.
+- **S0386 Ursnif** (software) — Ursnif has used `CreateProcessW` to create child processes.
+- **S0391 HAWKBALL** (software) — HAWKBALL has leveraged several Windows API calls to create processes, gather disk information, and detect debugger activity.
+- **S0395 LightNeuron** (software) — LightNeuron is capable of starting a process using CreateProcess.
+- **S0396 EvilBunny** (software) — EvilBunny has used various API calls as part of its checks to see if the malware is running in a sandbox.
+- **S0398 HyperBro** (software) — HyperBro has the ability to run an application (`CreateProcessW`) or script/file (`ShellExecuteW`) via API.
+- **S0412 ZxShell** (software) — ZxShell can leverage native API including `RegisterServiceCtrlHandler ` to register a service.RegisterServiceCtrlHandler
+- **S0416 RDFSNIFFER** (software) — RDFSNIFFER has used several Win32 API functions to interact with the victim machine.
+- **S0431 HotCroissant** (software) — HotCroissant can perform dynamic DLL importing and API lookups using `LoadLibrary` and `GetProcAddress` on obfuscated strings.
+- **S0434 Imminent Monitor** (software) — Imminent Monitor has leveraged CreateProcessW() call to execute the debugger.
+- **S0435 PLEAD** (software) — PLEAD can use `ShellExecute` to execute applications.
+- **S0438 Attor** (software) — Attor's dispatcher has used CreateProcessW API for execution.
+- **S0444 ShimRat** (software) — ShimRat has used Windows API functions to install the service and shim.
+- **S0445 ShimRatReporter** (software) — ShimRatReporter used several Windows API functions to gather information from the infected system.
+- **S0446 Ryuk** (software) — Ryuk has used multiple native APIs including `ShellExecuteW` to run executables,`GetWindowsDirectoryW` to create folders, and `VirtualAlloc`, `WriteProcessMemory`, and `CreateRemoteThread` for process injection.
+- **S0447 Lokibot** (software) — Lokibot has used LoadLibrary(), GetProcAddress() and CreateRemoteThread() API functions to execute its shellcode.
+- **S0448 Rising Sun** (software) — Rising Sun used dynamic API resolutions to various Windows APIs by leveraging `LoadLibrary()` and `GetProcAddress()`.
+- **S0449 Maze** (software) — Maze has used several Windows API functions throughout the encryption process including IsDebuggerPresent, TerminateProcess, Process32FirstW, among others.
+- **S0453 Pony** (software) — Pony has used several Windows functions for various purposes.
+- **S0455 Metamorfo** (software) — Metamorfo has used native WINAPI calls.
+- **S0456 Aria-body** (software) — Aria-body has the ability to launch files using `ShellExecute`.
+- **S0457 Netwalker** (software) — Netwalker can use Windows API functions to inject the ransomware DLL.
+- **S0458 Ramsay** (software) — Ramsay can use Windows API functions such as `WriteFile`, `CloseHandle`, and `GetCurrentHwProfile` during its collection and file storage operations. Ramsay can execute its embedded components via `CreateProcessA` and `ShellExecute`.
+- **S0466 WindTail** (software) — WindTail can invoke Apple APIs `contentsOfDirectoryAtPath`, `pathExtension`, and (string) `compare`.
+- **S0470 BBK** (software) — BBK has the ability to use the `CreatePipe` API to add a sub-process for execution via cmd.
+- **S0471 build_downer** (software) — build_downer has the ability to use the `WinExec` API to execute malware on a compromised host.
+- **S0475 BackConfig** (software) — BackConfig can leverage API functions such as `ShellExecuteA` and `HttpOpenRequestA` in the process of downloading and executing files.
+- **S0477 Goopy** (software) — Goopy has the ability to enumerate the infected system's user name via `GetUserNameW`.
+- **S0483 IcedID** (software) — IcedID has called `ZwWriteVirtualMemory`, `ZwProtectVirtualMemory`, `ZwQueueApcThread`, and `NtResumeThread` to inject itself into a remote process.
+- **S0484 Carberp** (software) — Carberp has used the NtQueryDirectoryFile and ZwQueryDirectoryFile functions to hide files and directories.
+- **S0493 GoldenSpy** (software) — GoldenSpy can execute remote commands in the Windows command shell using the `WinExec()` API.
+- **S0496 REvil** (software) — REvil can use Native API for execution and to retrieve active services.
+- **S0499 Hancitor** (software) — Hancitor has used `CallWindowProc` and `EnumResourceTypesA` to interpret and execute shellcode.
+- **S0501 PipeMon** (software) — PipeMon's first stage has been executed by a call to `CreateProcess` with the decryption password in an argument. PipeMon has used a call to `LoadLibrary` to load its installer.
+- **S0512 FatDuke** (software) — FatDuke can call `ShellExecuteW` to open the default browser on the URL localhost.
+- **S0517 Pillowmint** (software) — Pillowmint has used multiple native Windows APIs to execute and conduct process injections.
+- **S0518 PolyglotDuke** (software) — PolyglotDuke can use `LoadLibraryW` and `CreateProcess` to load and execute code.
+- **S0521 BloodHound** (software) — BloodHound can use .NET API calls in the SharpHound ingestor component to pull Active Directory data.
+- **S0531 Grandoreiro** (software) — Grandoreiro can execute through the `WinExec` API.
+- **S0534 Bazar** (software) — Bazar can use various APIs to allocate memory and facilitate code execution/injection.
+- **S0537 HyperStack** (software) — HyperStack can use Windows API's `ConnectNamedPipe` and `WNetAddConnection2` to detect incoming connections and connect to remote shares.
+- **S0554 Egregor** (software) — Egregor has used the Windows API to make detection more difficult.
+- **S0561 GuLoader** (software) — GuLoader can use a number of different APIs for discovery and execution.
+- **S0562 SUNSPOT** (software) — SUNSPOT used Windows API functions such as `MoveFileEx` and `NtQueryInformationProcess` as part of the SUNBURST injection process.
+- **S0569 Explosive** (software) — Explosive has a function to call the OpenClipboard wrapper.
+- **S0570 BitPaymer** (software) — BitPaymer has used dynamic API resolution to avoid identifiable strings within the binary, including `RegEnumKeyW`.
+- **S0574 BendyBear** (software) — BendyBear can load and execute modules and Windows Application Programming (API) calls using standard shellcode API hashing.
+- **S0575 Conti** (software) — Conti has used API calls during execution.
+- **S0576 MegaCortex** (software) — After escalating privileges, MegaCortex calls `TerminateProcess()`, `CreateRemoteThread`, and other Win32 APIs.
+- **S0579 Waterbear** (software) — Waterbear can leverage API functions for execution.
+- **S0595 ThiefQuest** (software) — ThiefQuest uses various API to perform behaviors such as executing payloads and performing local enumeration.
+- **S0603 Stuxnet** (software) — Stuxnet uses the SetSecurityDescriptorDacl API to reduce object integrity levels.
+- **S0606 Bad Rabbit** (software) — Bad Rabbit has used various Windows API calls.
+- **S0607 KillDisk** (software) — KillDisk has called the Windows API to retrieve the hard disk handle and shut down the machine.
+- **S0610 SideTwist** (software) — SideTwist can use `GetUserNameW`, `GetComputerNameW`, and `GetComputerNameExW` to gather information.
+- **S0611 Clop** (software) — Clop has used built-in API functions such as WNetOpenEnumW(), WNetEnumResourceW(), WNetCloseEnum(), GetProcAddress(), and VirtualAlloc().
+- **S0612 WastedLocker** (software) — WastedLocker's custom crypter, CryptOne, leveraged the VirtualAlloc() API function to help execute the payload.
+- **S0614 CostaBricks** (software) — CostaBricks has used a number of API calls, including `VirtualAlloc`, `VirtualFree`, `LoadLibraryA`, `GetProcAddress`, and `ExitProcess`.
+- **S0615 SombRAT** (software) — SombRAT has the ability to respawn itself using `ShellExecuteW` and `CreateProcessW`.
+- **S0622 AppleSeed** (software) — AppleSeed has the ability to use multiple dynamically resolved API calls.
+- **S0623 Siloscape** (software) — Siloscape makes various native API calls.
+- **S0625 Cuba** (software) — Cuba has used several built-in API functions for discovery like GetIpNetTable and NetShareEnum.
+- **S0627 SodaMaster** (software) — SodaMaster can use `RegOpenKeyW` to access the Registry.
+- **S0629 RainyDay** (software) — The file collection tool used by RainyDay can utilize native API including `ReadDirectoryChangeW` for folder monitoring.
+- **S0630 Nebulae** (software) — Nebulae has the ability to use `CreateProcess` to execute a process.
+- **S0631 Chaes** (software) — Chaes used the `CreateFileW()` API function with read permissions to access downloaded payloads.
+- **S0632 GrimAgent** (software) — GrimAgent can use Native API including `GetProcAddress` and `ShellExecuteW`.
+- **S0638 Babuk** (software) — Babuk can use multiple Windows API calls for actions on compromised hosts including discovery and execution.
+- **S0640 Avaddon** (software) — Avaddon has used the Windows Crypto API to generate an AES key.
+- **S0650 QakBot** (software) — QakBot can use `GetProcAddress` to help delete malicious strings from memory.
+- **S0651 BoxCaon** (software) — BoxCaon has used Windows API calls to obtain information about the compromised host.
+- **S0652 MarkiRAT** (software) — MarkiRAT can run the ShellExecuteW API via the Windows Command Shell.
+- **S0653 xCaon** (software) — xCaon has leveraged native OS function calls to retrieve victim's network adapter's information using GetAdapterInfo() API.
+- **S0659 Diavol** (software) — Diavol has used several API calls like `GetLogicalDriveStrings`, `SleepEx`, `SystemParametersInfoAPI`, `CryptEncrypt`, and others to execute parts of its attack.
+- **S0661 FoggyWeb** (software) — FoggyWeb's loader can use API functions to load the FoggyWeb backdoor into the same Application Domain within which the legitimate AD FS managed code is executed.
+- **S0662 RCSession** (software) — RCSession can use WinSock API for communication including `WSASend` and `WSARecv`.
+- **S0663 SysUpdate** (software) — SysUpdate can call the `GetNetworkParams` API as part of its C2 establishment process.
+- **S0666 Gelsemium** (software) — Gelsemium has the ability to use various Windows API functions to perform tasks.
+- **S0667 Chrommme** (software) — Chrommme can use Windows API including `WinExec` for execution.
+- **S0668 TinyTurla** (software) — TinyTurla has used `WinHTTP`, `CreateProcess`, and other APIs for C2 communications and other functions.
+- **S0669 KOCTOPUS** (software) — KOCTOPUS can use the `LoadResource` and `CreateProcessW` APIs for execution.
+- **S0670 WarzoneRAT** (software) — WarzoneRAT can use a variety of API calls on a compromised host.
+- **S0678 Torisma** (software) — Torisma has used various Windows API calls.
+- **S0680 LitePower** (software) — LitePower can use various API calls.
+- **S0681 Lizar** (software) — Lizar has used various Windows API functions on a victim's machine.
+- **S0687 Cyclops Blink** (software) — Cyclops Blink can use various Linux API functions including those for execution and discovery.
+- **S0688 Meteor** (software) — Meteor can use `WinAPI` to remove a victim machine from an Active Directory domain.
+- **S0689 WhisperGate** (software) — WhisperGate has used the `ExitWindowsEx` to flush file buffers to disk and stop running processes and other API calls.
+- **S0692 SILENTTRINITY** (software) — SILENTTRINITY has the ability to leverage API including `GetProcAddress` and `LoadLibrary`.
+- **S0693 CaddyWiper** (software) — CaddyWiper has the ability to dynamically resolve and use APIs, including `SeTakeOwnershipPrivilege`.
+- **S0694 DRATzarus** (software) — DRATzarus can use various API calls to see if it is running in a sandbox.
+- **S0695 Donut** (software) — Donut code modules use various API functions to load and inject code.
+- **S0696 Flagpro** (software) — Flagpro can use Native API to enable obfuscation including `GetLastError` and `GetTickCount`.
+- **S0697 HermeticWiper** (software) — HermeticWiper can call multiple Windows API functions used for privilege escalation, service execution, and to overwrite random bites of data.
+- **S0698 HermeticWizard** (software) — HermeticWizard can connect to remote shares using `WNetAddConnection2W`.
+- **S1013 ZxxZ** (software) — ZxxZ has used API functions such as `Process32First`, `Process32Next`, and `ShellExecuteA`.
+- **S1015 Milan** (software) — Milan can use the API `DnsQuery_A` for DNS resolution.
+- **S1016 MacMa** (software) — MacMa has used macOS API functions to perform tasks.
+- **S1018 Saint Bot** (software) — Saint Bot has used different API calls, including `GetProcAddress`, `VirtualAllocEx`, `WriteProcessMemory`, `CreateProcessA`, and `SetThreadContext`.
+- **S1020 Kevin** (software) — Kevin can use the `ShowWindow` API to avoid detection.
+- **S1025 Amadey** (software) — Amadey has used a variety of Windows API calls, including `GetComputerNameA`, `GetUserNameA`, and `CreateProcessA`.
+- **S1033 DCSrv** (software) — DCSrv has used various Windows API functions, including `DeviceIoControl`, as part of its encryption process.
+- **S1034 StrifeWater** (software) — StrifeWater can use a variety of APIs for execution.
+- **S1039 Bumblebee** (software) — Bumblebee can use multiple Native APIs.
+- **S1044 FunnyDream** (software) — FunnyDream can use Native API for defense evasion, discovery, and collection.
+- **S1050 PcShare** (software) — PcShare has used a variety of Windows API functions.
+- **S1052 DEADEYE** (software) — DEADEYE can execute the `GetComputerNameA` and `GetComputerNameExA` WinAPI functions.
+- **S1053 AvosLocker** (software) — AvosLocker has used a variety of Windows API calls, including `NtCurrentPeb` and `GetLogicalDrives`.
+- **S1058 Prestige** (software) — Prestige has used the `Wow64DisableWow64FsRedirection()` and `Wow64RevertWow64FsRedirection()` functions to disable and restore file system redirection.
+- **S1059 metaMain** (software) — metaMain can execute an operator-provided Windows command by leveraging functions such as `WinExec`, `WriteFile`, and `ReadFile`.
+- **S1060 Mafalda** (software) — Mafalda can use a variety of API calls.
+- **S1063 Brute Ratel C4** (software) — Brute Ratel C4 can call multiple Windows APIs for execution, to share memory, and defense evasion.
+- **S1064 SVCReady** (software) — SVCReady can use Windows API calls to gather information from an infected host.
+- **S1065 Woody RAT** (software) — Woody RAT can use multiple native APIs, including `WriteProcessMemory`, `CreateProcess`, and `CreateRemoteThread` for process injection.
+- **S1066 DarkTortilla** (software) — DarkTortilla can use a variety of API calls for persistence and defense evasion.
+- **S1070 Black Basta** (software) — Black Basta has the ability to use native APIs for numerous functions including discovery and defense evasion.
+- **S1073 Royal** (software) — Royal can use multiple APIs for discovery, communication, and execution.
+- **S1076 QUIETCANARY** (software) — QUIETCANARY can call `System.Net.HttpWebRequest` to identify the default proxy configured on the victim computer.
+- **S1078 RotaJakiro** (software) — When executing with non-root permissions, RotaJakiro uses the the `shmget` API to create shared memory between other known RotaJakiro processes. RotaJakiro also uses the `execvp` API to help its dead process "resurrect".
+- **S1081 BADHATCH** (software) — BADHATCH can utilize Native API functions such as, `ToolHelp32` and `Rt1AdjustPrivilege` to enable `SeDebugPrivilege` on a compromised machine.
+- **S1085 Sardonic** (software) — Sardonic has the ability to call Win32 API functions to determine if `powershell.exe` is running.
+- **S1087 AsyncRAT** (software) — AsyncRAT has the ability to use OS APIs including `CheckRemoteDebuggerPresent`.
+- **S1089 SharpDisco** (software) — SharpDisco can leverage Native APIs through plugins including `GetLogicalDrives`.
+- **S1090 NightClub** (software) — NightClub can use multiple native APIs including `GetKeyState`, `GetForegroundWindow`, `GetWindowThreadProcessId`, and `GetKeyboardLayout`.
+- **S1099 Samurai** (software) — Samurai has the ability to call Windows APIs.
+- **S1100 Ninja** (software) — The Ninja loader can call Windows APIs for discovery, process injection, and payload decryption.
+- **S1111 DarkGate** (software) — DarkGate uses the native Windows API `CallWindowProc()` to decode and launch encoded shellcode payloads during execution. DarkGate can call kernel mode functions directly to hide the use of process hollowing methods during execution. DarkGate has also used the `CreateToolhelp32Snapshot`, `GetFileAttributesA` and `CreateProcessA` functions to obtain a list of running processes, to check for security products and to execute its malware.
+- **S1122 Mispadu** (software) — Mispadu has used a variety of Windows API calls, including ShellExecute and WriteProcessMemory.
+- **S1129 Akira** (software) — Akira executes native Windows functions such as `GetFileAttributesW` and `GetSystemInfo`.
+- **S1139 INC Ransomware** (software) — INC Ransomware can use the API `DeviceIoControl` to resize the allocated space for and cause the deletion of volume shadow copy snapshots.
+- **S1145 Pikabot** (software) — Pikabot uses native Windows APIs to determine if the process is being debugged and analyzed, such as `CheckRemoteDebuggerPresent`, `NtQueryInformationProcess`, `ProcessDebugPort`, and `ProcessDebugFlags`. Other Pikabot variants populate a global list of Windows API addresses from the `NTDLL` and `KERNEL32` libraries, and references these items instead of calling the API items to obfuscate execution.
+- **S1149 CHIMNEYSWEEP** (software) — CHIMNEYSWEEP can use Windows APIs including `LoadLibrary` and `GetProcAddress`.
+- **S1151 ZeroCleare** (software) — ZeroCleare can call the `GetSystemDirectoryW` API to locate the system directory.
+- **S1152 IMAPLoader** (software) — IMAPLoader imports native Windows APIs such as `GetConsoleWindow` and `ShowWindow`.
+- **S1160 Latrodectus** (software) — Latrodectus has used multiple Windows API post exploitation including `GetAdaptersInfo`, `CreateToolhelp32Snapshot`, and `CreateProcessW`.
+- **S1169 Mango** (software) — Mango has the ability to use Native APIs.
+- **S1170 ODAgent** (software) — ODAgent can pass commands using native APIs.
+- **S1172 OilBooster** (software) — OilBooster has used the `ShowWindow` and `CreateProcessW` APIs.
+- **S1179 Exbyte** (software) — Exbyte calls `ShellExecuteW` with the `IpOperation` parameter `RunAs` to launch `explorer.exe` with elevated privileges.
+- **S1180 BlackByte Ransomware** (software) — BlackByte Ransomware uses the `SetThreadExecutionState` API to prevent the victim system from entering sleep.
+- **S1190 Kapeka** (software) — Kapeka utilizes WinAPI calls to gather victim system information.
+- **S1200 StealBit** (software) — StealBit can use native APIs including `LoadLibraryExA` for execution and `NtSetInformationProcess` for defense evasion purposes.
+- **S1202 LockBit 3.0** (software) — LockBit 3.0 has the ability to directly call native Windows API items during execution.
+- **S1207 XLoader** (software) — XLoader uses the native Windows API for functionality, including defense evasion.
+- **S1210 Sagerunex** (software) — Sagerunex calls the `WaitForSingleObject` API function as part of time-check logic.
+- **S1226 BOOKWORM** (software) — BOOKWORM has used various Windows API calls during execution and defense evasion. BOOKWORM has created a buffer on the heap using `HeapCreate` and `HeapAlloc` which allows for copying of shell code and then execution on the heap is initiated through callback function of legitimate API functions such as `EnumChildWindows` or `EnumSystemLanguageGroupsA`.
+- **S1227 StarProxy** (software) — StarProxy has used native windows API calls such as `GetLocalTime()` to retrieve system data.
+- **S1228 PUBLOAD** (software) — PUBLOAD has used various Windows API calls during execution, when establishing persistence and defense evasion. PUBLOAD stager leveraged Windows API functions with callback including `GrayStringW`, `EnumDateFormatsA`, and `LineDDA` to bypass anti-virus monitoring. PUBLOAD has also utilized other native windows API functions with callback functions such as `EnumChildWindows` and `EnumSystemLanguageGroupsA`.
+- **S1229 Havoc** (software) — Havoc can use `NtAllocateVirtualMemory` and `NtCreateThreadEx` to aid process injection.
+- **S1232 SplatDropper** (software) — SplatDropper has utilized hashed Native Windows API calls.
+- **S1233 PAKLOG** (software) — PAKLOG has used Windows API `SetWindowsHookExW` with `idHook` set to `WH_KEYBOARD_LL` and a custom hook procedure to support its keylogging functions.
+- **S1234 SplatCloak** (software) — SplatCloak has utilized Native Windows API calls dynamically through `ZwQuerySystemInformation`.
+- **S1236 CLAIMLOADER** (software) — CLAIMLOADER has used various Windows API calls during execution, when establishing persistence and defense evasion. CLAIMLOADER has also leveraged the legitimate API functions to run its shellcode through the callback function, including `GetDC()` and `EnumFontsW()`. CLAIMLOADER established persistence by utilizing the API `SHSetValue()`. CLAIMLOADER has utilized APIs with callback functions such as `EnumpropsExW`, `EnumSystemLanguageGroupsA`, and `EnumCalendarInfoExW`.
+- **S1237 CANONSTAGER** (software) — CANONSTAGER has leveraged Native API calls to execute code within the victim’s system including `GetCurrentDirectoryW`, `RegisterClassW` and `CreateWindowExW`. CANONSTAGER also created a new overlapped window that initiates callback functions to a windows procedure that processes Windows messages until a designated message type of 0x0018 WM_SHOWWINDOW is observed which then initiates the deployment of a subsequent malicious payload.
+- **S1239 TONESHELL** (software) — TONESHELL has utilized Native Windows API functions such as `WriteProcessMemory` and `CreateRemoteThreadEx`. TONESHELL has also utilized Windows API functions for creating seed values including `CoCreateGuid` and `GetTickCount`. TONESHELL has leveraged the legitimate API function `EnumSystemLocalesA` to run its shellcode through the callback function.
+- **S1242 Qilin** (software) — Qilin can attempt to log on to the local computer via `LogonUserW` and use `GetLogicalDrives()` and `EnumResourceW()` for discovery.
+- **S1244 Medusa Ransomware** (software) — Medusa Ransomware has leveraged Windows Native API functions to execute payloads.
+- **S1247 Embargo** (software) — Embargo has leveraged Windows Native API functions to execute its operations.
+- **S9001 SystemBC** (software) — SystemBC has utilized native Windows API functions such as `EnumWindows`and `GetVolumeInformationA` during discovery activities.
+- **S9007 HTTPTroy** (software) — HTTPTroy has leveraged Windows Native API calls, including `GetProcAddress` to execute functions in memory.
+- **S9012 TRAILBLAZE** (software) — TRAILBLAZE has leveraged raw syscalls to execute commands.
+- **S9016 Caminho** (software) — Caminho can use `System.Net.WebClient.downloadString()` for file download.
+- **S9018 HeartCrypt** (software) — HeartCrypt can use Windows API functions to modify the Registry and `FindResourceW`, `LoadResource`, and `LockResource` to acquire a pointer to corresponding code resources.
+- **S9020 LODEINFO** (software) — LODEINFO can use Windows APIs such as `VirtualAllocEx()`, `WriteProcessMemory()`, `CreateRemoteThread()`, `NtAllocateVirtualMemory()`, `NtWriteVirtualMemory()`, and `RtlCreateUserThread()` to enable memory injection of shellcode.
+- **S9021 DOWNIISSA** (software) — DOWNIISSA can use the `URLDownloadToFileA()` API to download from remote resources.
+- **S9025 NOOPLDR** (software) — NOOPLDR can use native APIs `NtProtectVirtualMemory`, `NtWriteVirtualMemory`, and `NtCreateThreadEx` to aid process injection.
+- **S9027 ANELLDR** (software) — ANELLDR can use the `ZwSetInformationThread` to enable debugger evasion.
+- **S9032 MuddyViper** (software) — MuddyViper has the ability to relaunch itself using the `CreateProcessW` API.
+- **S9033 Fooder** (software) — Fooder has used the WinCrypt API for payload decryption, `DuplicateTokenEx` to duplicate the token of a specified process, and `CreateProcessAsUserA` for payload execution.
+- **S9036 LP-Notes** (software) — LP-Notes has used the `ImpersonateLoggedOnUser` API to impersonate the security context of the taskhostw.exe process. Additionally, LP-Notes has also used the `CredUIPromptForWindowsCredentialsW` API to obtain Windows credentials.
+- **S9037 RustyWater** (software) — RustyWater has used `CreateObject` to instantiate a WScript.Shell Component Object Model (COM) object.  Additionally, RustyWater has used `VirtualAllocEx` and `WriteProcessMemory` to inject shellcode into explorer.exe.
+- **S9038 DynoWiper** (software) — DynoWiper has used multiple native Windows functions, such as `GetLogicalDrives` and `FindNextFile` for discovery and file deletion.
+- **S9050 Vidar** (software) — Vidar has used native Windows functions, such as `LoadLibraryExW`, for discovery and execution.
+- **S9051 The Gentlemen Ransomware** (software) — The Gentlemen Ransomware has utilized Windows APIs to facility network share discovery actions.
+- **S9053 MiniJunk** (software) — MiniJunk has utilized Windows API calls to make HTTPs requests to C2.
+- **S9057 CRASHPAD** (software) — CRASHPAD has leveraged Windows Native API, such as `CryptUnprotectData`, to decrypt functions.
+- **S9058 SIGHTGRAB** (software) — SIGHTGRAB has leveraged Windows Native API keys to execute functions to include `LoadLibraryA` and `GetProcessAddress`.
+- **S9061 LIGHTRAIL** (software) — LIGHTRAIL has leveraged Windows API calls to establish the WebSocket to include `WinHTTP`.
+- **S9067 TWOSTROKE** (software) — TWOSTROKE has leveraged Windows API calls to gather system information using `GetComputerNameExW(ComputerNameDnsFullyQualified)`.

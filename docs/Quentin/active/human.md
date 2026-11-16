@@ -4,7 +4,7 @@
 
 > **≤500 words. Decision-first.** The fast read; full detail in `machine.md`.
 
-**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-15
+**Status:** in-progress &nbsp;·&nbsp; **Branch:** `feat/eval-harness` &nbsp;·&nbsp; **Updated:** 2026-11-16
 
 ## What & why
 Tuning changes were judged by eye. `sift-eval` scores
@@ -30,8 +30,11 @@ run writes a JSON + HTML report; `compare` diffs two runs.
   references wrong.
 - **D78:** gold entries sharing a `group` are alternatives; recall counts required groups;
   `complete@k` asks if all were found.
-- **D79–D82:** LLM client and judge **retry transient errors**; judge gets 4096 output tokens.
-  Claude: blank `RECAP_TEMPERATURE` sends no sampling params; Claude judges use its SDK.
+- **D79–D82:** LLM client and judge **retry transient errors**; judge gets 4096 output tokens;
+  Claude-compatible.
+- **D87:** a manual **CI retrieval gate**: the *Retrieval eval* workflow embeds a committed MITRE
+  slice (75 questions, 263 pages) with bge-m3 on the runner's CPU and fails if hit@1, recall@10
+  or MRR drop > 0.03 (`compare --fail-on`).
 
 ## Ports / interfaces touched
 - No `core/` changes.
@@ -43,21 +46,18 @@ run writes a JSON + HTML report; `compare` diffs two runs.
   chat history. `factory.build_completer()` is now public, for the judge LLM.
 
 ## Risks / open questions
-- Weak judges fail RAGAS's structured output (counted `None`); use a strong judge, not the
-  generator.
-- Latency is in-process (no HTTP/auth), incl. backoff.
-- Bootstrapped questions copy chunk wording (flatters retrieval).
+- Use a strong judge: weak ones fail RAGAS's structured output.
+- Latency is in-process (no HTTP/auth).
+- Bootstrapped questions flatter retrieval.
 - `factory.py` changes flagged to Arthur.
 
 ## Status / next action
 - MITRE eval done (332 items; `machine.md` §5). Top-1 over 306 answerable: none 0.69,
   Haiku 5.5 0.84, bge-reranker-v2-m3 cross-encoder 0.82 (a tie; ~46 s/query on CPU).
   Find answered 12 of 26 unanswerable items.
-- A Haiku 5.5 re-judge matches Mistral within 0.11, except faithfulness (Haiku stricter).
-- Embedders, top-1/top-30 (bge-m3 0.69/0.97): Nomic-v2-MoE ties; Qwen3-0.6B 0.68/0.92 and
-  hosted mistral-embed 0.66/0.94 lose; Qwen3-4B 0.74/0.95 (paraphrases), 2× query cost.
-  bge-m3 + 4B fused (offline): 0.76/0.99.
-- Metrics oracle-tested (`machine.md` §4).
+- Haiku 5.5 re-judge: within 0.11 of Mistral; stricter on faithfulness.
+- Embedders, top-1/top-30 (bge-m3 0.69/0.97): Nomic ties; Qwen3-0.6B and mistral-embed lose;
+  Qwen3-4B 0.74/0.95, 2× query cost; bge-m3 + 4B fused 0.76/0.99.
 
 ## Pointer
 - Plan + code: [`./machine.md`](./machine.md) · user guide: [`docs/evaluation.md`](../../evaluation.md)

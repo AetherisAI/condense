@@ -11,7 +11,7 @@ from sift.adapters.llm.fake import FakeCompleter
 from sift.eval.cli import main
 from sift.eval.config import EvalSettings
 from sift.eval.judge import AbstentionCheck, FakeJudge
-from sift.eval.report import compare
+from sift.eval.report import check_regressions, compare, render_gate
 from sift.eval.runner import redact, rejudge, run
 from sift.factory import Container
 
@@ -243,3 +243,91 @@ def test_cli_compare(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None
 
     assert main(["compare", str(tmp_path / "a"), str(tmp_path / "b")]) == 0
     assert "find.answer.x.mean | 0.500 | 0.750 | +0.250 | ▲ better" in capsys.readouterr().out
+
+
+# --- compare --fail-on: the regression gate -----------------------------------------------------
+
+HIT1 = "find.retrieval.final.doc.hit@1"
+
+
+def _gate_summary(hit1: float, p50: float = 100.0, sha: str = "a" * 64) -> dict[str, object]:
+    return {
+        "run": {"label": "x", "golden_sha256": sha, "n_items": 75},
+        "surfaces": {
+            "find": {
+                "retrieval": {"final": {"doc": {"hit@1": hit1}}},
+                "latency_ms": {"total": {"p50": p50}},
+            }
+        },
+    }
+
+
+def test_gate_fails_only_when_a_metric_worsens_beyond_its_tolerance() -> None:
+    within, beyond = (
+        check_regressions(_gate_summary(0.60), _gate_summary(cand), {HIT1: 0.03})[0]
+        for cand in (0.58, 0.56)
+    )
+
+    assert not within.failed
+    assert render_gate([within]).count("+0.020") == 1
+    assert beyond.failed
+    assert beyond.worse_by == pytest.approx(0.04)
+
+
+def test_gate_prints_an_unchanged_metric_as_zero_not_minus_zero() -> None:
+    (check,) = check_regressions(_gate_summary(0.6), _gate_summary(0.6), {HIT1: 0.03})
+
+    assert "| +0.000 |" in render_gate([check])
+
+
+def test_gate_ignores_improvements_and_knows_lower_is_better() -> None:
+    p50 = "find.latency_ms.total.p50"
+    better, slower = (
+        check_regressions(_gate_summary(0.6, a), _gate_summary(0.9, b), {HIT1: 0.0, p50: 10.0})
+        for a, b in ((100.0, 50.0), (100.0, 120.0))
+    )
+
+    assert [c.failed for c in better] == [False, False]
+    assert [c.failed for c in slower] == [False, True]
+
+
+def test_gate_rejects_an_unknown_metric() -> None:
+    with pytest.raises(ValueError, match="hit@1x"):
+        check_regressions(_gate_summary(0.6), _gate_summary(0.6), {"find.hit@1x": 0.03})
+
+
+def test_gate_refuses_runs_over_different_golden_sets() -> None:
+    with pytest.raises(ValueError, match="different golden sets"):
+        check_regressions(_gate_summary(0.6), _gate_summary(0.6, sha="b" * 64), {HIT1: 0.03})
+
+
+@pytest.mark.parametrize(
+    ("candidate", "code", "verdict"), [(0.58, 0, "passed"), (0.5, 1, "FAILED")]
+)
+def test_cli_compare_fail_on_sets_the_exit_code(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    candidate: float,
+    code: int,
+    verdict: str,
+) -> None:
+    for name, value in (("base", 0.6), ("cand", candidate)):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "summary.json").write_text(json.dumps(_gate_summary(value)))
+
+    argv = ["compare", str(tmp_path / "base"), str(tmp_path / "cand"), "--fail-on", f"{HIT1}:0.03"]
+
+    assert main(argv) == code
+    out = capsys.readouterr().out
+    assert "## Regression gate" in out
+    assert f"**{verdict}**" in out
+
+
+@pytest.mark.parametrize("limit", ["hit@1", ":0.03", "hit@1:x", "hit@1:nan"])
+def test_cli_compare_fail_on_rejects_a_malformed_limit(
+    capsys: pytest.CaptureFixture[str], limit: str
+) -> None:
+    with pytest.raises(SystemExit):
+        main(["compare", "a", "b", "--fail-on", limit])
+
+    assert "METRIC:TOLERANCE" in capsys.readouterr().err

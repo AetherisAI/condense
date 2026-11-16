@@ -1,0 +1,566 @@
+# T1105 — Ingress Tool Transfer
+
+- **Type:** technique
+- **Domain:** Enterprise ATT&CK
+- **Tactics:** Command and Control
+- **Platforms:** ESXi, Linux, macOS, Network Devices, Windows
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T1105
+- **Last modified:** 2026-09-11
+
+## Description
+
+Adversaries may transfer tools or other files from an external system into a compromised environment. Tools or files may be copied from an external adversary-controlled system to the victim network through the command and control channel or through alternate protocols such as ftp. Once present, adversaries may also transfer/spread tools between victim devices within a compromised environment (i.e. Lateral Tool Transfer). 
+
+On Windows, adversaries may use various utilities to download tools, such as `copy`, `finger`, certutil, and PowerShell commands such as `IEX(New-Object Net.WebClient).downloadString()` and `Invoke-WebRequest`. On Linux and macOS systems, a variety of utilities also exist, such as `curl`, `scp`, `sftp`, `tftp`, `rsync`, `finger`, and `wget`. A number of these tools, such as `wget`, `curl`, and `scp`, also exist on ESXi. After downloading a file, a threat actor may attempt to verify its integrity by checking its hash value (e.g., via `certutil -hashfile`).
+
+Adversaries may also abuse installers and package managers, such as `yum` or `winget`, to download tools to victim hosts. Adversaries have also abused file application features, such as the Windows `search-ms` protocol handler, to deliver malicious files to victims through remote file searches invoked by User Execution (typically after interacting with Phishing lures).
+
+Files can also be transferred using various Web Services as well as native or otherwise present tools on the victim system. In some cases, adversaries may be able to leverage services that sync between a web-based and an on-premises client, such as Dropbox or OneDrive, to transfer files onto victim systems. For example, by compromising a cloud account and logging into the service's web portal, an adversary may be able to trigger an automatic syncing process that transfers the file onto the victim's machine.
+
+## Mitigations
+
+- **M1031 Network Intrusion Prevention** — Network intrusion detection and prevention systems that use network signatures to identify traffic for specific adversary malware or unusual data transfer over known protocols like FTP can be used to mitigate activity at the network level. Signatures are often for unique indicators within protocols and may be based on the specific obfuscation technique used by a particular adversary or tool, and will likely be different across various malware families and versions. Adversaries will likely change tool C2 signatures over time or construct protocols in such a way as to avoid detection by common defensive tools.
+- **M1037 Filter Network Traffic** — Use network filtering to block outbound traffic from compromised systems to unapproved external destinations. Restricting access to known, trusted IP addresses and protocols can prevent attackers from downloading malicious tools or payloads onto compromised servers after gaining initial access.
+
+## Detection strategies
+
+- **DET0060 Detect Ingress Tool Transfers via Behavioral Chain**
+  - AN0165 (Windows): Unusual or uncommon processes initiate network connections to external destinations followed by file creation (tools downloaded). Log sources: WinEventLog:Sysmon (EventCode=3, 22); WinEventLog:Sysmon (EventCode=11); WinEventLog:Sysmon (EventCode=1).
+  - AN0166 (Linux): Shell-based tools (curl, wget, scp) initiate connections to external domains followed by creation of executable files on disk. Log sources: auditd:SYSCALL (connect, execve, write); auditd:SYSCALL (file creation/modification); iptables:LOG (TCP connections).
+  - AN0167 (macOS): Process execution of curl or wget followed by a network connection and a file created in temporary or user-specific directories. Log sources: macos:endpointsecurity (ES_EVENT_TYPE_NOTIFY_EXEC); macos:unifiedlog (file write/create); macos:unifiedlog (connection open).
+  - AN0168 (ESXi): Command line interface or vCLI triggers remote transfer using wget or curl, writing files into datastore paths or local tmp directories. Log sources: esxi:hostd (command execution); esxi:vmkernel (file write).
+  - AN0169 (Network Devices): Network device logs show anomalous inbound file transfers or uncharacteristic flows with high payload volume to network devices with storage or automation hooks. Log sources: NSM:Flow (connection metadata); snmp:syslog (firmware write/log event).
+
+## Procedure examples
+
+- **C0001 Frankenstein** (campaign) — During Frankenstein, the threat actors downloaded files and tools onto a victim machine.
+- **C0002 Night Dragon** (campaign) — During Night Dragon, threat actors used administrative utilities to deliver Trojan components to remote systems.
+- **C0004 CostaRicto** (campaign) — During CostaRicto, the threat actors downloaded malware and tools onto a compromised host.
+- **C0006 Operation Honeybee** (campaign) — During Operation Honeybee, the threat actors downloaded additional malware and malicious scripts onto a compromised host.
+- **C0007 FunnyDream** (campaign) — During FunnyDream, the threat actors downloaded additional droppers and backdoors onto a compromised system.
+- **C0010 C0010** (campaign) — During C0010, UNC3890 actors downloaded tools and malware onto a compromised host.
+- **C0013 Operation Sharpshooter** (campaign) — During Operation Sharpshooter, additional payloads were downloaded after a target was infected with a first-stage downloader.
+- **C0014 Operation Wocao** (campaign) — During Operation Wocao, threat actors downloaded additional files to the infected system.
+- **C0015 C0015** (campaign) — During C0015, the threat actors downloaded additional tools and files onto a compromised network.
+- **C0017 C0017** (campaign) — During C0017, APT41 downloaded malicious payloads onto compromised systems.
+- **C0018 C0018** (campaign) — During C0018, the threat actors downloaded additional tools, such as Mimikatz and Sliver, as well as Cobalt Strike and AvosLocker ransomware onto the victim network.
+- **C0021 C0021** (campaign) — During C0021, the threat actors downloaded additional tools and files onto victim machines.
+- **C0022 Operation Dream Job** (campaign) — During Operation Dream Job, Lazarus Group downloaded multistage malware and tools onto a compromised host.
+- **C0024 SolarWinds Compromise** (campaign) — During the SolarWinds Compromise, APT29 downloaded additional malware, such as TEARDROP and Cobalt Strike, onto a compromised host following initial access.
+- **C0026 C0026** (campaign) — During C0026, the threat actors downloaded malicious payloads onto select compromised hosts.
+- **C0027 C0027** (campaign) — During C0027, Scattered Spider downloaded tools using victim organization systems.
+- **C0028 2015 Ukraine Electric Power Attack** (campaign) — During the 2015 Ukraine Electric Power Attack, Sandworm Team pushed additional malicious tools onto an infected system to steal user credentials, move laterally, and destroy data.
+- **C0029 Cutting Edge** (campaign) — During Cutting Edge, threat actors leveraged exploits to download remote files to Ivanti Connect Secure VPNs.
+- **C0035 KV Botnet Activity** (campaign) — KV Botnet Activity included the use of scripts to download additional payloads when compromising network nodes.
+- **C0037 Water Curupira Pikabot Distribution** (campaign) — Water Curupira Pikabot Distribution used Curl.exe to download the Pikabot payload from an external server, saving the file to the victim machine's temporary directory.
+- **C0038 HomeLand Justice** (campaign) — During HomeLand Justice, threat actors used web shells to download files to compromised infrastructure.
+- **C0040 APT41 DUST** (campaign) — APT41 DUST involved execution of `certutil.exe` via web shell to download the DUSTPAN dropper.
+- **C0042 Outer Space** (campaign) — During Outer Space, OilRig downloaded additional tools to comrpomised infrastructure.
+- **C0045 ShadowRay** (campaign) — During ShadowRay, threat actors downloaded and executed the XMRig miner on targeted hosts.
+- **C0048 Operation MidnightEclipse** (campaign) — During Operation MidnightEclipse, threat actors downloaded additional payloads on compromised devices.
+- **C0055 Quad7 Activity** (campaign) — Quad7 Activity has downloaded additional binaries from a remote File Transfer Protocol (FTP) server to compromised devices.
+- **C0056 RedPenguin** (campaign) — During RedPenguin, UNC3886 used backdoor malware capable of downloading files to compromised infrastructure.
+- **C0058 SharePoint ToolShell Exploitation** (campaign) — During SharePoint ToolShell Exploitation, threat actors used a loader to download and execute ransomware.
+- **C0063 2025 Poland Wiper Attacks** (campaign) — During the 2025 Poland Wiper Attacks, the adversaries downloaded malicious payloads to the victim server.
+- **C0064 AI-Assisted Breach of Mexico's Government Infrastructure** (campaign) — During the AI-Assisted Breach of Mexico's Government Infrastructure, the adversary had instructed Claude Code to utilize vulnerability tools to include PetitPotam which Claude Code sought to download to utilize in the victim environment.
+- **G0004 Ke3chang** (group) — Ke3chang has used tools to download files to compromised machines.
+- **G0007 APT28** (group) — APT28 has downloaded additional files, including by using a first-stage downloader to contact the C2 server to obtain the second-stage implant.
+- **G0010 Turla** (group) — Turla has used shellcode to download Meterpreter after compromising a victim.
+- **G0012 Darkhotel** (group) — Darkhotel has used first-stage payloads that download additional malware from C2 servers.
+- **G0016 APT29** (group) — APT29 has downloaded additional tools and malware onto compromised networks.
+- **G0021 Molerats** (group) — Molerats used executables to download malicious files from different sources.
+- **G0022 APT3** (group) — APT3 has a tool that can copy files to remote machines.
+- **G0026 APT18** (group) — APT18 can upload a file to the victim’s machine.
+- **G0027 Threat Group-3390** (group) — Threat Group-3390 has downloaded additional malware and tools, including through the use of `certutil`, onto a compromised host .
+- **G0032 Lazarus Group** (group) — Lazarus Group has downloaded files, malware, and tools from its C2 onto a compromised host.
+- **G0034 Sandworm Team** (group) — Sandworm Team has pushed additional malicious tools onto an infected system to steal user credentials, move laterally, and destroy data.
+- **G0035 Dragonfly** (group) — Dragonfly has copied and installed tools for operations once in the victim environment.
+- **G0040 Patchwork** (group) — Patchwork payloads download additional files from the C2 server.
+- **G0044 Winnti Group** (group) — Winnti Group has downloaded an auxiliary program named ff.exe to infected machines.
+- **G0045 menuPass** (group) — menuPass has installed updates and new malware on victims.
+- **G0046 FIN7** (group) — FIN7 has downloaded additional malware to execute on the victim's machine, including by using a PowerShell script to launch shellcode that retrieves an additional payload.
+- **G0047 Gamaredon Group** (group) — Gamaredon Group has downloaded additional malware and tools onto a compromised host. For example, Gamaredon Group uses a backdoor script to retrieve and decode additional payloads once in victim environments.
+- **G0049 OilRig** (group) — OilRig had downloaded remote files onto victim infrastructure.
+- **G0050 APT32** (group) — APT32 has added JavaScript to victim websites to download additional frameworks that profile and compromise website visitors.
+- **G0059 Magic Hound** (group) — Magic Hound has downloaded additional code and files from servers onto victims.
+- **G0060 BRONZE BUTLER** (group) — BRONZE BUTLER has used various tools to download files, including DGet (a similar tool to wget).
+- **G0061 FIN8** (group) — FIN8 has used remote code execution to download subsequent payloads.
+- **G0064 APT33** (group) — APT33 has downloaded additional files and programs from its C2 server.
+- **G0065 Leviathan** (group) — Leviathan has downloaded additional scripts and files from adversary-controlled servers.
+- **G0066 Elderwood** (group) — The Ritsol backdoor trojan used by Elderwood can download files onto a compromised host from a remote location.
+- **G0067 APT37** (group) — APT37 has downloaded second stage malware from compromised websites.
+- **G0068 PLATINUM** (group) — PLATINUM has transferred files using the Intel® Active Management Technology (AMT) Serial-over-LAN (SOL) channel.
+- **G0069 MuddyWater** (group) — MuddyWater has used malware that can upload additional files to the victim’s machine. MuddyWater has used PowerShell commands to install remote management and monitoring (RMM) software on the victim’s machine to conduct espionage and to exfiltrate data.
+- **G0075 Rancor** (group) — Rancor has downloaded additional malware, including by using certutil.
+- **G0078 Gorgon Group** (group) — Gorgon Group malware can download additional files from C2 servers.
+- **G0080 Cobalt Group** (group) — Cobalt Group has used public sites such as github.com and sendspace.com to upload files and then download them to victim computers. The group's JavaScript backdoor is also capable of downloading files.
+- **G0081 Tropic Trooper** (group) — Tropic Trooper has used a delivered trojan to download additional files.
+- **G0082 APT38** (group) — APT38 used a backdoor, NESTEGG, that has the capability to download and upload files to and from a victim’s machine. Additionally, APT38 has downloaded other payloads onto a victim’s machine. APT38 has also injected npm packages with malicious dependencies that download second-stage payloads to victim machines.
+- **G0087 APT39** (group) — APT39 has downloaded tools to compromised hosts.
+- **G0090 WIRTE** (group) — WIRTE has downloaded PowerShell code from the C2 server to be executed.
+- **G0091 Silence** (group) — Silence has downloaded additional modules and malware to victim’s machines.
+- **G0092 TA505** (group) — TA505 has downloaded additional malware to execute on victim systems.
+- **G0093 GALLIUM** (group) — GALLIUM dropped additional tools to victims during their operation, including portqry.exe, a renamed cmd.exe file, winrar, and HTRAN.
+- **G0094 Kimsuky** (group) — Kimsuky has downloaded additional scripts, tools, and malware onto victim systems.
+- **G0096 APT41** (group) — APT41 used certutil to download additional files. APT41 downloaded post-exploitation tools such as Cobalt Strike via command shell following initial access. APT41 has uploaded Procdump and NATBypass to a staging directory and has used these tools in follow-on activities.
+- **G0099 APT-C-36** (group) — APT-C-36 has downloaded binary data from a specified domain after the malicious document is opened.
+- **G0102 Wizard Spider** (group) — Wizard Spider can transfer malicious payloads such as ransomware to compromised machines.
+- **G0106 Rocke** (group) — Rocke used malware to download additional malicious files to the target system.
+- **G0107 Whitefly** (group) — Whitefly has the ability to download additional tools from the C2.
+- **G0112 Windshift** (group) — Windshift has used tools to deploy additional payloads to compromised hosts.
+- **G0114 Chimera** (group) — Chimera has remotely copied tools and malware onto targeted systems.
+- **G0117 Fox Kitten** (group) — Fox Kitten has downloaded additional tools including PsExec directly to endpoints.
+- **G0119 Indrik Spider** (group) — Indrik Spider has downloaded additional scripts, malware, and tools onto a compromised host.
+- **G0120 Evilnum** (group) — Evilnum can deploy additional components or tools as needed.
+- **G0121 Sidewinder** (group) — Sidewinder has used LNK files to download remote files to the victim's network.
+- **G0123 Volatile Cedar** (group) — Volatile Cedar can deploy additional tools.
+- **G0125 HAFNIUM** (group) — HAFNIUM has downloaded malware and tools--including Nishang and PowerCat--onto a compromised host.
+- **G0127 TA551** (group) — TA551 has retrieved DLLs and installer binaries for malware execution from C2.
+- **G0128 ZIRCONIUM** (group) — ZIRCONIUM has used tools to download malicious files to compromised hosts.
+- **G0129 Mustang Panda** (group) — Mustang Panda has downloaded additional executables following the initial infection stage. Mustang Panda has also leveraged Visual Studio Code `code.exe` and Dev Tunnels using `DevTunnel.exe` to propagate additional tools and payloads.
+- **G0130 Ajax Security Team** (group) — Ajax Security Team has used Wrapper/Gholee, custom-developed malware, which downloaded additional malware to the infected system.
+- **G0131 Tonto Team** (group) — Tonto Team has downloaded malicious DLLs which served as a ShadowPad loader.
+- **G0133 Nomadic Octopus** (group) — Nomadic Octopus has used malicious macros to download additional files to the victim's machine.
+- **G0135 BackdoorDiplomacy** (group) — BackdoorDiplomacy has downloaded additional files and tools onto a compromised host.
+- **G0136 IndigoZebra** (group) — IndigoZebra has downloaded additional files and tools from its C2 server.
+- **G0138 Andariel** (group) — Andariel has downloaded additional tools and malware onto compromised hosts.
+- **G0139 TeamTNT** (group) — TeamTNT has the `curl` and `wget` commands as well as batch scripts to download new tools.
+- **G0140 LazyScripter** (group) — LazyScripter had downloaded additional tools to a compromised host.
+- **G0142 Confucius** (group) — Confucius has downloaded additional files and payloads onto a compromised host following initial access.
+- **G0143 Aquatic Panda** (group) — Aquatic Panda has downloaded additional malware onto compromised hosts.
+- **G1001 HEXANE** (group) — HEXANE has downloaded additional payloads and malicious scripts onto a compromised host.
+- **G1002 BITTER** (group) — BITTER has downloaded additional malware and tools onto a compromised host.
+- **G1008 SideCopy** (group) — SideCopy has delivered trojanized executables via spearphishing emails that contacts actor-controlled servers to download malicious payloads.
+- **G1009 Moses Staff** (group) — Moses Staff has downloaded and installed web shells to following path `C:\inetpub\wwwroot\aspnet_client\system_web\IISpool.aspx`.
+- **G1013 Metador** (group) — Metador has downloaded tools and malware onto a compromised system.
+- **G1014 LuminousMoth** (group) — LuminousMoth has downloaded additional malware and tools onto a compromised host.
+- **G1015 Scattered Spider** (group) — Scattered Spider has downloaded the Teleport remote access tool to compromised VMware vCenter Servers.
+- **G1016 FIN13** (group) — FIN13 has downloaded additional tools and malware to compromised systems.
+- **G1017 Volt Typhoon** (group) — Volt Typhoon has downloaded an outdated version of comsvcs.dll to a compromised domain controller in a non-standard folder.
+- **G1018 TA2541** (group) — TA2541 has used malicious scripts and macros with the ability to download additional payloads.
+- **G1020 Mustard Tempest** (group) — Mustard Tempest has deployed secondary payloads and third stage implants to compromised hosts.
+- **G1021 Cinnamon Tempest** (group) — Cinnamon Tempest has downloaded files, including Cobalt Strike, to compromised hosts.
+- **G1032 INC Ransom** (group) — INC Ransom has downloaded tools to compromised servers including Advanced IP Scanner.
+- **G1034 Daggerfly** (group) — Daggerfly has used PowerShell and BITSAdmin to retrieve follow-on payloads from external locations for execution on victim machines.
+- **G1035 Winter Vivern** (group) — Winter Vivern executed PowerShell scripts to create scheduled tasks to retrieve remotely-hosted payloads.
+- **G1036 Moonstone Sleet** (group) — Moonstone Sleet retrieved a final stage payload from command and control infrastructure during initial installation on victim systems.
+- **G1040 Play** (group) — Play has used Cobalt Strike to download files to compromised machines.
+- **G1043 BlackByte** (group) — BlackByte has transferred tools such as Cobalt Strike to victim environments from file sharing and hosting websites.
+- **G1045 Salt Typhoon** (group) — Salt Typhoon has downloaded additional payloads and files to victim devices.
+- **G1046 Storm-1811** (group) — Storm-1811 has used scripted `cURL` commands, BITSAdmin, and other mechanisms to retrieve follow-on batch scripts and tools for execution on victim devices.
+- **G1051 Medusa Group** (group) — Medusa Group has leveraged certutil, PowerShell, and Windows Command to download additional tools to include RMM services. Medusa Group has also engaged in “Bring Your Own Vulnerable Driver” (BYOVD) and downloaded vulnerable or signed drivers to the victim environment to disable security tools.
+- **G1055 VOID MANTICORE** (group) — VOID MANTICORE has deployed additional payloads from dedicated C2 servers. VOID MANTICORE has also downloaded legitimate tools and software from publicly available services. VOID MANTICORE had utilized VeraCrypt a legitimate disk encrypting utility that was downloaded directly from the website.
+- **G1056 TeamPCP** (group) — TeamPCP has modified legitimate software binaries to retrieve secondary payloads from C2.
+- **G1057 ShinyHunters** (group) — ShinyHunters has deployed custom scripts to targeted systems from customized MeshAgents in their staging environment.
+- **G1059 NIMBUS MANTICORE** (group) — NIMBUS MANTICORE has transferred and deployed malware to compromised hosts using remove management services, such as Atelier Web Remote Commander (AWRC), and SSH reverse tunnels.
+- **S0009 Hikit** (software) — Hikit has the ability to download files to a compromised host.
+- **S0011 Taidoor** (software) — Taidoor has downloaded additional files onto a compromised host.
+- **S0012 PoisonIvy** (software) — PoisonIvy creates a backdoor through which remote attackers can upload files.
+- **S0013 PlugX** (software) — PlugX has a module to download and execute files on the compromised machine.
+- **S0015 Ixeshe** (software) — Ixeshe can download and execute additional files.
+- **S0017 BISCUIT** (software) — BISCUIT has a command to download a file from the C2 server.
+- **S0020 China Chopper** (software) — China Chopper's server component can download remote files.
+- **S0022 Uroburos** (software) — Uroburos can use a `Put` command to write files to an infected machine.
+- **S0023 CHOPSTICK** (software) — CHOPSTICK is capable of performing remote file transmission.
+- **S0024 Dyre** (software) — Dyre has a command to download and executes additional files.
+- **S0032 gh0st RAT** (software) — gh0st RAT can download files to the victim’s machine.
+- **S0042 LOWBALL** (software) — LOWBALL uses the Dropbox API to request two files, one of which is the same file as the one dropped by the malicious email attachment. This is most likely meant to be a mechanism to update the compromised host with a new version of the LOWBALL malware.
+- **S0044 JHUHUGIT** (software) — JHUHUGIT can retrieve an additional payload from its C2 server. JHUHUGIT has a command to download files to the victim’s machine.
+- **S0051 MiniDuke** (software) — MiniDuke can download additional encrypted backdoors onto the victim via GIF files.
+- **S0053 SeaDuke** (software) — SeaDuke is capable of uploading and downloading files.
+- **S0054 CloudDuke** (software) — CloudDuke downloads and executes additional malware from either a Web address or a Microsoft OneDrive account.
+- **S0055 RARSTONE** (software) — RARSTONE downloads its backdoor component from a C2 server and loads it directly into memory.
+- **S0070 HTTPBrowser** (software) — HTTPBrowser is capable of writing a file to the compromised system from the C2 server.
+- **S0074 Sakula** (software) — Sakula has the capability to download files.
+- **S0077 CallMe** (software) — CallMe has the capability to download a file to the victim from the C2 server.
+- **S0078 Psylo** (software) — Psylo has a command to download a file to the system from its C2 server.
+- **S0079 MobileOrder** (software) — MobileOrder has a command to download a file from the C2 server to the victim mobile device's SD card.
+- **S0080 Mivast** (software) — Mivast has the capability to download and execute .exe files.
+- **S0081 Elise** (software) — Elise can download additional files from the C2 server for execution.
+- **S0082 Emissary** (software) — Emissary has the capability to download files from the C2 server.
+- **S0083 Misdat** (software) — Misdat is capable of downloading files from the C2.
+- **S0084 Mis-Type** (software) — Mis-Type has downloaded additional malware and files onto a compromised host.
+- **S0085 S-Type** (software) — S-Type can download additional files onto a compromised host.
+- **S0086 ZLib** (software) — ZLib has the ability to download files.
+- **S0087 Hi-Zor** (software) — Hi-Zor has the ability to upload and download files from its C2 server.
+- **S0088 Kasidet** (software) — Kasidet has the ability to download and execute additional files.
+- **S0092 Agent.btz** (software) — Agent.btz attempts to download an encrypted binary from a specified domain.
+- **S0093 Backdoor.Oldrea** (software) — Backdoor.Oldrea can download additional modules from C2.
+- **S0094 Trojan.Karagany** (software) — Trojan.Karagany can upload, download, and execute files on the victim.
+- **S0095 ftp** (software) — ftp may be abused by adversaries to transfer tools or files from an external system into a compromised environment.
+- **S0106 cmd** (software) — cmd can be used to copy files to/from a remotely connected external system.
+- **S0109 WEBC2** (software) — WEBC2 can download and execute a file.
+- **S0115 Crimson** (software) — Crimson contains a command to retrieve files from its C2 server.
+- **S0118 Nidiran** (software) — Nidiran can download and execute files.
+- **S0124 Pisloader** (software) — Pisloader has a command to upload a file to the victim machine.
+- **S0125 Remsec** (software) — Remsec contains a network loader to receive executable modules from remote attackers and run them on the local victim. It can also upload and download files over HTTP and HTTPS.
+- **S0128 BADNEWS** (software) — BADNEWS is capable of downloading additional files through C2 channels, including a new version of itself.
+- **S0130 Unknown Logger** (software) — Unknown Logger is capable of downloading remote files.
+- **S0132 H1N1** (software) — H1N1 contains a command to download and execute a file from a remotely hosted URL using WinINet HTTP requests.
+- **S0134 Downdelph** (software) — After downloading its main config file, Downdelph downloads multiple payloads from C2 servers.
+- **S0137 CORESHELL** (software) — CORESHELL downloads another dropper from its C2 server.
+- **S0139 PowerDuke** (software) — PowerDuke has a command to download a file.
+- **S0140 Shamoon** (software) — Shamoon can download an executable to run on the victim.
+- **S0141 Winnti for Windows** (software) — The Winnti for Windows dropper can place malicious payloads on targeted systems.
+- **S0144 ChChes** (software) — ChChes is capable of downloading files, including additional modules.
+- **S0145 POWERSOURCE** (software) — POWERSOURCE has been observed being used to download TEXTMATE and the Cobalt Strike Beacon payload onto victims.
+- **S0147 Pteranodon** (software) — Pteranodon can download and execute additional files.
+- **S0148 RTM** (software) — RTM can download additional files.
+- **S0150 POSHSPY** (software) — POSHSPY downloads and executes additional PowerShell code and Windows binaries.
+- **S0153 RedLeaves** (software) — RedLeaves is capable of downloading a file from a specified URL.
+- **S0154 Cobalt Strike** (software) — Cobalt Strike can deliver additional payloads to victim machines.
+- **S0160 certutil** (software) — certutil can be used to download files from a given URL.
+- **S0164 TDTESS** (software) — TDTESS has a command to download and execute an additional file.
+- **S0166 RemoteCMD** (software) — RemoteCMD copies a file over to the remote system before execution.
+- **S0168 Gazer** (software) — Gazer can execute a task to download a file.
+- **S0170 Helminth** (software) — Helminth can download additional files.
+- **S0171 Felismus** (software) — Felismus can download files from remote servers.
+- **S0180 Volgmer** (software) — Volgmer can download remote files and additional payloads to the victim's machine.
+- **S0184 POWRUNER** (software) — POWRUNER can download or upload files from its C2 server.
+- **S0185 SEASHARPEE** (software) — SEASHARPEE can download remote files onto victims.
+- **S0187 Daserf** (software) — Daserf can download remote files.
+- **S0190 BITSAdmin** (software) — BITSAdmin can be used to create BITS Jobs to upload and/or download files.
+- **S0192 Pupy** (software) — Pupy can upload and download to/from a victim machine.
+- **S0196 PUNCHBUGGY** (software) — PUNCHBUGGY can download additional files and payloads to compromised hosts.
+- **S0198 NETWIRE** (software) — NETWIRE can downloaded payloads from C2 to the compromised host.
+- **S0199 TURNEDUP** (software) — TURNEDUP is capable of downloading additional files.
+- **S0200 Dipsind** (software) — Dipsind can download remote files.
+- **S0201 JPIN** (software) — JPIN can download files and upgrade itself.
+- **S0203 Hydraq** (software) — Hydraq creates a backdoor through which remote attackers can download files and additional malware components.
+- **S0204 Briba** (software) — Briba downloads files onto infected hosts.
+- **S0206 Wiarp** (software) — Wiarp creates a backdoor through which remote attackers can download files.
+- **S0207 Vasport** (software) — Vasport can download files.
+- **S0208 Pasam** (software) — Pasam creates a backdoor through which remote attackers can upload files.
+- **S0210 Nerex** (software) — Nerex creates a backdoor through which remote attackers can download files onto a compromised host.
+- **S0211 Linfo** (software) — Linfo creates a backdoor through which remote attackers can download files onto compromised hosts.
+- **S0213 DOGCALL** (software) — DOGCALL can download and execute additional payloads.
+- **S0214 HAPPYWORK** (software) — can download and execute a second-stage payload.
+- **S0215 KARAE** (software) — KARAE can upload and download files, including second-stage malware.
+- **S0217 SHUTTERSPEED** (software) — SHUTTERSPEED can download and execute an arbitary executable.
+- **S0218 SLOWDRIFT** (software) — SLOWDRIFT downloads additional payloads.
+- **S0223 POWERSTATS** (software) — POWERSTATS can retrieve and execute additional PowerShell payloads from the C2 server.
+- **S0226 Smoke Loader** (software) — Smoke Loader downloads a new version of itself once it has installed. It also downloads additional plugins.
+- **S0228 NanHaiShu** (software) — NanHaiShu can download additional files from URLs.
+- **S0229 Orz** (software) — Orz can download files onto the victim.
+- **S0230 ZeroT** (software) — ZeroT can download additional payloads onto the victim.
+- **S0234 Bandook** (software) — Bandook can download files to the system.
+- **S0236 Kwampirs** (software) — Kwampirs downloads additional files from C2 servers.
+- **S0239 Bankshot** (software) — Bankshot uploads files and secondary payloads to the victim's machine.
+- **S0240 ROKRAT** (software) — ROKRAT can retrieve additional malicious payloads from its C2 server.
+- **S0241 RATANKBA** (software) — RATANKBA uploads and downloads information.
+- **S0247 NavRAT** (software) — NavRAT can download files remotely.
+- **S0249 Gold Dragon** (software) — Gold Dragon can download additional components from the C2 server.
+- **S0250 Koadic** (software) — Koadic can download additional files and tools.
+- **S0251 Zebrocy** (software) — Zebrocy obtains additional code to execute on the victim's machine, including the downloading of a secondary payload.
+- **S0254 PLAINTEE** (software) — PLAINTEE has downloaded and executed additional plugins.
+- **S0255 DDKONG** (software) — DDKONG downloads and uploads files on the victim’s machine.
+- **S0256 Mosquito** (software) — Mosquito can upload and download files to the victim.
+- **S0257 VERMIN** (software) — VERMIN can download and upload files to the victim's machine.
+- **S0258 RGDoor** (software) — RGDoor uploads and downloads files to and from the victim’s machine.
+- **S0260 InvisiMole** (software) — InvisiMole can upload files to the victim's machine for operations.
+- **S0262 QuasarRAT** (software) — QuasarRAT can download files to the victim’s machine and execute them.
+- **S0263 TYPEFRAME** (software) — TYPEFRAME can upload and download files to the victim’s machine.
+- **S0264 OopsIE** (software) — OopsIE can download files from its C2 server to the victim's machine.
+- **S0265 Kazuar** (software) — Kazuar downloads additional plug-ins to load on the victim’s machine, including the ability to upgrade and replace its own binary.
+- **S0266 TrickBot** (software) — TrickBot downloads several additional files and saves them to the victim's machine.
+- **S0267 FELIXROOT** (software) — FELIXROOT downloads and uploads files to and from the victim’s machine.
+- **S0268 Bisonal** (software) — Bisonal has the capability to download files to execute on the victim’s machine.
+- **S0270 RogueRobin** (software) — RogueRobin can save a new file to the system from the C2 server.
+- **S0271 KEYMARBLE** (software) — KEYMARBLE can upload files to the victim’s machine and can download additional payloads.
+- **S0272 NDiskMonitor** (software) — NDiskMonitor can download and execute a file from given URL.
+- **S0274 Calisto** (software) — Calisto has the capability to upload and download files to the victim's machine.
+- **S0275 UPPERCUT** (software) — UPPERCUT can download and upload files to and from the victim’s machine.
+- **S0283 jRAT** (software) — jRAT can download and execute files.
+- **S0284 More_eggs** (software) — More_eggs can download and launch additional payloads.
+- **S0330 Zeus Panda** (software) — Zeus Panda can download additional malware plug-in modules and execute them on the victim’s machine.
+- **S0331 Agent Tesla** (software) — Agent Tesla can download additional files for execution on the victim’s machine.
+- **S0332 Remcos** (software) — Remcos can upload and download files to and from the victim’s machine.
+- **S0333 UBoatRAT** (software) — UBoatRAT can upload and download files to the victim’s machine.
+- **S0334 DarkComet** (software) — DarkComet can load any files onto the infected machine to execute.
+- **S0336 NanoCore** (software) — NanoCore has the capability to download and activate additional modules for execution.
+- **S0337 BadPatch** (software) — BadPatch can download and execute or update malware.
+- **S0339 Micropsia** (software) — Micropsia can download and execute an executable from the C2 server.
+- **S0340 Octopus** (software) — Octopus can download additional files and tools onto the victim’s machine.
+- **S0341 Xbash** (software) — Xbash can download additional malicious files from its C2 server.
+- **S0342 GreyEnergy** (software) — GreyEnergy can download additional modules and payloads.
+- **S0344 Azorult** (software) — Azorult can download and execute additional files. Azorult has also downloaded a ransomware payload called Hermes.
+- **S0345 Seasalt** (software) — Seasalt has a command to download additional files.
+- **S0347 AuditCred** (software) — AuditCred can download files and additional malware.
+- **S0348 Cardinal RAT** (software) — Cardinal RAT can download and execute additional payloads.
+- **S0351 Cannon** (software) — Cannon can download a payload for execution.
+- **S0352 OSX_OCEANLOTUS.D** (software) — OSX_OCEANLOTUS.D has a command to download and execute a file on the victim’s machine.
+- **S0353 NOKKI** (software) — NOKKI has downloaded a remote module for execution.
+- **S0354 Denis** (software) — Denis deploys additional backdoors and hacking tools to the system.
+- **S0356 KONNI** (software) — KONNI can download files and execute them on the victim’s machine.
+- **S0360 BONDUPDATER** (software) — BONDUPDATER can download or upload files from its C2 server.
+- **S0363 Empire** (software) — Empire can upload and download to and from a victim machine.
+- **S0367 Emotet** (software) — Emotet can download follow-on payloads and items via malicious `url` parameters in obfuscated PowerShell code.
+- **S0369 CoinTicker** (software) — CoinTicker executes a Python script to download its second stage.
+- **S0373 Astaroth** (software) — Astaroth uses certutil and BITSAdmin to download additional malware.
+- **S0374 SpeakUp** (software) — SpeakUp downloads and executes additional files from a remote server.
+- **S0376 HOPLIGHT** (software) — HOPLIGHT has the ability to connect to a remote host in order to upload and download files.
+- **S0379 Revenge RAT** (software) — Revenge RAT has the ability to upload and download files.
+- **S0380 StoneDrill** (software) — StoneDrill has downloaded and dropped temporary files containing scripts; it additionally has a function to upload files from the victims machine.
+- **S0381 FlawedAmmyy** (software) — FlawedAmmyy can transfer files from C2.
+- **S0382 ServHelper** (software) — ServHelper may download additional files to execute.
+- **S0385 njRAT** (software) — njRAT can download files to the victim’s machine. APT-C-36 has used modified versions of njRAT to enable the download of .NET assemblies.
+- **S0386 Ursnif** (software) — Ursnif has dropped payload and configuration files to disk. Ursnif has also been used to download and execute additional payloads.
+- **S0387 KeyBoy** (software) — KeyBoy has a download and upload functionality.
+- **S0388 YAHOYAH** (software) — YAHOYAH uses HTTP GET requests to download other files that are executed in memory.
+- **S0390 SQLRat** (software) — SQLRat can make a direct SQL connection to a Microsoft database controlled by the attackers, retrieve an item from the bindata table, then write and execute the file on disk.
+- **S0394 HiddenWasp** (software) — HiddenWasp downloads a tar compressed archive from a download server to the system.
+- **S0395 LightNeuron** (software) — LightNeuron has the ability to download and execute additional files.
+- **S0396 EvilBunny** (software) — EvilBunny has downloaded additional Lua scripts from the C2.
+- **S0398 HyperBro** (software) — HyperBro has the ability to download additional files.
+- **S0401 Exaramel for Linux** (software) — Exaramel for Linux has a command to download a file from and to a remote C2 server.
+- **S0402 OSX/Shlayer** (software) — OSX/Shlayer can download payloads, and extract bytes from files. OSX/Shlayer uses the `curl -fsL "$url" >$tmp_path` command to download malicious payloads into a temporary directory.
+- **S0404 esentutl** (software) — esentutl can be used to copy files from a given URL.
+- **S0409 Machete** (software) — Machete can download additional files for execution on the victim’s machine.
+- **S0412 ZxShell** (software) — ZxShell has a command to transfer files from a remote host.
+- **S0414 BabyShark** (software) — BabyShark has downloaded additional files from the C2.
+- **S0428 PoetRAT** (software) — PoetRAT has the ability to copy files and download/upload files into C2 channels using FTP and HTTPS.
+- **S0430 Winnti for Linux** (software) — Winnti for Linux has the ability to deploy modules directly from command and control (C2) servers, possibly for remote command execution, file exfiltration, and socks5 proxying on the infected host.
+- **S0431 HotCroissant** (software) — HotCroissant has the ability to upload a file from the command and control (C2) server to the victim machine.
+- **S0435 PLEAD** (software) — PLEAD has the ability to upload and download files to and from an infected host.
+- **S0436 TSCookie** (software) — TSCookie has the ability to upload and download files to and from the infected host.
+- **S0437 Kivars** (software) — Kivars has the ability to download and execute files.
+- **S0438 Attor** (software) — Attor can download additional plugins, updates and other files.
+- **S0439 Okrum** (software) — Okrum has built-in commands for uploading, downloading, and executing files to the system.
+- **S0442 VBShower** (software) — VBShower has the ability to download VBS files to the target computer.
+- **S0444 ShimRat** (software) — ShimRat can download additional files.
+- **S0445 ShimRatReporter** (software) — ShimRatReporter had the ability to download additional payloads.
+- **S0447 Lokibot** (software) — Lokibot downloaded several staged items onto the victim's machine.
+- **S0450 SHARPSTATS** (software) — SHARPSTATS has the ability to upload and download files.
+- **S0451 LoudMiner** (software) — LoudMiner used SCP to update the miner from the C2.
+- **S0453 Pony** (software) — Pony can download additional files onto the infected system.
+- **S0455 Metamorfo** (software) — Metamorfo has used MSI files to download additional files to execute.
+- **S0456 Aria-body** (software) — Aria-body has the ability to download additional payloads from C2.
+- **S0457 Netwalker** (software) — Operators deploying Netwalker have used psexec and certutil to retrieve the Netwalker payload.
+- **S0459 MechaFlounder** (software) — MechaFlounder has the ability to upload and download files to and from a compromised host.
+- **S0461 SDBbot** (software) — SDBbot has the ability to download a DLL from C2 to a compromised host.
+- **S0462 CARROTBAT** (software) — CARROTBAT has the ability to download and execute a remote file via certutil.
+- **S0465 CARROTBALL** (software) — CARROTBALL has the ability to download and install a remote payload.
+- **S0468 Skidmap** (software) — Skidmap has the ability to download files on an infected host.
+- **S0469 ABK** (software) — ABK has the ability to download files from C2.
+- **S0470 BBK** (software) — BBK has the ability to download files from C2 to the infected host.
+- **S0471 build_downer** (software) — build_downer has the ability to download files from C2 to the infected host.
+- **S0472 down_new** (software) — down_new has the ability to download files to the compromised host.
+- **S0473 Avenger** (software) — Avenger has the ability to download files from C2 to a compromised host.
+- **S0475 BackConfig** (software) — BackConfig can download and execute additional payloads on a compromised host.
+- **S0476 Valak** (software) — Valak has downloaded a variety of modules and payloads to the compromised host, including IcedID and NetSupport Manager RAT-based malware.
+- **S0482 Bundlore** (software) — Bundlore can download and execute new versions of itself.
+- **S0483 IcedID** (software) — IcedID has the ability to download additional modules and a configuration file from C2.
+- **S0484 Carberp** (software) — Carberp can download and execute new plugins from the C2 server.
+- **S0486 Bonadan** (software) — Bonadan can download additional modules from the C2 server.
+- **S0487 Kessel** (software) — Kessel can download additional modules from the C2 server.
+- **S0491 StrongPity** (software) — StrongPity can download files to specified targets.
+- **S0492 CookieMiner** (software) — CookieMiner can download additional scripts from a web server.
+- **S0493 GoldenSpy** (software) — GoldenSpy constantly attempts to download and execute files from the remote C2, including GoldenSpy itself if not found on the system.
+- **S0495 RDAT** (software) — RDAT can download files via DNS.
+- **S0496 REvil** (software) — REvil can download a copy of itself from an attacker controlled IP address to the victim machine.
+- **S0497 Dacls** (software) — Dacls can download its payload from a C2 server.
+- **S0498 Cryptoistic** (software) — Cryptoistic has the ability to send and receive files.
+- **S0499 Hancitor** (software) — Hancitor has the ability to download additional files from C2.
+- **S0500 MCMD** (software) — MCMD can upload additional files to a compromised host.
+- **S0501 PipeMon** (software) — PipeMon can install additional modules via C2 commands.
+- **S0502 Drovorub** (software) — Drovorub can download files to a compromised host.
+- **S0504 Anchor** (software) — Anchor can download additional payloads.
+- **S0511 RegDuke** (software) — RegDuke can download files from C2.
+- **S0513 LiteDuke** (software) — LiteDuke has the ability to download files.
+- **S0514 WellMess** (software) — WellMess can write files to a compromised host.
+- **S0515 WellMail** (software) — WellMail can receive data and executable scripts from C2.
+- **S0516 SoreFang** (software) — SoreFang can download additional payloads from C2.
+- **S0518 PolyglotDuke** (software) — PolyglotDuke can retrieve payloads from the C2 server.
+- **S0520 BLINDINGCAN** (software) — BLINDINGCAN has downloaded files to a victim machine.
+- **S0526 KGH_SPY** (software) — KGH_SPY has the ability to download and execute code from remote servers.
+- **S0527 CSPY Downloader** (software) — CSPY Downloader can download additional tools to a compromised host.
+- **S0528 Javali** (software) — Javali can download payloads from remote C2 servers.
+- **S0530 Melcoz** (software) — Melcoz has the ability to download additional files to a compromised host.
+- **S0531 Grandoreiro** (software) — Grandoreiro can download its second stage from a hardcoded URL within the loader's code.
+- **S0532 Lucifer** (software) — Lucifer can download and execute a replica of itself using certutil.
+- **S0533 SLOTHFULMEDIA** (software) — SLOTHFULMEDIA has downloaded files onto a victim machine.
+- **S0534 Bazar** (software) — Bazar can download and deploy additional payloads, including ransomware and post-exploitation frameworks such as Cobalt Strike.
+- **S0546 SharpStage** (software) — SharpStage has the ability to download and execute additional payloads via a DropBox API.
+- **S0547 DropBook** (software) — DropBook can download and execute additional files.
+- **S0553 MoleNet** (software) — MoleNet can download additional payloads from the C2.
+- **S0554 Egregor** (software) — Egregor has the ability to download files from its C2 server.
+- **S0559 SUNBURST** (software) — SUNBURST delivered different payloads, including TEARDROP in at least one instance.
+- **S0561 GuLoader** (software) — GuLoader can download further malware for execution on the victim's machine.
+- **S0564 BlackMould** (software) — BlackMould has the ability to download files to the victim's machine.
+- **S0567 Dtrack** (software) — Dtrack’s can download and upload a file to the victim’s computer.
+- **S0568 EVILNUM** (software) — EVILNUM can download and upload files to the victim's computer.
+- **S0569 Explosive** (software) — Explosive has a function to download a file to the infected system.
+- **S0572 Caterpillar WebShell** (software) — Caterpillar WebShell has a module to download and upload files to the system.
+- **S0574 BendyBear** (software) — BendyBear is designed to download an implant from a C2 server.
+- **S0579 Waterbear** (software) — Waterbear can receive and load executables from remote C2 servers.
+- **S0585 Kerrdown** (software) — Kerrdown can download specific payloads to a compromised host based on OS architecture.
+- **S0586 TAINTEDSCRIBE** (software) — TAINTEDSCRIBE can download additional modules from its C2 server.
+- **S0587 Penquin** (software) — Penquin can execute the command code `do_download` to retrieve remote files from C2.
+- **S0588 GoldMax** (software) — GoldMax can download and execute additional files.
+- **S0589 Sibot** (software) — Sibot can download and execute a payload onto a compromised system.
+- **S0592 RemoteUtilities** (software) — RemoteUtilities can upload and download files to and from a target machine.
+- **S0595 ThiefQuest** (software) — ThiefQuest can download and execute payloads in-memory or from disk.
+- **S0596 ShadowPad** (software) — ShadowPad has downloaded code from a C2 server.
+- **S0598 P.A.S. Webshell** (software) — P.A.S. Webshell can upload and download files to and from compromised hosts.
+- **S0599 Kinsing** (software) — Kinsing has downloaded additional lateral movement scripts from C2.
+- **S0600 Doki** (software) — Doki has downloaded scripts from C2.
+- **S0601 Hildegard** (software) — Hildegard has downloaded additional scripts that build and run Monero cryptocurrency miners.
+- **S0604 Industroyer** (software) — Industroyer downloads a shellcode payload from a remote C2 server and loads it into memory.
+- **S0608 Conficker** (software) — Conficker downloads an HTTP server to the infected machine.
+- **S0610 SideTwist** (software) — SideTwist has the ability to download additional files.
+- **S0613 PS1** (software) — CostaBricks can download additional payloads onto a compromised host.
+- **S0614 CostaBricks** (software) — CostaBricks has been used to load SombRAT onto a compromised host.
+- **S0615 SombRAT** (software) — SombRAT has the ability to download and execute additional payloads.
+- **S0616 DEATHRANSOM** (software) — DEATHRANSOM can download files to a compromised host.
+- **S0624 Ecipekac** (software) — Ecipekac can download additional payloads to a compromised host.
+- **S0625 Cuba** (software) — Cuba can download files from its C2 server.
+- **S0626 P8RAT** (software) — P8RAT can download additional payloads to a target system.
+- **S0627 SodaMaster** (software) — SodaMaster has the ability to download additional payloads from C2 to the targeted system.
+- **S0628 FYAnti** (software) — FYAnti can download additional payloads to a compromised host.
+- **S0629 RainyDay** (software) — RainyDay can download files to a compromised host.
+- **S0630 Nebulae** (software) — Nebulae can download files from C2.
+- **S0631 Chaes** (software) — Chaes can download additional files onto an infected machine.
+- **S0632 GrimAgent** (software) — GrimAgent has the ability to download and execute additional payloads.
+- **S0633 Sliver** (software) — Sliver can download additional content and files from the Sliver server to the client residing on the victim machine using the `upload` command.
+- **S0635 BoomBox** (software) — BoomBox has the ability to download next stage malware components to a compromised system.
+- **S0636 VaporRage** (software) — VaporRage has the ability to download malicious shellcode to compromised systems.
+- **S0639 Seth-Locker** (software) — Seth-Locker has the ability to download and execute files on a compromised host.
+- **S0642 BADFLICK** (software) — BADFLICK has download files from its C2 server.
+- **S0643 Peppy** (software) — Peppy can download and execute remote files.
+- **S0646 SpicyOmelette** (software) — SpicyOmelette can download malicious files from threat actor controlled AWS URL's.
+- **S0647 Turian** (software) — Turian can download additional files and tools from its C2.
+- **S0648 JSS Loader** (software) — JSS Loader has the ability to download malicious executables to a compromised host.
+- **S0649 SMOKEDHAM** (software) — SMOKEDHAM has used Powershell to download UltraVNC and ngrok from third-party file sharing sites.
+- **S0650 QakBot** (software) — QakBot has the ability to download additional components and malware.
+- **S0651 BoxCaon** (software) — BoxCaon can download files.
+- **S0652 MarkiRAT** (software) — MarkiRAT can download additional files and tools from its C2 server, including through the use of BITSAdmin.
+- **S0653 xCaon** (software) — xCaon has a command to download files to the victim's machine.
+- **S0657 BLUELIGHT** (software) — BLUELIGHT can download additional files onto the host.
+- **S0658 XCSSET** (software) — XCSSET downloads browser specific AppleScript modules using a constructed URL with the `curl` command, `https://" & domain & "/agent/scripts/" & moduleName & ".applescript`.
+- **S0659 Diavol** (software) — Diavol can receive configuration updates and additional payloads including wscpy.exe from C2.
+- **S0661 FoggyWeb** (software) — FoggyWeb can receive additional malicious components from an actor controlled C2 server and execute them on a compromised AD FS server.
+- **S0662 RCSession** (software) — RCSession has the ability to drop additional files to an infected machine.
+- **S0663 SysUpdate** (software) — SysUpdate has the ability to download files to a compromised host.
+- **S0664 Pandora** (software) — Pandora can load additional drivers and files onto a victim machine.
+- **S0665 ThreatNeedle** (software) — ThreatNeedle can download additional tools to enable lateral movement.
+- **S0666 Gelsemium** (software) — Gelsemium can download additional plug-ins to a compromised host.
+- **S0667 Chrommme** (software) — Chrommme can download its code from C2.
+- **S0668 TinyTurla** (software) — TinyTurla has the ability to act as a second-stage dropper used to infect the system with additional malware.
+- **S0669 KOCTOPUS** (software) — KOCTOPUS has executed a PowerShell command to download a file to the system.
+- **S0670 WarzoneRAT** (software) — WarzoneRAT can download and execute additional files.
+- **S0671 Tomiris** (software) — Tomiris can download files and execute them on a victim's system.
+- **S0672 Zox** (software) — Zox can download files to a compromised machine.
+- **S0674 CharmPower** (software) — CharmPower has the ability to download additional modules to a compromised host.
+- **S0680 LitePower** (software) — LitePower has the ability to download payloads containing system commands to a compromised host.
+- **S0681 Lizar** (software) — Lizar can download additional plugins, files, and tools.
+- **S0685 PowerPunch** (software) — PowerPunch can download payloads from adversary infrastructure.
+- **S0686 QuietSieve** (software) — QuietSieve can download and execute payloads on a target host.
+- **S0687 Cyclops Blink** (software) — Cyclops Blink has the ability to download files to target systems.
+- **S0688 Meteor** (software) — Meteor has the ability to download additional files for execution on the victim's machine.
+- **S0689 WhisperGate** (software) — WhisperGate can download additional stages of malware from a Discord CDN channel.
+- **S0691 Neoichor** (software) — Neoichor can download additional files onto a compromised host.
+- **S0692 SILENTTRINITY** (software) — SILENTTRINITY can load additional files and tools, including Mimikatz.
+- **S0694 DRATzarus** (software) — DRATzarus can deploy additional tools onto an infected machine.
+- **S0695 Donut** (software) — Donut can download and execute previously staged shellcode payloads.
+- **S0696 Flagpro** (software) — Flagpro can download additional malware from the C2 server.
+- **S1012 PowerLess** (software) — PowerLess can download additional payloads to a compromised host.
+- **S1013 ZxxZ** (software) — ZxxZ can download and execute additional files.
+- **S1014 DanBot** (software) — DanBot can download additional files to a targeted system.
+- **S1015 Milan** (software) — Milan has received files from C2 and stored them in log folders beginning with the character sequence `a9850d2f`.
+- **S1016 MacMa** (software) — MacMa has downloaded additional files, including an exploit for used privilege escalation.
+- **S1017 OutSteel** (software) — OutSteel can download files from its C2 server.
+- **S1018 Saint Bot** (software) — Saint Bot can download additional files onto a compromised host.
+- **S1019 Shark** (software) — Shark can download additional files from its C2 via HTTP or DNS.
+- **S1020 Kevin** (software) — Kevin can download files to the compromised host.
+- **S1021 DnsSystem** (software) — DnsSystem can download files to compromised systems after receiving a command with the string `downloaddd`.
+- **S1023 CreepyDrive** (software) — CreepyDrive can download files to the compromised host.
+- **S1025 Amadey** (software) — Amadey can download and execute files to further infect a host machine with additional malware.
+- **S1026 Mongall** (software) — Mongall can download files to targeted systems.
+- **S1028 Action RAT** (software) — Action RAT has the ability to download additional payloads onto an infected machine.
+- **S1030 Squirrelwaffle** (software) — Squirrelwaffle has downloaded and executed additional encoded payloads.
+- **S1034 StrifeWater** (software) — StrifeWater can download updates and auxiliary modules.
+- **S1035 Small Sieve** (software) — Small Sieve has the ability to download files.
+- **S1039 Bumblebee** (software) — Bumblebee can download and execute additional payloads including through the use of a `Dex` command.
+- **S1044 FunnyDream** (software) — FunnyDream can download additional files onto a compromised host.
+- **S1048 macOS.OSAMiner** (software) — macOS.OSAMiner has used `curl` to download a Stripped Payloads from a public facing adversary-controlled webpage.
+- **S1059 metaMain** (software) — metaMain can download files onto compromised systems.
+- **S1060 Mafalda** (software) — Mafalda can download additional files onto the compromised host.
+- **S1063 Brute Ratel C4** (software) — Brute Ratel C4 can download files to compromised hosts.
+- **S1064 SVCReady** (software) — SVCReady has the ability to download additional tools such as the RedLine Stealer to an infected host.
+- **S1065 Woody RAT** (software) — Woody RAT can download files from its C2 server, including the .NET DLLs, `WoodySharpExecutor` and `WoodyPowerSession`.
+- **S1066 DarkTortilla** (software) — DarkTortilla can download additional packages for keylogging, cryptocurrency mining, and other capabilities; it can also retrieve malicious payloads such as Agent Tesla, AsyncRat, NanoCore, RedLine, Cobalt Strike, and Metasploit.
+- **S1074 ANDROMEDA** (software) — ANDROMEDA can download additional payloads from C2.
+- **S1081 BADHATCH** (software) — BADHATCH has the ability to load a second stage malicious DLL file onto a compromised machine.
+- **S1085 Sardonic** (software) — Sardonic has the ability to upload additional malicious files to a compromised machine.
+- **S1086 Snip3** (software) — Snip3 can download additional payloads to compromised systems.
+- **S1087 AsyncRAT** (software) — AsyncRAT has the ability to download files including over SFTP.
+- **S1088 Disco** (software) — Disco can download files to targeted systems via SMB.
+- **S1089 SharpDisco** (software) — SharpDisco has been used to download a Python interpreter to `C:\Users\Public\WinTN\WinTN.exe` as well as other plugins from external sources.
+- **S1090 NightClub** (software) — NightClub can load multiple additional plugins on an infected host.
+- **S1099 Samurai** (software) — Samurai has been used to deploy other malware including Ninja.
+- **S1110 SLIGHTPULSE** (software) — RAPIDPULSE can transfer files to and from compromised hosts.
+- **S1111 DarkGate** (software) — DarkGate retrieves cryptocurrency mining payloads and commands in encrypted traffic from its command and control server. DarkGate uses Windows Batch scripts executing the `curl` command to retrieve follow-on payloads. DarkGate has stolen `sitemanager.xml` and `recentservers.xml` from `%APPDATA%\FileZilla\` if present.
+- **S1112 STEADYPULSE** (software) — STEADYPULSE can add lines to a Perl script on a targeted server to import additional Perl modules.
+- **S1114 ZIPLINE** (software) — ZIPLINE can download files to be saved on the compromised system.
+- **S1115 WIREFIRE** (software) — WIREFIRE has the ability to download files to compromised devices.
+- **S1118 BUSHWALK** (software) — BUSHWALK can write malicious payloads sent through a web request’s command parameter.
+- **S1124 SocGholish** (software) — SocGholish can download additional malware to infected hosts.
+- **S1130 Raspberry Robin** (software) — Raspberry Robin retrieves its second stage payload in a variety of ways such as through msiexec.exe abuse, or running the curl command to download the payload to the victim's `%AppData%` folder.
+- **S1138 Gootloader** (software) — Gootloader can fetch second stage code from hardcoded web domains.
+- **S1140 Spica** (software) — Spica can upload and download files to and from compromised hosts.
+- **S1148 Raccoon Stealer** (software) — Raccoon Stealer downloads various library files enabling interaction with various data stores and structures to facilitate follow-on information theft.
+- **S1149 CHIMNEYSWEEP** (software) — CHIMNEYSWEEP can download additional files from C2.
+- **S1152 IMAPLoader** (software) — IMAPLoader is a loader used to retrieve follow-on payload encoded in email messages for execution on victim systems.
+- **S1159 DUSTTRAP** (software) — DUSTTRAP can retrieve and load additional payloads.
+- **S1160 Latrodectus** (software) — Latrodectus can download and execute PEs, DLLs, and shellcode from C2.
+- **S1166 Solar** (software) — Solar has the ability to download and execute files.
+- **S1168 SampleCheck5000** (software) — SampleCheck5000 can download additional payloads to compromised hosts.
+- **S1170 ODAgent** (software) — ODAgent has the ability to download and execute files on compromised systems.
+- **S1171 OilCheck** (software) — OilCheck can download staged payloads from an actor-controlled infrastructure.
+- **S1172 OilBooster** (software) — OilBooster can download and execute files from an actor-controlled OneDrive account.
+- **S1173 PowerExchange** (software) — PowerExchange can decode Base64-encoded files and call `WriteAllBytes` to write the files to compromised hosts.
+- **S1182 MagicRAT** (software) — MagicRAT can import and execute additional payloads.
+- **S1183 StrelaStealer** (software) — StrelaStealer installers have used obfuscated PowerShell scripts to retrieve follow-on payloads from WebDAV servers.
+- **S1185 LightSpy** (software) — On macOS, LightSpy downloads a `.json` file from the C2 server. The `.json` file contains metadata about the plugins to be downloaded, including their URL, name, version, and MD5 hash. LightSpy retrieves the plugins specified in the `.json` file, which are compiled `.dylib` files. These `.dylib` files provide task and platform specific functionality. LightSpy also imports open-source libraries to manage socket connections.
+- **S1187 reGeorg** (software) — reGeorg has the ability to download files to targeted systems.
+- **S1189 Neo-reGeorg** (software) — Neo-reGeorg has the ability to download files to targeted systems.
+- **S1192 NICECURL** (software) — NICECURL has the ability to download additional content onto an infected machine, e.g. by using `curl`.
+- **S1193 TAMECAT** (software) — TAMECAT has used `wget` and `curl` to download additional content.
+- **S1211 Hannotog** (software) — Hannotog can download additional files to the victim machine.
+- **S1217 VIRTUALPITA** (software) — VIRTUALPITA has the ability to upload and download files.
+- **S1222 RIFLESPINE** (software) — RIFLESPINE can download and execute files.
+- **S1224 CASTLETAP** (software) — CASTLETAP can transfer files to compromised network devices.
+- **S1228 PUBLOAD** (software) — PUBLOAD has acted as a stager that can download the next-stage payload from its C2 server. PUBLOAD has also delivered FDMTP as a secondary control tool and PTSOCKET for exfiltration to some infected systems.
+- **S1229 Havoc** (software) — Havoc has the ability to upload files to infected systems.
+- **S1239 TONESHELL** (software) — TONESHELL has the ability to download additional files to the victim device.
+- **S1240 RedLine Stealer** (software) — RedLine Stealer has the ability download additional payloads.
+- **S1245 InvisibleFerret** (software) — InvisibleFerret has downloaded “AnyDesk.exe” into the user’s home directory from the C2 server when checks for the service fail to identify its presence in the victim environment. InvisibleFerret has also been configured to download additional payloads using a command which calls to the /bow URI.
+- **S1246 BeaverTail** (software) — BeaverTail has been used to download a malicious payload to include Python based malware InvisibleFerret.
+- **S1248 XORIndex Loader** (software) — XORIndex Loader has been used to download a malicious payload to include BeaverTail.
+- **S1249 HexEval Loader** (software) — HexEval Loader has been used to download a malicious payload to include BeaverTail.
+- **S9001 SystemBC** (software) — SystemBC has downloaded additional files for execution on the victim’s machine. The server component of SystemBC has the ability to send additional files to victim machines.
+- **S9007 HTTPTroy** (software) — HTTPTroy has the ability to download files from C2 using the `down <FILENAME>` command.
+- **S9008 Shai-Hulud** (software) — Shai-Hulud has downloaded packages from code repositories. Shai-Hulud has also downloaded and executed the secrets-discovery tool TruffleHog to gather sensitive data.
+- **S9010 GlassWorm** (software) — GlassWorm has downloaded additional payloads from C2.
+- **S9014 PHASEJAM** (software) — PHASEJAM has the ability to upload files onto the compromised appliance.
+- **S9015 BRICKSTORM** (software) — BRICKSTORM has the ability to download files from the Adversaries C2 server to the compromised system.
+- **S9016 Caminho** (software) — Caminho has the ability to download files onto compromised hosts.
+- **S9019 PureCrypter** (software) — PureCrypter can download additional payloads for execution on the compromised host.
+- **S9020 LODEINFO** (software) — LODEINFO has the ability to download additional files from the C2.
+- **S9021 DOWNIISSA** (software) — DOWNIISSA can download files to the compromised host.
+- **S9023 HiddenFace** (software) — HiddenFace can download files from the C2 to victim systems.
+- **S9028 PHPsert** (software) — PHPsert has the ability to retrieve remote payloads.
+- **S9031 AshTag** (software) — The AshTag stager component can retrieve and execute the main payload.
+- **S9032 MuddyViper** (software) — MuddyViper has the ability to download files from the C2 server. Additionally, MuddyViper has the ability to download a file in chunks with sleep time between each chunk.
+- **S9034 Tsundere Botnet** (software) — Tsundere Botnet’s loader component has downloaded the zip file node-v18.17.0-win-x64.zip from the official Node.js website, as well as pm2, a Node.js process management tool.
+- **S9041 TeamPCP Cloud Stealer** (software) — TeamPCP Cloud Stealer has the ability to download additional payloads to targeted systems.
+- **S9042 CanisterWorm** (software) — CanisterWorm has downloaded and executed binaries from dead drop URLs retrieved from ICP canister C2 nodes. CanisterWorm has also downloaded kubectl to compromised environments if it was not already installed.
+- **S9043 Mini Shai-Hulud** (software) — Mini Shai-Hulud has the ability to download additional payloads from adversary controlled or compromised infrastructure.
+- **S9050 Vidar** (software) — Vidar has downloaded additional binaries from the C2 server such as sqlx[1].dll, a sqlite3 binary for data harvesting and exfiltration. Vidar has also ownloaded get.zip, an archive containing several DLL libraries that extracted data from applications and browsers.
+- **S9052 MiniFast** (software) — MiniFast has the ability to download additional files from C2.
+- **S9053 MiniJunk** (software) — MiniJunk has the ability to load a DLL from the C2.
+- **S9059 MiniBike** (software) — MiniBike has the ability to download files from the C2.
+- **S9060 MiniBus** (software) — MiniBus has the ability to download files from the C2.
+- **S9063 DEEPROOT** (software) — DEEPROOT has the ability to download files from C2.
+- **S9066 POLLBLEND** (software) — POLLBLEND has utilized hardcoded C2 communications to download configuration data.
+- **S9067 TWOSTROKE** (software) — TWOSTROKE has downloaded files from C2.

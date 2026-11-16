@@ -120,6 +120,13 @@ container from the same `.env` and drives the pipelines in-process. The product 
 **Files:** `docs/evaluation.md`, `evals/golden.example.jsonl`, `.env.example`, `CLAUDE.md` §9, `docs/channel/from-quentin.md`, `tests/contract/test_layering.py`
 - [x] user guide, example set (+ parses test), commented `EVAL_*` block (+ parity test), CLAUDE.md ownership/map, channel update 33, layering guards (product ↛ `sift.eval`, `sift.eval` ↛ adapters/api)
 
+### Task 10: retrieval regression gate (D87)
+**Files:** `src/sift/eval/{report,cli}.py`, `tests/eval/test_cli.py`, `evals/ci/{README.md,golden.jsonl,corpus/,baseline/summary.json,ingest.py,build_slice.py,LICENSE-MITRE-ATTACK.txt}`, `.github/workflows/eval-retrieval.yml`, `docs/evaluation.md` §4 + §6, `.gitignore`
+- [x] `compare --fail-on METRIC:TOLERANCE` (repeatable): `check_regressions` + `render_gate`; direction-aware, improvements pass; exit 1 on regression, 2 on an unknown metric or different golden sets
+- [x] CI slice: 75 English m/h/vh questions (whole families + standalone bases), 263 pages (gold + 5 full-corpus near-misses each); `build_slice.py` rebuilds it, MITRE license alongside
+- [x] `workflow_dispatch` workflow: pinned Ollama image (CPU) + bge-m3 digest check, ingest, `run --surfaces find --skip-judge`, gate hit@1 / recall@10 / MRR at 0.03; `update_baseline` input skips the gate and uploads the run
+- [x] baseline from the workflow's exact steps in a local Linux CPU container
+
 ## 4. Test strategy
 - Everything runs on the default fakes (`FakeEmbedder`, `FakeVectorStore` seeded via `upsert`,
   `NullReranker`, `FakeCompleter`, `FakeToolCompleter`) plus `FakeJudge`. No network.
@@ -187,6 +194,7 @@ container from the same `.env` and drives the pipelines in-process. The product 
 - D84: `answer_recall` computes true recall (RAGAS's recall mode counted the response's claims); `judge --metrics`.
 - D85: `noise_sensitivity` judges correctness against question + reference (RAGAS's statements restate the question).
 - D86: `EMBED_QUERY_PREFIX` / `EMBED_DOCUMENT_PREFIX`, one embedder per role in `factory.py`, so instruction-tuned embedders can be compared fairly.
+- D87: a manual CI retrieval gate on a committed MITRE slice (bge-m3 on the runner's CPU), `compare --fail-on`.
 
 ## 7. Changelog
 - (on merge)

@@ -184,6 +184,10 @@ sift-eval judge eval-runs/20261105-101500-baseline --metrics answer_recall
 
 # What changed between two runs (▲ better / ▼ worse, direction-aware)
 sift-eval compare eval-runs/<baseline> eval-runs/<candidate>
+
+# …and exit 1 if a metric (named as the table names it) got worse by more than a tolerance
+sift-eval compare eval-runs/<baseline> eval-runs/<candidate> \
+  --fail-on find.retrieval.final.doc.hit@1:0.03 --fail-on find.retrieval.final.doc.mrr:0.03
 ```
 
 Drafts from `bootstrap` are tagged `bootstrap` and carry `"review": "todo"`. Each question was
@@ -211,7 +215,16 @@ sift-eval compare eval-runs/*-rerank-none eval-runs/*-rerank-llm
 
 For chunking experiments, re-ingest the corpus between runs. The golden set needs no changes.
 
-## 6. Caveats
+## 6. Retrieval regression gate (CI)
+
+`evals/ci/` holds a fixed retrieval benchmark: 75 English MITRE ATT&CK questions and the 263
+pages they need, including the pages bge-m3 confuses with the answers. The **Retrieval eval**
+workflow (Actions tab → Run workflow; manual only) ingests it with bge-m3 on the runner's CPU,
+runs Find with `--skip-judge`, no reranker and no recap, and gates hit@1, recall@10 and MRR
+against `evals/ci/baseline/summary.json` with `compare --fail-on`. No secrets or LLM calls. See
+`evals/ci/README.md` for running it locally and updating the baseline.
+
+## 7. Caveats
 
 - **Cost:** each judged question makes roughly 15–25 judge-LLM calls per surface (answer recall
   alone is about 4), plus 2 per noise ratio. Use `--skip-judge` for retrieval-only iterations, and

@@ -1,0 +1,468 @@
+# T1082 — System Information Discovery
+
+- **Type:** technique
+- **Domain:** Enterprise ATT&CK
+- **Tactics:** Discovery
+- **Platforms:** ESXi, IaaS, Linux, macOS, Network Devices, Windows
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T1082
+- **Last modified:** 2026-09-11
+
+## Description
+
+An adversary may attempt to get detailed information about the operating system and hardware, including version, patches, hotfixes, service packs, and architecture. Adversaries may use this information to shape follow-on behaviors, including whether or not the adversary fully infects the target and/or attempts specific actions. This behavior is distinct from Local Storage Discovery which is an adversary's discovery of local drive, disks and/or volumes.
+
+Tools such as Systeminfo can be used to gather detailed system information. If running with privileged access, a breakdown of system data can be gathered through the `systemsetup` configuration tool on macOS. Adversaries may leverage a Network Device CLI on network devices to gather detailed system information (e.g. `show version`). On ESXi servers, threat actors may gather system information from various esxcli utilities, such as `system hostname get` and `system version get`.
+
+Infrastructure as a Service (IaaS) cloud providers such as AWS, GCP, and Azure allow access to instance and virtual machine information via APIs. Successful authenticated API calls can return data such as the operating system platform and status of a particular instance or the model view of a virtual machine.
+
+System Information Discovery combined with information gathered from other forms of discovery and reconnaissance can drive payload development and concealment.
+
+## Detection strategies
+
+- **DET0525 System Discovery via Native and Remote Utilities**
+  - AN1452 (Windows): Detection of processes executing system environment inspection operations followed by access to OS configuration APIs or registry locations that expose OS version, architecture, patch level, or hardware characteristics. Defenders observe process execution retrieving system configuration metadata immediately after process startup. Log sources: WinEventLog:Security (EventCode=4688); WinEventLog:PowerShell (EventCode=4103, 4104, 4105, 4106); WinEventLog:Sysmon (EventCode=1); WinEventLog:Sysmon (EventCode=13, 14).
+  - AN1453 (Linux): Execution of system enumeration commands such as `uname`, `df`, `uptime`, `hostname`, `lscpu`, and `cat /etc/os-release` through local terminal or scripts. Log sources: auditd:SYSCALL (execve).
+  - AN1454 (macOS): Execution of system info utilities like `systemsetup`, `sw_vers`, `uname`, or `sysctl` by terminal or scripted processes. Log sources: macos:unifiedlog (log show --predicate 'process == <utility>').
+  - AN1455 (ESXi): Execution of `esxcli system hostname get`, `esxcli system version get`, or `esxcli hardware` commands through SSH or local shell. Log sources: esxi:vmkernel (/var/log/vmkernel.log).
+  - AN1456 (IaaS): Use of cloud API calls (e.g., AWS EC2 DescribeInstances, Azure VM Inventory) to enumerate system configurations across assets. Log sources: AWS:CloudTrail (DescribeInstances, GetConsoleOutput, DescribeImages).
+  - AN1457 (Network Devices): Execution of `show version`, `show hardware`, or `show system` commands through CLI via SSH or console. Log sources: networkdevice:syslog (Privilege-level command execution).
+
+## Procedure examples
+
+- **C0001 Frankenstein** (campaign) — During Frankenstein, the threat actors used Empire to obtain the compromised machine's name.
+- **C0006 Operation Honeybee** (campaign) — During Operation Honeybee, the threat actors collected the computer name, OS, and other system information using `cmd /c systeminfo > %temp%\ temp.ini`.
+- **C0007 FunnyDream** (campaign) — During FunnyDream, the threat actors used Systeminfo to collect information on targeted hosts.
+- **C0012 Operation CuckooBees** (campaign) — During Operation CuckooBees, the threat actors used the `systeminfo` command to gather details about a compromised system.
+- **C0014 Operation Wocao** (campaign) — During Operation Wocao, threat actors discovered the OS versions of systems connected to a targeted network.
+- **C0029 Cutting Edge** (campaign) — During Cutting Edge, threat actors used the ENUM4LINUX Perl script for discovery on Windows and Samba hosts.
+- **C0035 KV Botnet Activity** (campaign) — KV Botnet Activity includes use of native system tools, such as `uname`, to obtain information about victim device architecture, as well as gathering other system information such as the victim's hosts file and CPU utilization.
+- **C0044 Juicy Mix** (campaign) — During Juicy Mix, OilRig used a script to send the name of the compromised host via HTTP `POST` to register it with C2.
+- **C0046 ArcaneDoor** (campaign) — ArcaneDoor included collection of victim device configuration information.
+- **C0047 RedDelta Modified PlugX Infection Chain Operations** (campaign) — Mustang Panda captured victim operating system type via User Agent analysis during RedDelta Modified PlugX Infection Chain Operations.
+- **C0049 Leviathan Australian Intrusions** (campaign) — Leviathan performed host enumeration and data gathering operations on victim machines during Leviathan Australian Intrusions.
+- **C0058 SharePoint ToolShell Exploitation** (campaign) — During SharePoint ToolShell Exploitation, threat actors fingerprinted targeted SharePoint servers to identify OS version and running processes.
+- **C0060 Operation AkaiRyū** (campaign) — During Operation AkaiRyū, MirrorFace collected system information.
+- **C0062 Anthropic AI-orchestrated Campaign** (campaign) — During the Anthropic AI-orchestrated Campaign, the adversary tasked Claude Code to query databases and systems in order to identify proprietary information, including system configurations and database types.
+- **C0064 AI-Assisted Breach of Mexico's Government Infrastructure** (campaign) — During the AI-Assisted Breach of Mexico's Government Infrastructure, the adversary tasked Claude Code to identify system information using `hostname`. During the AI-Assisted Breach of Mexico's Government Infrastructure, the adversary tasked Claude Code with using CrackMapExec to discover configuration information about the domain controllers.
+- **G0004 Ke3chang** (group) — Ke3chang performs operating system information discovery using `systeminfo` and has used implants to identify the system language and computer name.
+- **G0010 Turla** (group) — Turla surveys a system upon check-in to discover operating system configuration details using the `systeminfo` and `set` commands.
+- **G0012 Darkhotel** (group) — Darkhotel has collected the hostname, OS version, service pack version, and the processor architecture from the victim’s machine.
+- **G0018 admin@338** (group) — admin@338 actors used the following commands after exploiting a machine with LOWBALL malware to obtain information about the OS: `ver >> %temp%\download` `systeminfo >> %temp%\download`
+- **G0022 APT3** (group) — APT3 has a tool that can obtain information about the local system.
+- **G0026 APT18** (group) — APT18 can collect system information from the victim’s machine.
+- **G0032 Lazarus Group** (group) — Several Lazarus Group malware families collect information on the type and version of the victim OS, as well as the victim computer name and CPU information.
+- **G0034 Sandworm Team** (group) — Sandworm Team used a backdoor to enumerate information about the infected system's operating system.
+- **G0038 Stealth Falcon** (group) — Stealth Falcon malware gathers system information via WMI, including the system directory, build number, serial number, version, manufacturer, model, and total physical memory.
+- **G0040 Patchwork** (group) — Patchwork collected the victim computer name, OS version, and architecture type and sent the information to its C2 server.
+- **G0046 FIN7** (group) — FIN7 has used csvde.exe, which is a built-in Windows command line tool, to export system information. Additionally, WsTaskLoad has gathered system information, such as operating system and hostname.
+- **G0047 Gamaredon Group** (group) — A Gamaredon Group file stealer can gather the victim's computer name and drive serial numbers to send to a C2 server.
+- **G0049 OilRig** (group) — OilRig has run `hostname` and `systeminfo` on a victim.
+- **G0050 APT32** (group) — APT32 has collected the OS version and computer name from victims. One of the group's backdoors can also query the Windows Registry to gather system information, and another macOS backdoor performs a fingerprint of the machine on its first connection to the C&C server. APT32 executed shellcode to identify the name of the infected host.
+- **G0054 Sowbug** (group) — Sowbug obtained OS version and hardware configuration from a victim.
+- **G0059 Magic Hound** (group) — Magic Hound malware has used a PowerShell command to check the victim system architecture to determine if it is an x64 machine. Other malware has obtained the OS version, UUID, and computer/host name to send to the C2 server.
+- **G0061 FIN8** (group) — FIN8 has used PowerShell Scripts to check the architecture of a compromised machine before the selection of a 32-bit or 64-bit version of a malicious .NET loader.
+- **G0067 APT37** (group) — APT37 collects the computer name, the BIOS model, and execution path.
+- **G0069 MuddyWater** (group) — MuddyWater has used malware that can collect the victim’s OS version and machine name.
+- **G0073 APT19** (group) — APT19 collected system architecture information. APT19 used an HTTP malware variant and a Port 22 malware variant to gather the hostname and CPU information from the victim’s machine.
+- **G0081 Tropic Trooper** (group) — Tropic Trooper has detected a target system’s OS version.
+- **G0082 APT38** (group) — APT38 has attempted to get detailed information about a compromised host, including the operating system, version, patches, hotfixes, and service packs. APT38 has executed malware to collect current user, host name, system time, and operating system install date from targeted systems.
+- **G0094 Kimsuky** (group) — Kimsuky has enumerated OS type, OS version, and other information using a script or the "systeminfo" command. Kimsuky has also obtained system information such as OS type, OS version, and system type through querying various Windows Management Instrumentation (WMI) classes including `Win32_OperatingSystem`.
+- **G0096 APT41** (group) — APT41 uses multiple built-in commands such as `systeminfo` and `net config Workstation` to enumerate victim system basic configuration information.
+- **G0100 Inception** (group) — Inception has used a reconnaissance module to gather information about the operating system and hardware on the infected host.
+- **G0102 Wizard Spider** (group) — Wizard Spider has used Systeminfo and similar commands to acquire detailed configuration information of a victim's machine. Wizard Spider has also utilized the PowerShell cmdlet `Get-ADComputer` to collect DNS hostnames, last logon dates, and operating system information from Active Directory.
+- **G0106 Rocke** (group) — Rocke has used uname -m to collect the name and information about the infected system's kernel.
+- **G0108 Blue Mockingbird** (group) — Blue Mockingbird has collected hardware details for the victim's system, including CPU and memory information.
+- **G0112 Windshift** (group) — Windshift has used malware to identify the computer name of a compromised host.
+- **G0121 Sidewinder** (group) — Sidewinder has used tools to collect the computer name, OS version, installed hotfixes, as well as information regarding the memory and processor on a compromised host.
+- **G0124 Windigo** (group) — Windigo has used a script to detect which Linux distribution and version is currently installed on the system.
+- **G0126 Higaisa** (group) — Higaisa collected the system GUID and computer name.
+- **G0128 ZIRCONIUM** (group) — ZIRCONIUM has used a tool to capture the processor architecture of a compromised host in order to register it with C2.
+- **G0129 Mustang Panda** (group) — Mustang Panda has gathered system information using `systeminfo`.
+- **G0139 TeamTNT** (group) — TeamTNT has searched for system version, architecture, and hostname information.
+- **G0143 Aquatic Panda** (group) — Aquatic Panda has used native OS commands to understand privilege levels and system details.
+- **G1001 HEXANE** (group) — HEXANE has collected the hostname of a compromised machine.
+- **G1008 SideCopy** (group) — SideCopy has identified the OS version of a compromised host.
+- **G1009 Moses Staff** (group) — Moses Staff collected information about the infected host, including the machine names and OS architecture.
+- **G1012 CURIUM** (group) — CURIUM deploys information gathering tools focused on capturing IP configuration, running application, system information, and network connectivity information.
+- **G1015 Scattered Spider** (group) — Scattered Spider has executed scripts to identify the underlying operating system to ensure it uses the correct installation package for malicious payloads.
+- **G1016 FIN13** (group) — FIN13 has collected local host information by utilizing Windows commands `systeminfo`, `fsutil`, and `fsinfo`. FIN13 has also utilized a compromised Symantex Altiris console and LanDesk account to retrieve host information.
+- **G1018 TA2541** (group) — TA2541 has collected system information prior to downloading malware on the targeted host.
+- **G1020 Mustard Tempest** (group) — Mustard Tempest has used implants to perform system reconnaissance on targeted systems.
+- **G1026 Malteiro** (group) — Malteiro collects the machine information, system architecture, the OS version, computer name, and Windows product name.
+- **G1034 Daggerfly** (group) — Daggerfly utilizes victim machine operating system information to create custom User Agent strings for subsequent command and control communication.
+- **G1035 Winter Vivern** (group) — Winter Vivern script execution includes basic victim information gathering steps which are then transmitted to command and control servers.
+- **G1036 Moonstone Sleet** (group) — Moonstone Sleet has gathered information on victim systems.
+- **G1039 RedCurl** (group) — RedCurl has collected information about the target system, such as system information and list of network connections.
+- **G1040 Play** (group) — Play has leveraged tools to enumerate system information.
+- **G1043 BlackByte** (group) — BlackByte used various system commands and tools to pull system information during operations.
+- **G1044 APT42** (group) — APT42 has used malware, such as GHAMBAR and POWERPOST, to collect system information.
+- **G1045 Salt Typhoon** (group) — Salt Typhoon has discovered system information details utilizing CLI on network devices.
+- **G1051 Medusa Group** (group) — Medusa Group has leveraged `cmd.exe` to identify system info `cmd.exe /c systeminfo`.
+- **G1052 Contagious Interview** (group) — Contagious Interview has configured malicious webpages to identify the victim’s operating system by reviewing the details of the victims User-Agent of their browser.
+- **G1053 Storm-0501** (group) — Storm-0501 has leveraged native Windows tools and commands such as `systeminfo` and open-source tools including OSQuery and ossec-win32 to query details about the endpoint.
+- **G1054 MirrorFace** (group) — MirrorFace has employed malicious macros and native Windows tools such as csvde.exe, nltest.exe and quser.exe for discovery.
+- **G1055 VOID MANTICORE** (group) — VOID MANTICORE has gathered system information and disseminated it back to C2.
+- **G1057 ShinyHunters** (group) — ShinyHunters has used the MeshCentral command-line utility meshctrl.js to collect hostnames and IDs of compromised systems.
+- **S0013 PlugX** (software) — PlugX has collected system information including OS version, processor information, RAM size, location, host name, IP, and screen size of the infected host.
+- **S0015 Ixeshe** (software) — Ixeshe collects the computer name of the victim's system during the initial infection.
+- **S0017 BISCUIT** (software) — BISCUIT has a command to collect the processor type, operation system, computer name, and whether the system is a laptop or PC.
+- **S0021 Derusbi** (software) — Derusbi gathers the name of the local host, version of GNU Compiler Collection (GCC), and the system information about the CPU, machine, and operating system.
+- **S0022 Uroburos** (software) — Uroburos has the ability to gather basic system information and run the POSIX API `gethostbyname`.
+- **S0024 Dyre** (software) — Dyre has the ability to identify the computer name, OS version, and hardware configuration on a compromised host.
+- **S0031 BACKSPACE** (software) — During its initial execution, BACKSPACE extracts operating system information from the infected host.
+- **S0032 gh0st RAT** (software) — gh0st RAT has gathered system architecture, processor, OS configuration, and installed hardware information.
+- **S0043 BUBBLEWRAP** (software) — BUBBLEWRAP collects system information, including the operating system version and hostname.
+- **S0045 ADVSTORESHELL** (software) — ADVSTORESHELL can run Systeminfo to gather information about the victim.
+- **S0046 CozyCar** (software) — A system info module in CozyCar gathers information on the victim host’s configuration.
+- **S0048 PinchDuke** (software) — PinchDuke gathers system configuration information.
+- **S0051 MiniDuke** (software) — MiniDuke can gather the hostname on a compromised machine.
+- **S0058 SslMM** (software) — SslMM sends information to its hard-coded C2, including OS version, service pack information, processor speed, system name, and OS install date.
+- **S0059 WinMM** (software) — WinMM collects the system name, OS version including service pack, and system install date and sends the information to the C2 server.
+- **S0060 Sys10** (software) — Sys10 collects the computer name, OS versioning information, and OS install date and sends the information to the C2.
+- **S0062 DustySky** (software) — DustySky extracts basic information about the operating system.
+- **S0065 4H RAT** (software) — 4H RAT sends an OS version identifier in its beacons.
+- **S0079 MobileOrder** (software) — MobileOrder has a command to upload to its C2 server victim mobile device information, including IMEI, IMSI, SIM card serial number, phone number, Android version, and other information.
+- **S0081 Elise** (software) — Elise executes `systeminfo` after initial communication is made to the remote server.
+- **S0082 Emissary** (software) — Emissary has the capability to execute ver and systeminfo commands.
+- **S0083 Misdat** (software) — The initial beacon packet for Misdat contains the operating system version of the victim.
+- **S0084 Mis-Type** (software) — The initial beacon packet for Mis-Type contains the operating system version and file system of the victim.
+- **S0085 S-Type** (software) — The initial beacon packet for S-Type contains the operating system version and file system of the victim.
+- **S0086 ZLib** (software) — ZLib has the ability to enumerate system information.
+- **S0088 Kasidet** (software) — Kasidet has the ability to obtain a victim's system name and operating system version.
+- **S0089 BlackEnergy** (software) — BlackEnergy has used Systeminfo to gather the OS version, as well as information on the system configuration, BIOS, the motherboard, and the processor.
+- **S0091 Epic** (software) — Epic collects the OS version, hardware information, computer name, available system memory status, and system and user language settings.
+- **S0093 Backdoor.Oldrea** (software) — Backdoor.Oldrea collects information about the OS and computer name.
+- **S0094 Trojan.Karagany** (software) — Trojan.Karagany can capture information regarding the victim's OS, security, and hardware configuration.
+- **S0096 Systeminfo** (software) — Systeminfo can be used to gather information about the operating system.
+- **S0098 T9000** (software) — T9000 gathers and beacons the operating system build number and CPU Architecture (32-bit/64-bit) during installation.
+- **S0105 dsquery** (software) — dsquery has the ability to enumerate various information, such as the operating system and host name, for systems within a domain.
+- **S0106 cmd** (software) — cmd can be used to find information about the operating system.
+- **S0113 Prikormka** (software) — A module in Prikormka collects information from the victim about Windows OS version, computer name, battery info, and physical memory.
+- **S0115 Crimson** (software) — Crimson contains a command to collect the victim PC name and operating system.
+- **S0124 Pisloader** (software) — Pisloader has a command to collect victim system information, including the system name and OS version.
+- **S0125 Remsec** (software) — Remsec can obtain the OS version information, computer name, processor architecture, machine role, and OS edition.
+- **S0130 Unknown Logger** (software) — Unknown Logger can obtain information about the victim computer name, physical memory, country, and date.
+- **S0137 CORESHELL** (software) — CORESHELL collects hostname and OS version data from the victim and sends the information to its C2 server.
+- **S0139 PowerDuke** (software) — PowerDuke has commands to get information about the victim's name, build, version, serial number, and memory usage.
+- **S0140 Shamoon** (software) — Shamoon obtains the victim's operating system version and keyboard layout and sends the information to the C2 server.
+- **S0141 Winnti for Windows** (software) — Winnti for Windows can determine if the OS on a compromised host is newer than Windows XP.
+- **S0142 StreamEx** (software) — StreamEx has the ability to enumerate system information.
+- **S0144 ChChes** (software) — ChChes collects the victim hostname, window resolution, and Microsoft Windows version.
+- **S0148 RTM** (software) — RTM can obtain the computer name, OS version, and default language identifier.
+- **S0149 MoonWind** (software) — MoonWind can obtain the victim hostname, Windows version, RAM amount, and screen resolution.
+- **S0151 HALFBAKED** (software) — HALFBAKED can obtain information about the OS, processor, and BIOS.
+- **S0153 RedLeaves** (software) — RedLeaves can gather extended system information including the hostname, OS version number, platform, memory information, time elapsed since system startup, and CPU information.
+- **S0155 WINDSHIELD** (software) — WINDSHIELD can gather the victim computer name.
+- **S0156 KOMPROGO** (software) — KOMPROGO is capable of retrieving information about the infected system.
+- **S0157 SOUNDBITE** (software) — SOUNDBITE is capable of gathering system information.
+- **S0161 XAgentOSX** (software) — XAgentOSX contains the getInstalledAPP function to run `ls -la /Applications` to gather what applications are installed.
+- **S0165 OSInfo** (software) — OSInfo discovers information about the infected machine.
+- **S0171 Felismus** (software) — Felismus collects the system information, including hostname and OS version, and sends it to the C2 server.
+- **S0172 Reaver** (software) — Reaver collects system information from the victim, including CPU speed, computer name, ANSI code page, OEM code page identifier for the OS, Microsoft Windows version, and memory information.
+- **S0176 Wingbird** (software) — Wingbird checks the victim OS version after executing to determine where to drop files based on whether the victim is 32-bit or 64-bit.
+- **S0180 Volgmer** (software) — Volgmer can gather system information, the computer name, OS version, drive and serial information from the victim's machine.
+- **S0181 FALLCHILL** (software) — FALLCHILL can collect operating system (OS) version information, processor information, and system name from the victim.
+- **S0182 FinFisher** (software) — FinFisher checks if the victim OS is 32 or 64-bit.
+- **S0184 POWRUNER** (software) — POWRUNER may collect information about the system by running `hostname` and `systeminfo` on a victim.
+- **S0186 DownPaper** (software) — DownPaper collects the victim host name and serial number, and then sends the information to the C2 server.
+- **S0192 Pupy** (software) — Pupy can grab a system’s information including the OS version, architecture, etc.
+- **S0196 PUNCHBUGGY** (software) — PUNCHBUGGY can gather system information such as computer names.
+- **S0198 NETWIRE** (software) — NETWIRE can discover and collect victim system information.
+- **S0199 TURNEDUP** (software) — TURNEDUP is capable of gathering system information.
+- **S0201 JPIN** (software) — JPIN can obtain system information such as OS version and disk space.
+- **S0203 Hydraq** (software) — Hydraq creates a backdoor through which remote attackers can retrieve information such as computer name, OS version, processor speed, memory size, and CPU speed.
+- **S0205 Naid** (software) — Naid collects a unique identifier (UID) from a compromised host.
+- **S0208 Pasam** (software) — Pasam creates a backdoor through which remote attackers can retrieve information like hostname.
+- **S0211 Linfo** (software) — Linfo creates a backdoor through which remote attackers can retrieve system information.
+- **S0214 HAPPYWORK** (software) — can collect system information, including computer name, system manufacturer, IsDebuggerPresent state, and execution path.
+- **S0215 KARAE** (software) — KARAE can collect system information.
+- **S0216 POORAIM** (software) — POORAIM can identify system information, including battery status.
+- **S0217 SHUTTERSPEED** (software) — SHUTTERSPEED can collect system information.
+- **S0218 SLOWDRIFT** (software) — SLOWDRIFT collects and sends system information to its C2.
+- **S0219 WINERACK** (software) — WINERACK can gather information about the host.
+- **S0223 POWERSTATS** (software) — POWERSTATS can retrieve OS name/architecture and computer/domain name information from compromised hosts.
+- **S0228 NanHaiShu** (software) — NanHaiShu can gather the victim computer name and serial number.
+- **S0229 Orz** (software) — Orz can gather the victim OS version and whether it is 64 or 32 bit.
+- **S0230 ZeroT** (software) — ZeroT gathers the victim's computer name, Windows version, and system language, and then sends it to its C2 server.
+- **S0233 MURKYTOP** (software) — MURKYTOP has the capability to retrieve information about the OS.
+- **S0236 Kwampirs** (software) — Kwampirs collects OS version information such as registered owner details, manufacturer details, processor type, available storage, installed patches, hostname, version info, system date, and other system information by using the commands `systeminfo`, `net config workstation`, `hostname`, `ver`, `set`, and `date /t`.
+- **S0237 GravityRAT** (software) — GravityRAT collects the MAC address, computer name, and CPU information.
+- **S0238 Proxysvc** (software) — Proxysvc collects the OS version, country name, MAC address, computer name, and physical memory statistics.
+- **S0239 Bankshot** (software) — Bankshot gathers system information, network addresses, and the operation system version.
+- **S0240 ROKRAT** (software) — ROKRAT can gather the hostname and the OS version to ensure it doesn’t run on a Windows XP or Windows Server 2003 systems.
+- **S0241 RATANKBA** (software) — RATANKBA gathers information about the OS architecture, OS name, and OS version/Service pack.
+- **S0242 SynAck** (software) — SynAck gathers computer names, OS version info, and also checks installed keyboard layouts to estimate if it has been launched from a certain list of countries.
+- **S0244 Comnie** (software) — Comnie collects the hostname of the victim machine.
+- **S0245 BADCALL** (software) — BADCALL collects the computer name and host name on the compromised system.
+- **S0247 NavRAT** (software) — NavRAT uses `systeminfo` on a victim’s machine.
+- **S0248 yty** (software) — yty gathers the computer name, CPU information, Microsoft Windows version, and runs the command `systeminfo`.
+- **S0249 Gold Dragon** (software) — Gold Dragon collects endpoint information using the `systeminfo` command.
+- **S0250 Koadic** (software) — Koadic can obtain the OS version and build, computer name, and processor architecture from a compromised host.
+- **S0251 Zebrocy** (software) — Zebrocy collects the OS version and computer name. Zebrocy also runs the `systeminfo` command to gather system information.
+- **S0252 Brave Prince** (software) — Brave Prince collects hard drive content and system configuration information.
+- **S0253 RunningRAT** (software) — RunningRAT gathers the OS version and processor information.
+- **S0254 PLAINTEE** (software) — PLAINTEE collects general system enumeration data about the infected machine and checks the OS version.
+- **S0257 VERMIN** (software) — VERMIN collects the OS name, machine name, and architecture information.
+- **S0259 InnaputRAT** (software) — InnaputRAT gathers system information.
+- **S0260 InvisiMole** (software) — InvisiMole can gather information on the OS version, computer name, DEP policy, and memory size.
+- **S0262 QuasarRAT** (software) — QuasarRAT can gather system information from the victim’s machine including the OS type.
+- **S0264 OopsIE** (software) — OopsIE checks for information on the CPU fan, temperature, mouse, hard disk, and motherboard as part of its anti-VM checks.
+- **S0265 Kazuar** (software) — Kazuar gathers information on the system.
+- **S0266 TrickBot** (software) — TrickBot gathers the OS version, machine name, CPU type, amount of RAM available, and UEFI/BIOS firmware information from the victim’s machine.
+- **S0267 FELIXROOT** (software) — FELIXROOT collects the victim’s computer name, processor architecture, OS version, and system type.
+- **S0268 Bisonal** (software) — Bisonal has used commands and API calls to gather system information.
+- **S0270 RogueRobin** (software) — RogueRobin gathers BIOS versions and manufacturers, the number of CPU cores, the total physical memory, and the computer name.
+- **S0271 KEYMARBLE** (software) — KEYMARBLE has the capability to collect the computer name, language settings, the OS version, CPU information, and time elapsed since system start.
+- **S0272 NDiskMonitor** (software) — NDiskMonitor obtains the victim computer name and encrypts the information to send over its C2 channel.
+- **S0275 UPPERCUT** (software) — UPPERCUT has the capability to gather the system’s hostname and OS version.
+- **S0280 MirageFox** (software) — MirageFox can collect CPU and architecture information from the victim’s machine.
+- **S0283 jRAT** (software) — jRAT collects information about the OS (version, build type, install date) as well as system up-time upon receiving a connection from a backdoor.
+- **S0284 More_eggs** (software) — More_eggs has the capability to gather the OS version and computer name.
+- **S0330 Zeus Panda** (software) — Zeus Panda collects the OS version, system architecture, computer name, product ID, install date, and information on the keyboard mapping to determine the language used on the system.
+- **S0331 Agent Tesla** (software) — Agent Tesla can collect the system's computer name and also has the capability to collect information on the processor, memory, OS, and video card from the system.
+- **S0332 Remcos** (software) — Remcos can collect the OS version and process architecture of compromised hosts.
+- **S0334 DarkComet** (software) — DarkComet can collect the computer name, RAM used, and operating system version from the victim’s machine.
+- **S0337 BadPatch** (software) — BadPatch collects the OS system, OS version, MAC address, and the computer name from the victim’s machine.
+- **S0339 Micropsia** (software) — Micropsia gathers the hostname and OS version from the victim’s machine.
+- **S0340 Octopus** (software) — Octopus can collect the computer name, OS version, and OS architecture information.
+- **S0344 Azorult** (software) — Azorult can collect the machine information, system architecture, the OS version, computer name, Windows product name, the number of CPU cores, video card information, and the system language.
+- **S0346 OceanSalt** (software) — OceanSalt can collect the computer name from the system.
+- **S0348 Cardinal RAT** (software) — Cardinal RAT can collect the hostname, Microsoft Windows version, and processor architecture from a victim machine.
+- **S0350 zwShell** (software) — zwShell can obtain the victim PC name and OS version.
+- **S0351 Cannon** (software) — Cannon can gather system information from the victim’s machine such as the OS version, and machine name.
+- **S0352 OSX_OCEANLOTUS.D** (software) — OSX_OCEANLOTUS.D collects processor information, memory information, computer name, hardware UUID, serial number, and operating system version. OSX_OCEANLOTUS.D has used the `ioreg` command to gather some of this information.
+- **S0353 NOKKI** (software) — NOKKI can gather information on the operating system on the victim’s machine.
+- **S0354 Denis** (software) — Denis collects OS information and the computer name from the victim’s machine.
+- **S0355 Final1stspy** (software) — Final1stspy obtains victim Microsoft Windows version information and CPU architecture.
+- **S0356 KONNI** (software) — KONNI can gather the OS version, architecture information, hostname, and RAM size information from the victim’s machine and has used `cmd /c systeminfo` command to get a snapshot of the current system state of the target machine.
+- **S0363 Empire** (software) — Empire can enumerate host system information like OS, architecture, domain name, applied patches, and more.
+- **S0373 Astaroth** (software) — Astaroth collects the machine name and keyboard language from the system.
+- **S0374 SpeakUp** (software) — SpeakUp uses the `cat /proc/cpuinfo | grep -c “cpu family” 2>&1` command to gather system information.
+- **S0376 HOPLIGHT** (software) — HOPLIGHT has been observed collecting victim machine information like OS version.
+- **S0378 PoshC2** (software) — PoshC2 contains modules, such as `Get-ComputerInfo`, for enumerating common system information.
+- **S0379 Revenge RAT** (software) — Revenge RAT collects the CPU information, OS information, and system language.
+- **S0380 StoneDrill** (software) — StoneDrill has the capability to discover the system OS, Windows version, architecture and environment.
+- **S0381 FlawedAmmyy** (software) — FlawedAmmyy can collect the victim's operating system and computer name during the initial infection.
+- **S0382 ServHelper** (software) — ServHelper will attempt to enumerate Windows version and system architecture.
+- **S0384 Dridex** (software) — Dridex has collected the computer name and OS architecture information from the system.
+- **S0385 njRAT** (software) — njRAT enumerates the victim operating system and computer name during the initial infection.
+- **S0386 Ursnif** (software) — Ursnif has used Systeminfo to gather system information.
+- **S0387 KeyBoy** (software) — KeyBoy can gather extended system information, such as information about the operating system and memory.
+- **S0388 YAHOYAH** (software) — YAHOYAH checks for the system’s Windows OS version and hostname.
+- **S0391 HAWKBALL** (software) — HAWKBALL can collect the OS version, architecture information, and computer name.
+- **S0395 LightNeuron** (software) — LightNeuron gathers the victim computer name using the Win32 API call `GetComputerName`.
+- **S0402 OSX/Shlayer** (software) — OSX/Shlayer has collected the IOPlatformUUID, session UID, and the OS version using the command `sw_vers -productVersion`.
+- **S0409 Machete** (software) — Machete collects the hostname of the target computer.
+- **S0410 Fysbis** (software) — Fysbis has used the command `ls /etc | egrep -e"fedora\*|debian\*|gentoo\*|mandriva\*|mandrake\*|meego\*|redhat\*|lsb-\*|sun-\*|SUSE\*|release"` to determine which Linux OS version is running.
+- **S0412 ZxShell** (software) — ZxShell can collect the local hostname, operating system details, CPU speed, and total physical memory.
+- **S0414 BabyShark** (software) — BabyShark has executed the `ver` command.
+- **S0417 GRIFFON** (software) — GRIFFON has used a reconnaissance module that can be used to retrieve information about a victim's computer, including the resolution of the workstation .
+- **S0428 PoetRAT** (software) — PoetRAT has the ability to gather information about the compromised host.
+- **S0431 HotCroissant** (software) — HotCroissant has the ability to determine if the current user is an administrator, Windows product name, processor name, screen resolution, and physical RAM of the infected host.
+- **S0433 Rifdoor** (software) — Rifdoor has the ability to identify the Windows version on the compromised host.
+- **S0439 Okrum** (software) — Okrum can collect computer name, locale information, and information about the OS and architecture.
+- **S0441 PowerShower** (software) — PowerShower has collected system information on the infected host.
+- **S0445 ShimRatReporter** (software) — ShimRatReporter gathered the operating system name and specific Windows version of an infected machine.
+- **S0447 Lokibot** (software) — Lokibot has the ability to discover the computer name and Windows product name/version.
+- **S0448 Rising Sun** (software) — Rising Sun can detect the computer name and operating system.
+- **S0449 Maze** (software) — Maze has checked the language of the infected system using the "GetUSerDefaultUILanguage" function.
+- **S0450 SHARPSTATS** (software) — SHARPSTATS has the ability to identify the IP address, machine name, and OS of the compromised host.
+- **S0451 LoudMiner** (software) — LoudMiner has monitored CPU usage.
+- **S0453 Pony** (software) — Pony has collected the Service Pack, language, and region information to send to the C2.
+- **S0454 Cadelspy** (software) — Cadelspy has the ability to discover information about the compromised host.
+- **S0455 Metamorfo** (software) — Metamorfo has collected the hostname and operating system version from the compromised host.
+- **S0456 Aria-body** (software) — Aria-body has the ability to identify the hostname, computer name, Windows version, processor speed, and machine GUID on a compromised host.
+- **S0457 Netwalker** (software) — Netwalker can determine the system architecture it is running on to choose which version of the DLL to use.
+- **S0460 Get2** (software) — Get2 has the ability to identify the computer name and Windows version of an infected host.
+- **S0461 SDBbot** (software) — SDBbot has the ability to identify the OS version, OS bit information and computer name.
+- **S0462 CARROTBAT** (software) — CARROTBAT has the ability to determine the operating system of the compromised host and whether Windows is being run with x86 or x64 architecture.
+- **S0464 SYSCON** (software) — SYSCON has the ability to use Systeminfo to identify system information.
+- **S0467 TajMahal** (software) — TajMahal has the ability to identify hardware information, the computer name, and OS information on an infected host.
+- **S0468 Skidmap** (software) — Skidmap has the ability to check whether the infected system’s OS is Debian or RHEL/CentOS to determine which cryptocurrency miner it should use.
+- **S0473 Avenger** (software) — Avenger has the ability to identify the OS architecture on a compromised host.
+- **S0475 BackConfig** (software) — BackConfig has the ability to gather the victim's computer name.
+- **S0476 Valak** (software) — Valak can determine the Windows version and computer name on a compromised host.
+- **S0482 Bundlore** (software) — Bundlore will enumerate the macOS version to determine which follow-on behaviors to execute using `/usr/bin/sw_vers -productVersion`.
+- **S0483 IcedID** (software) — IcedID has the ability to identify the computer name and OS version on a compromised host.
+- **S0484 Carberp** (software) — Carberp has collected the operating system version from the infected system.
+- **S0486 Bonadan** (software) — Bonadan has discovered the OS version, CPU model, and RAM size of the system it has been installed on.
+- **S0487 Kessel** (software) — Kessel has collected the system architecture, OS version, and MAC address information.
+- **S0493 GoldenSpy** (software) — GoldenSpy has gathered operating system information.
+- **S0496 REvil** (software) — REvil can identify the username, machine name, system language, keyboard layout, and OS version on a compromised host.
+- **S0501 PipeMon** (software) — PipeMon can collect and send OS version and computer name as a part of its C2 beacon.
+- **S0504 Anchor** (software) — Anchor can determine the hostname and linux version on a compromised host.
+- **S0512 FatDuke** (software) — FatDuke can collect the user name, Windows version, computer name, and available space on discs from a compromised host.
+- **S0513 LiteDuke** (software) — LiteDuke can enumerate the CPUID and BIOS version on a compromised system.
+- **S0514 WellMess** (software) — WellMess can identify the computer name of a compromised host.
+- **S0516 SoreFang** (software) — SoreFang can collect the hostname, operating system configuration, and product ID on victim machines by executing Systeminfo.
+- **S0520 BLINDINGCAN** (software) — BLINDINGCAN has collected from a victim machine the system name, processor information, and OS version.
+- **S0531 Grandoreiro** (software) — Grandoreiro can collect the computer name and OS version from a compromised host.
+- **S0532 Lucifer** (software) — Lucifer can collect the computer name, system architecture, default language, and processor frequency of a compromised host.
+- **S0533 SLOTHFULMEDIA** (software) — SLOTHFULMEDIA has collected system name, OS version, adapter information, and memory usage from a victim machine.
+- **S0534 Bazar** (software) — Bazar can fingerprint architecture, computer name, and OS version on the compromised host. Bazar can also check if the Russian language is installed on the infected machine and terminate if it is found.
+- **S0543 Spark** (software) — Spark can collect the hostname, keyboard layout, and language from the system.
+- **S0546 SharpStage** (software) — SharpStage has checked the system settings to see if Arabic is the configured language.
+- **S0547 DropBook** (software) — DropBook has checked for the presence of Arabic language in the infected machine's settings.
+- **S0553 MoleNet** (software) — MoleNet can collect information about the about the system.
+- **S0554 Egregor** (software) — Egregor can perform a language check of the infected system and can query the CPU information (cupid).
+- **S0556 Pay2Key** (software) — Pay2Key has the ability to gather the hostname of the victim machine.
+- **S0559 SUNBURST** (software) — SUNBURST collected hostname and OS version.
+- **S0567 Dtrack** (software) — Dtrack can collect the victim's computer name, hostname and adapter information to create a unique identifier.
+- **S0568 EVILNUM** (software) — EVILNUM can obtain the computer name from the victim's system.
+- **S0569 Explosive** (software) — Explosive has collected the computer name from the infected host.
+- **S0572 Caterpillar WebShell** (software) — Caterpillar WebShell has a module to gather information from the compromised asset, including the computer version, computer name, IIS version, and more.
+- **S0584 AppleJeus** (software) — AppleJeus has collected the victim host information after infection.
+- **S0585 Kerrdown** (software) — Kerrdown has the ability to determine if the compromised host is running a 32 or 64 bit OS architecture.
+- **S0587 Penquin** (software) — Penquin can report the file system type of a compromised host to C2.
+- **S0596 ShadowPad** (software) — ShadowPad has discovered system information including memory status, CPU frequency, and OS versions.
+- **S0601 Hildegard** (software) — Hildegard has collected the host's OS, CPU, and memory information.
+- **S0603 Stuxnet** (software) — Stuxnet collects system information including computer and domain names, OS version, and S7P paths.
+- **S0604 Industroyer** (software) — Industroyer collects the victim machine’s Windows GUID.
+- **S0610 SideTwist** (software) — SideTwist can collect the computer name of a targeted system.
+- **S0615 SombRAT** (software) — SombRAT can execute `getinfo` to enumerate the computer name and OS version of a compromised system.
+- **S0622 AppleSeed** (software) — AppleSeed can identify the OS version of a targeted system.
+- **S0627 SodaMaster** (software) — SodaMaster can enumerate the host name and OS version on a target system.
+- **S0631 Chaes** (software) — Chaes has collected system information, including the machine name and OS version.
+- **S0632 GrimAgent** (software) — GrimAgent can collect the OS, and build version on a compromised host.
+- **S0634 EnvyScout** (software) — EnvyScout can determine whether the ISO payload was received by a Windows or iOS device.
+- **S0635 BoomBox** (software) — BoomBox can enumerate the hostname, domain, and IP of a compromised host.
+- **S0641 Kobalos** (software) — Kobalos can record the hostname and kernel version of the target machine.
+- **S0642 BADFLICK** (software) — BADFLICK has captured victim computer name, memory space, and CPU details.
+- **S0644 ObliqueRAT** (software) — ObliqueRAT has the ability to check for blocklisted computer names on infected endpoints.
+- **S0646 SpicyOmelette** (software) — SpicyOmelette can identify the system name of a compromised host.
+- **S0647 Turian** (software) — Turian can retrieve system information including OS version, memory usage, local hostname, and system adapter information.
+- **S0649 SMOKEDHAM** (software) — SMOKEDHAM has used the `systeminfo` command on a compromised host.
+- **S0650 QakBot** (software) — QakBot can collect system information including the OS version and domain on a compromised host.
+- **S0652 MarkiRAT** (software) — MarkiRAT can obtain the computer name from a compromised host.
+- **S0657 BLUELIGHT** (software) — BLUELIGHT has collected the computer name and OS version from victim machines.
+- **S0658 XCSSET** (software) — XCSSET identifies the macOS version and uses `ioreg` to determine serial number.
+- **S0659 Diavol** (software) — Diavol can collect the computer name and OS version from the system.
+- **S0660 Clambling** (software) — Clambling can discover the hostname, computer name, and Windows version of a targeted machine.
+- **S0662 RCSession** (software) — RCSession can gather system information from a compromised host.
+- **S0663 SysUpdate** (software) — SysUpdate can collect a system's architecture, operating system version, and hostname.
+- **S0665 ThreatNeedle** (software) — ThreatNeedle can collect system profile information from a compromised host.
+- **S0666 Gelsemium** (software) — Gelsemium can determine the operating system and whether a targeted machine has a 32 or 64 bit architecture.
+- **S0667 Chrommme** (software) — Chrommme has the ability to obtain the computer name of a compromised host.
+- **S0669 KOCTOPUS** (software) — KOCTOPUS has checked the OS version using `wmic.exe` and the `find` command.
+- **S0670 WarzoneRAT** (software) — WarzoneRAT can collect compromised host information, including OS version, PC name, RAM size, and CPU details.
+- **S0673 DarkWatchman** (software) — DarkWatchman can collect the OS version, system architecture, and computer name.
+- **S0674 CharmPower** (software) — CharmPower can enumerate the OS version and computer name on a targeted system.
+- **S0679 Ferocious** (software) — Ferocious can use `GET.WORKSPACE` in Microsoft Excel to determine the OS version of the compromised host.
+- **S0680 LitePower** (software) — LitePower has the ability to enumerate the OS architecture.
+- **S0681 Lizar** (software) — Lizar can collect the computer name from the machine.
+- **S0687 Cyclops Blink** (software) — Cyclops Blink has the ability to query device information.
+- **S0688 Meteor** (software) — Meteor has the ability to discover the hostname of a compromised host.
+- **S0690 Green Lambert** (software) — Green Lambert can use `uname` to identify the operating system name, version, and processor type.
+- **S0691 Neoichor** (software) — Neoichor can collect the OS version and computer name from a compromised host.
+- **S0692 SILENTTRINITY** (software) — SILENTTRINITY can collect information related to a compromised host, including OS version.
+- **S0693 CaddyWiper** (software) — CaddyWiper can use `DsRoleGetPrimaryDomainInformation` to determine the role of the infected machine. CaddyWiper can also halt execution if the compromised host is identified as a domain controller.
+- **S0697 HermeticWiper** (software) — HermeticWiper can determine the OS version and bitness on a targeted host.
+- **S1013 ZxxZ** (software) — ZxxZ has collected the host name and operating system product name from a compromised machine.
+- **S1015 Milan** (software) — Milan can enumerate the targeted machine's name and GUID.
+- **S1016 MacMa** (software) — MacMa can collect information about a compromised computer, including: Hardware UUID, Mac serial number, and macOS version.
+- **S1018 Saint Bot** (software) — Saint Bot can identify the OS version, CPU, and other details from a victim's machine.
+- **S1019 Shark** (software) — Shark can collect the GUID of a targeted machine.
+- **S1020 Kevin** (software) — Kevin can enumerate the OS version and hostname of a targeted machine.
+- **S1022 IceApple** (software) — The IceApple Server Variable Dumper module iterates over all server variables present for the current request and returns them to the adversary.
+- **S1025 Amadey** (software) — Amadey has collected the computer name and OS version from a compromised machine.
+- **S1026 Mongall** (software) — Mongall can retrieve the hostname via `gethostbyname`.
+- **S1028 Action RAT** (software) — Action RAT has the ability to collect the hostname, OS version, and OS architecture of an infected host.
+- **S1029 AuTo Stealer** (software) — AuTo Stealer has the ability to collect the hostname and OS information from an infected host.
+- **S1030 Squirrelwaffle** (software) — Squirrelwaffle has gathered victim computer information and configurations.
+- **S1031 PingPull** (software) — PingPull can retrieve the hostname of a compromised host.
+- **S1034 StrifeWater** (software) — StrifeWater can collect the OS version, architecture, and machine name to create a unique token for the infected host.
+- **S1037 STARWHALE** (software) — STARWHALE can gather the computer name of an infected host.
+- **S1039 Bumblebee** (software) — Bumblebee can enumerate the OS version and domain on a targeted system.
+- **S1048 macOS.OSAMiner** (software) — macOS.OSAMiner can gather the device serial number.
+- **S1052 DEADEYE** (software) — DEADEYE can enumerate a victim computer's volume serial number and host name.
+- **S1059 metaMain** (software) — metaMain can collect the computer name from a compromised host.
+- **S1060 Mafalda** (software) — Mafalda can collect the computer name of a compromised host.
+- **S1064 SVCReady** (software) — SVCReady has the ability to collect information such as computer name, computer manufacturer, BIOS, operating system, and firmware, including through the use of `systeminfo.exe`.
+- **S1065 Woody RAT** (software) — Woody RAT can retrieve the following information from an infected machine: OS, architecture, computer name, OS build version, and environment variables.
+- **S1066 DarkTortilla** (software) — DarkTortilla can obtain system information by querying the `Win32_ComputerSystem`, `Win32_BIOS`, `Win32_MotherboardDevice`, `Win32_PnPEntity`, and `Win32_DiskDrive` WMI objects.
+- **S1068 BlackCat** (software) — BlackCat can obtain the computer name and UUID.
+- **S1070 Black Basta** (software) — Black Basta can collect system boot configuration and CPU information.
+- **S1073 Royal** (software) — Royal can use `GetNativeSystemInfo` to enumerate system processors.
+- **S1078 RotaJakiro** (software) — RotaJakiro executes a set of commands to collect device information, including `uname`. Another example is the `cat /etc/*release | uniq` command used to collect the current OS distribution.
+- **S1081 BADHATCH** (software) — BADHATCH can obtain current system information from a compromised machine such as the `SHELL PID`, `PSVERSION`, `HOSTNAME`, `LOGONSERVER`, `LASTBOOTUP`, OS type/version, bitness, and hostname.
+- **S1085 Sardonic** (software) — Sardonic has the ability to collect the computer name, and CPU manufacturer name from a compromised machine. Sardonic also has the ability to execute the `ver` and `systeminfo` commands.
+- **S1086 Snip3** (software) — Snip3 has the ability to query `Win32_ComputerSystem` for system information.
+- **S1100 Ninja** (software) — Ninja can obtain the computer name and information on the OS from targeted hosts.
+- **S1107 NKAbuse** (software) — NKAbuse conducts multiple system checks and includes these in subsequent "heartbeat" messages to the malware's command and control server.
+- **S1111 DarkGate** (software) — DarkGate will gather various system information such as domain, display adapter description, operating system type and version, processor type, and RAM amount.
+- **S1121 LITTLELAMB.WOOLTEA** (software) — LITTLELAMB.WOOLTEA can check the type of Ivanti VPN device it is running on by executing `first_run()` to identify the first four bytes of the motherboard serial number.
+- **S1122 Mispadu** (software) — Mispadu collects the OS version, computer name, and language ID.
+- **S1124 SocGholish** (software) — SocGholish has the ability to enumerate system information including the victim computer name.
+- **S1129 Akira** (software) — Akira uses the `GetSystemInfo` Windows function to determine the number of processors on a victim machine.
+- **S1130 Raspberry Robin** (software) — Raspberry Robin performs several system checks as part of anti-analysis mechanisms, including querying the operating system build number, processor vendor and type, video controller, and CPU temperature.
+- **S1138 Gootloader** (software) — Gootloader can inspect the User-Agent string in GET request header information to determine the operating system of targeted systems.
+- **S1141 LunarWeb** (software) — LunarWeb can use WMI queries and shell commands such as systeminfo.exe to collect the operating system, BIOS version, and domain name of the targeted system.
+- **S1142 LunarMail** (software) — LunarMail can capture environmental variables on compromised hosts.
+- **S1145 Pikabot** (software) — Pikabot performs a variety of system checks and gathers system information, including commands such as `whoami`.
+- **S1147 Nightdoor** (software) — Nightdoor gathers information on the victim system such as CPU and Computer name as well as device drivers.
+- **S1148 Raccoon Stealer** (software) — Raccoon Stealer gathers information on infected systems such as operating system, processor information, RAM, and display information.
+- **S1152 IMAPLoader** (software) — IMAPLoader uses WMI queries to gather information about the victim machine.
+- **S1153 Cuckoo Stealer** (software) — Cuckoo Stealer can gather information about the OS version and hardware on compromised hosts.
+- **S1155 Covenant** (software) — Covenant implants can gather basic information on infected systems.
+- **S1156 Manjusaka** (software) — Manjusaka performs basic system profiling actions to fingerprint and register the victim system with the C2 controller.
+- **S1159 DUSTTRAP** (software) — DUSTTRAP reads the value of the infected system's `HKLM\SYSTEM\Microsoft\Cryptography\MachineGUID` value.
+- **S1160 Latrodectus** (software) — Latrodectus can gather operating system information.
+- **S1166 Solar** (software) — Solar can send basic information about the infected host to C2.
+- **S1167 AcidPour** (software) — AcidPour can identify various system locations and mapped devices on Linux systems as a precursor to wiping activity.
+- **S1168 SampleCheck5000** (software) — SampleCheck5000 can create unique victim identifiers by using the compromised system’s computer name.
+- **S1169 Mango** (software) — Mango can collect the machine name of a compromised system which is later used as part of a unique victim identifier.
+- **S1172 OilBooster** (software) — OilBooster can identify the compromised system's hostname which is used to create a unique identifier.
+- **S1178 ShrinkLocker** (software) — ShrinkLocker uses WMI queries to gather various information about the victim machine and operating system.
+- **S1180 BlackByte Ransomware** (software) — BlackByte Ransomware gathers victim system information to generate a unique victim identifier.
+- **S1182 MagicRAT** (software) — MagicRAT collects basic system information from victim machines.
+- **S1183 StrelaStealer** (software) — StrelaStealer variants collect victim system information for exfiltration.
+- **S1184 BOLDMOVE** (software) — BOLDMOVE performs system survey actions following initial execution.
+- **S1185 LightSpy** (software) — LightSpy's second stage implant uses the `DeviceInformation` class to collect system information, including CPU usage, battery statistics, memory allocations, screen size, etc.
+- **S1186 Line Dancer** (software) — Line Dancer can gather system configuration information by running the native `show configuration` command.
+- **S1190 Kapeka** (software) — Kapeka utilizes WinAPI calls and registry queries to gather system information.
+- **S1196 Troll Stealer** (software) — Troll Stealer can collect local system information.
+- **S1198 Gomir** (software) — Gomir collects information on infected systems such as hostname, username, CPU, and RAM information.
+- **S1199 LockBit 2.0** (software) — LockBit 2.0 can enumerate system information including hostname and domain information.
+- **S1200 StealBit** (software) — StealBit can enumerate the computer name and domain membership of the compromised system.
+- **S1202 LockBit 3.0** (software) — LockBit 3.0 can enumerate system hostname and domain.
+- **S1207 XLoader** (software) — XLoader can collect system information and supported language information from the victim machine.
+- **S1210 Sagerunex** (software) — Sagerunex gathers information from the infected system such as hostname.
+- **S1212 RansomHub** (software) — RansomHub can retrieve information about virtual machines.
+- **S1213 Lumma Stealer** (software) — Lumma Stealer has gathered various system information from victim machines.
+- **S1222 RIFLESPINE** (software) — RIFLESPINE can collect system information after installation on infected systems.
+- **S1228 PUBLOAD** (software) — PUBLOAD has collected and sent system information including volume serial number, computer name, and system uptime to designated C2. PUBLOAD has also used several commands executed in sequence via `cmd` in a short interval to gather system information about the infected host including `systeminfo`. PUBLOAD has decrypted shellcode that collects the computer name.
+- **S1229 Havoc** (software) — Havoc can gather system information including hostname, domain, and OS details.
+- **S1234 SplatCloak** (software) — SplatCloak has collected the Windows build number using the windows kernel API `RtlGetVersion` to determine if the response is 19000 or higher (Windows 10 version 2004 or later).
+- **S1239 TONESHELL** (software) — TONESHELL has the ability to retrieve the name of the infected machine.
+- **S1240 RedLine Stealer** (software) — RedLine Stealer can collect information about the local system.
+- **S1242 Qilin** (software) — Qilin can detect whether a system is running FreeBSD, VMkernel (ESXi), Nutanix AHV, or a standard Linux distribution to enable platform-specific encryption behaviors.
+- **S1244 Medusa Ransomware** (software) — Medusa Ransomware has collected data from the SMBIOS firmware table using `GetSystemFirmwareTable`.
+- **S1245 InvisibleFerret** (software) — InvisibleFerret has collected OS type, hostname and system version through the "pay" module. InvisibleFerret has also queried the victim device using Python scripts to obtain the User and Hostname.
+- **S1246 BeaverTail** (software) — BeaverTail has been known to collect basic system information. BeaverTail has also collected data to include hostname and current timestamp prior to uploading data to the API endpoint `/uploads` on the C2 server.
+- **S1248 XORIndex Loader** (software) — XORIndex Loader has the ability to collect the hostname, OS Username, Geolocation, and OS version of an infected host.
+- **S1249 HexEval Loader** (software) — HexEval Loader has identified the OS and MAC address of victim device through host fingerprinting scripting.
+- **S9001 SystemBC** (software) — SystemBC has collected username , build number and serial number, then sent the information to the C2 server. SystemBC has also gathered device name, operating system, and processor type.
+- **S9002 Diskpart** (software) — Diskpart can show information about the selected disk, partition, volume, or virtual hard disk (VHD).
+- **S9008 Shai-Hulud** (software) — Shai-Hulud has gathered victim system information.
+- **S9010 GlassWorm** (software) — GlassWorm has the ability to check the OS of the victim host. GlassWorm has checked whether the OS platform value includes `darwin` prior to execution of macOS specific scripts.
+- **S9019 PureCrypter** (software) — PureCrypter can enumerate a targeted system's SerialNumber and Version.
+- **S9020 LODEINFO** (software) — LODEINFO can disover machine information including OS architecture, the ANSI code page (ACP) identifier, and hostname.
+- **S9023 HiddenFace** (software) — HiddenFace can enumerate the hostname and username of the compromised system.
+- **S9024 SPAWNCHIMERA** (software) — SPAWNCHIMERA has obtained system information such as release, uptime, and current time.
+- **S9025 NOOPLDR** (software) — NOOPLDR can discover the device ID and hostname from the targeted machine to use for encryption keys.
+- **S9029 IronWind** (software) — IronWind can capture the OS version and computer name of the compromised host.
+- **S9031 AshTag** (software) — The AshTag loader and AshenOrchestrator components can collect reconnaissance data from victim machines.
+- **S9034 Tsundere Botnet** (software) — Tsundere Botnet has collected the machine’s MAC address, total memory, GPU information and other system information.
+- **S9035 LAMEHUG** (software) — LAMEHUG has the ability to execute Windows commands returned from C2 to gather system information.
+- **S9037 RustyWater** (software) — RustyWater has gathered the victim machine’s computer name.
+- **S9039 LazyWiper** (software) — LazyWiper has used `[System.Net.Dns]::GetHostName()` and `$env:COMPUTERNAME` to enumerate the hostname of a system and determine if it is a domain controller.
+- **S9041 TeamPCP Cloud Stealer** (software) — TeamPCP Cloud Stealer has detected if it is on a developer machine by checking if the environmental variable  GITHUB_ACTIONS != “true”. TeamPCP Cloud Stealer has also identified readable memory regions on CI/CD runners and enumerated system information using `hostname` and `uname-a`.
+- **S9043 Mini Shai-Hulud** (software) — Mini Shai-Hulud has gathered system information of victim hosts through the use of common discovery commands to include `hostname`, `uname-a` and `printenv`. Mini Shai-Hulud has also conducted system checks of the victim device to include enumerating the system type and the number of CPUs operating on victim host.
+- **S9045 BACKUPOSINT v9.0 APEX PREDATOR** (software) — BACKUPOSINT v9.0 APEX PREDATOR has discovered system configurations on victim devices.
+- **S9046 IOControl** (software) — IOCONTROL has used the `uname -v` and `uname –r` commands to obtain kernel version and release information as well as the `hostname` command to obtain the hostname of the system.
+- **S9050 Vidar** (software) — Vidar has gathered hardware IDs (HWIDs) regarding the victim machine. Vidar has used `GetEnvironmentStringsW` and `GetModuleHandleExW` to gather information about the victim machine. Vidar has collected OS data from the victim machine.
+- **S9052 MiniFast** (software) — MiniFast has collected the victim's username, hostname and domain information.
+- **S9053 MiniJunk** (software) — MiniJunk has the ability to gather the computer name.
+- **S9059 MiniBike** (software) — MiniBike has collected system information from the victim machine.
+- **S9063 DEEPROOT** (software) — DEEPROOT has gathered the victim hostname.
+- **S9067 TWOSTROKE** (software) — TWOSTROKE has gathered victim hostname and the domain through `GetComputerNameExW(ComputerNameDnsFullyQualified)`.

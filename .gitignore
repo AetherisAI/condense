@@ -28,3 +28,4 @@ sift_local.db*
 
 # sift-eval run folders (reports may quote your documents)
 eval-runs/
+eval-ci.db*

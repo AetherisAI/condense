@@ -1,0 +1,239 @@
+# T1041 — Exfiltration Over C2 Channel
+
+- **Type:** technique
+- **Domain:** Enterprise ATT&CK
+- **Tactics:** Exfiltration
+- **Platforms:** ESXi, Linux, macOS, Windows
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T1041
+- **Last modified:** 2026-09-11
+
+## Description
+
+Adversaries may steal data by exfiltrating it over an existing command and control channel. Stolen data is encoded into the normal communications channel using the same protocol as command and control communications.
+
+## Mitigations
+
+- **M1031 Network Intrusion Prevention** — Network intrusion detection and prevention systems that use network signatures to identify traffic for specific adversary malware can be used to mitigate activity at the network level. Signatures are often for unique indicators within protocols and may be based on the specific obfuscation technique used by a particular adversary or tool, and will likely be different across various malware families and versions. Adversaries will likely change tool command and control signatures over time or construct protocols in such a way to avoid detection by common defensive tools.
+- **M1057 Data Loss Prevention** — Data loss prevention can detect and block sensitive data being sent over unencrypted protocols.
+
+## Detection strategies
+
+- **DET0348 Detection Strategy for Exfiltration Over C2 Channel**
+  - AN0988 (Windows): Identifies suspicious outbound traffic volume mismatches from processes that typically do not generate network activity, particularly over C2 protocols like HTTPS, DNS, or custom TCP/UDP ports, following file or data access. Log sources: WinEventLog:Sysmon (EventCode=1); WinEventLog:Sysmon (EventCode=3, 22); NSM:Flow (Flow/PCAP analysis for outbound payloads); WinEventLog:Security (EventCode=4663, 4670, 4656).
+  - AN0989 (Linux): Monitors for processes reading sensitive files then immediately initiating unusual outbound connections or bulk transfer sessions over persistent sockets, particularly with encrypted or binary payloads. Log sources: auditd:SYSCALL (execve); auditd:SYSCALL (connect); NSM:Flow (conn.log + files.log + ssl.log); NSM:Flow (session stats with bytes_out > bytes_in).
+  - AN0990 (macOS): Detects unauthorized applications or scripts accessing sensitive data followed by establishing encrypted outbound communication to rare external destinations or with abnormal byte ratios. Log sources: macos:unifiedlog (eventMessage = 'open', 'sendto', 'connect'); macos:osquery (socket_events); macos:osquery (process_events).
+  - AN0991 (ESXi): Detects VMs sending outbound traffic through non-standard services or to unknown destinations. Exfiltration over reverse shells tunneled via VMkernel or custom payloads routed via hostd/vpxa. Log sources: esxi:vpxa (connection attempts and data transmission logs); esxi:vmkernel (network stack module logs); esxi:syslog (guest OS outbound transfer logs).
+
+## Procedure examples
+
+- **C0001 Frankenstein** (campaign) — During Frankenstein, the threat actors collected information via Empire, which sent the data back to the adversary's C2.
+- **C0006 Operation Honeybee** (campaign) — During Operation Honeybee, the threat actors uploaded stolen files to their C2 servers.
+- **C0014 Operation Wocao** (campaign) — During Operation Wocao, threat actors used the XServer backdoor to exfiltrate data.
+- **C0017 C0017** (campaign) — During C0017, APT41 used its Cloudflare services C2 channels for data exfiltration.
+- **C0022 Operation Dream Job** (campaign) — During Operation Dream Job, Lazarus Group exfiltrated data from a compromised host to actor-controlled C2 servers.
+- **C0038 HomeLand Justice** (campaign) — During HomeLand Justice, threat actors used HTTP to transfer data from compromised Exchange servers.
+- **C0046 ArcaneDoor** (campaign) — ArcaneDoor included use of existing command and control channels for data exfiltration.
+- **C0049 Leviathan Australian Intrusions** (campaign) — Leviathan exfiltrated collected data over existing command and control channels during Leviathan Australian Intrusions.
+- **C0056 RedPenguin** (campaign) — During RedPenguin, UNC3886 uploaded specified files from compromised devices to a remote server.
+- **C0058 SharePoint ToolShell Exploitation** (campaign) — During SharePoint ToolShell Exploitation, threat actors exfiltrated stolen credentials and internal data over HTTPS to C2 infrastructure.
+- **G0004 Ke3chang** (group) — Ke3chang transferred compressed and encrypted RAR files containing exfiltration through the established backdoor command and control channel during operations.
+- **G0022 APT3** (group) — APT3 has a tool that exfiltrates data over the C2 channel.
+- **G0032 Lazarus Group** (group) — Lazarus Group has exfiltrated data and files over a C2 channel through its various tools and malware.
+- **G0034 Sandworm Team** (group) — Sandworm Team has sent system information to its C2 server using HTTP.
+- **G0038 Stealth Falcon** (group) — After data is collected by Stealth Falcon malware, it is exfiltrated over the existing C2 channel.
+- **G0047 Gamaredon Group** (group) — A Gamaredon Group file stealer can transfer collected files to a hardcoded C2 server.
+- **G0050 APT32** (group) — APT32's backdoor has exfiltrated data using the already opened channel with its C&C server.
+- **G0065 Leviathan** (group) — Leviathan has exfiltrated data over its C2 channel.
+- **G0069 MuddyWater** (group) — MuddyWater has used C2 infrastructure to receive exfiltrated data.
+- **G0082 APT38** (group) — APT38 has exfiltrated victim device and user details contained in a POST request to register the compromised system with C2 infrastructure.
+- **G0087 APT39** (group) — APT39 has exfiltrated stolen victim data through C2 communications.
+- **G0090 WIRTE** (group) — WIRTE has exfiltrated collected victim data to C2 infrastructure.
+- **G0093 GALLIUM** (group) — GALLIUM used Web shells and HTRAN for C2 and to exfiltrate data.
+- **G0094 Kimsuky** (group) — Kimsuky has exfiltrated data over its C2 channel.
+- **G0102 Wizard Spider** (group) — Wizard Spider has exfiltrated domain credentials and network enumeration information over command and control (C2) channels.
+- **G0114 Chimera** (group) — Chimera has used Cobalt Strike C2 beacons for data exfiltration.
+- **G0126 Higaisa** (group) — Higaisa exfiltrated data over its C2 channel.
+- **G0128 ZIRCONIUM** (group) — ZIRCONIUM has exfiltrated files via the Dropbox API C2.
+- **G0129 Mustang Panda** (group) — Mustang Panda has exfiltrated stolen data and files to its C2 server.
+- **G0142 Confucius** (group) — Confucius has exfiltrated stolen files to its C2 server.
+- **G1012 CURIUM** (group) — CURIUM has used IMAP and SMTPS for exfiltration via tools such as IMAPLoader.
+- **G1014 LuminousMoth** (group) — LuminousMoth has used malware that exfiltrates stolen data to its C2 server.
+- **G1015 Scattered Spider** (group) — Scattered Spider has exfiltrated data from compromised VMware vCenter servers through an established C2 channel using the Teleport remote access tool.
+- **G1030 Agrius** (group) — Agrius exfiltrated staged data using tools such as Putty and WinSCP, communicating with command and control servers.
+- **G1035 Winter Vivern** (group) — Winter Vivern delivered a PowerShell script capable of recursively scanning victim machines looking for various file types before exfiltrating identified files via HTTP.
+- **G1043 BlackByte** (group) — BlackByte transmitted collected victim host information via HTTP POST to command and control infrastructure.
+- **G1052 Contagious Interview** (group) — Contagious Interview has exfiltrated data from a compromised host to actor-controlled C2 servers.
+- **G1055 VOID MANTICORE** (group) — VOID MANTICORE malware has exfiltrated collected data via Telegram bot C2 channels using encrypted communications.
+- **S0013 PlugX** (software) — PlugX has exfiltrated stolen data and files to its C2 server.
+- **S0024 Dyre** (software) — Dyre has the ability to send information staged on a compromised host externally to C2.
+- **S0031 BACKSPACE** (software) — Adversaries can direct BACKSPACE to upload files to the C2 Server.
+- **S0034 NETEAGLE** (software) — NETEAGLE is capable of reading files over the C2 channel.
+- **S0045 ADVSTORESHELL** (software) — ADVSTORESHELL exfiltrates data over the same channel used for C2.
+- **S0062 DustySky** (software) — DustySky has exfiltrated data to the C2 server.
+- **S0077 CallMe** (software) — CallMe exfiltrates data to its C2 server over the same protocol as C2 communications.
+- **S0078 Psylo** (software) — Psylo exfiltrates data to its C2 server over the same protocol as C2 communications.
+- **S0079 MobileOrder** (software) — MobileOrder exfiltrates data to its C2 server over the same protocol as C2 communications.
+- **S0083 Misdat** (software) — Misdat has uploaded files and data to its C2 servers.
+- **S0084 Mis-Type** (software) — Mis-Type has transmitted collected files and data to its C2 server.
+- **S0085 S-Type** (software) — S-Type has uploaded data and files from a compromised host to its C2 servers.
+- **S0086 ZLib** (software) — ZLib has sent data and files from a compromised host to its C2 servers.
+- **S0115 Crimson** (software) — Crimson can exfiltrate stolen information over its C2.
+- **S0147 Pteranodon** (software) — Pteranodon exfiltrates screenshot files to its C2 server.
+- **S0192 Pupy** (software) — Pupy can send screenshots files, keylogger data, files, and recorded audio back to the C2 server.
+- **S0234 Bandook** (software) — Bandook can upload files from a victim's machine over the C2 channel.
+- **S0238 Proxysvc** (software) — Proxysvc performs data exfiltration over the control server channel using a custom protocol.
+- **S0239 Bankshot** (software) — Bankshot exfiltrates data over its C2 channel.
+- **S0240 ROKRAT** (software) — ROKRAT can send collected files back over same C2 channel.
+- **S0251 Zebrocy** (software) — Zebrocy has exfiltrated data to the designated C2 server using HTTP POST requests.
+- **S0264 OopsIE** (software) — OopsIE can upload files from the victim's machine to its C2 server.
+- **S0266 TrickBot** (software) — TrickBot can send information about the compromised host and upload data to a hardcoded C2 server.
+- **S0268 Bisonal** (software) — Bisonal has added the exfiltrated data to the URL over the C2 channel.
+- **S0340 Octopus** (software) — Octopus has uploaded stolen files and data from a victim's machine over its C2 channel.
+- **S0351 Cannon** (software) — Cannon exfiltrates collected data over email via SMTP/S and POP3/S C2 channels.
+- **S0356 KONNI** (software) — KONNI has sent data and files to its C2 server.
+- **S0363 Empire** (software) — Empire can send data gathered from a target through the command and control channel.
+- **S0367 Emotet** (software) — Emotet has exfiltrated data over its C2 channel.
+- **S0373 Astaroth** (software) — Astaroth exfiltrates collected information from its r1.log file to the external C2 server.
+- **S0375 Remexi** (software) — Remexi performs exfiltration over BITSAdmin, which is also used for the C2 channel.
+- **S0376 HOPLIGHT** (software) — HOPLIGHT has used its C2 channel to exfiltrate data.
+- **S0377 Ebury** (software) — Ebury exfiltrates a list of outbound and inbound SSH sessions using OpenSSH's `known_host` files and `wtmp` records. Ebury can exfiltrate SSH credentials through custom DNS queries or use the command `Xcat` to send the process's ssh session's credentials to the C2 server.
+- **S0381 FlawedAmmyy** (software) — FlawedAmmyy has sent data collected from a compromised host to its C2 servers.
+- **S0385 njRAT** (software) — njRAT has used C2 infrastructure to receive stolen information from the infected machine including screenshots and other system information.
+- **S0386 Ursnif** (software) — Ursnif has used HTTP POSTs to exfil gathered information.
+- **S0391 HAWKBALL** (software) — HAWKBALL has sent system information and files over the C2 channel.
+- **S0395 LightNeuron** (software) — LightNeuron exfiltrates data over its email C2 channel.
+- **S0409 Machete** (software) — Machete's collected data is exfiltrated over the same channel used for C2.
+- **S0428 PoetRAT** (software) — PoetRAT has exfiltrated data over the C2 channel.
+- **S0431 HotCroissant** (software) — HotCroissant has the ability to download files from the infected host to the command and control (C2) server.
+- **S0434 Imminent Monitor** (software) — Imminent Monitor has uploaded a file containing debugger logs, network information and system information to the C2.
+- **S0438 Attor** (software) — Attor has exfiltrated data over the C2 channel.
+- **S0439 Okrum** (software) — Data exfiltration is done by Okrum using the already opened channel with the C2 server.
+- **S0441 PowerShower** (software) — PowerShower has used a PowerShell document stealer module to pack and exfiltrate .txt, .pdf, .xls or .doc files smaller than 5MB that were modified during the past two days.
+- **S0445 ShimRatReporter** (software) — ShimRatReporter sent generated reports to the C2 via HTTP POST requests.
+- **S0447 Lokibot** (software) — Lokibot has the ability to initiate contact with command and control (C2) to exfiltrate stolen data.
+- **S0448 Rising Sun** (software) — Rising Sun can send data gathered from the infected machine via HTTP POST request to the C2.
+- **S0455 Metamorfo** (software) — Metamorfo can send the data it collects to the C2 server.
+- **S0459 MechaFlounder** (software) — MechaFlounder has the ability to send the compromised user's account name and hostname within a URL to C2.
+- **S0461 SDBbot** (software) — SDBbot has sent collected data from a compromised host to its C2 servers.
+- **S0467 TajMahal** (software) — TajMahal has the ability to send collected files over its C2.
+- **S0476 Valak** (software) — Valak has the ability to exfiltrate data over the C2 channel.
+- **S0477 Goopy** (software) — Goopy has the ability to exfiltrate data over the Microsoft Outlook C2 channel.
+- **S0484 Carberp** (software) — Carberp has exfiltrated data via HTTP to already established C2 servers.
+- **S0487 Kessel** (software) — Kessel has exfiltrated information gathered from the infected system to the C2 server.
+- **S0491 StrongPity** (software) — StrongPity can exfiltrate collected documents through C2 channels.
+- **S0493 GoldenSpy** (software) — GoldenSpy has exfiltrated host environment information to an external C2 domain via port 9006.
+- **S0495 RDAT** (software) — RDAT can exfiltrate data gathered from the infected system via the established Exchange Web Services API C2 channel.
+- **S0496 REvil** (software) — REvil can exfiltrate host and malware information to C2 servers.
+- **S0502 Drovorub** (software) — Drovorub can exfiltrate files over C2 infrastructure.
+- **S0520 BLINDINGCAN** (software) — BLINDINGCAN has sent user and system information to a C2 server via HTTP POST requests.
+- **S0526 KGH_SPY** (software) — KGH_SPY can exfiltrate collected information from the host to the C2 server.
+- **S0531 Grandoreiro** (software) — Grandoreiro can send data it retrieves to the C2 server.
+- **S0533 SLOTHFULMEDIA** (software) — SLOTHFULMEDIA has sent system information to a C2 server via HTTP and HTTPS POST requests.
+- **S0538 Crutch** (software) — Crutch can exfiltrate data over the primary C2 channel (Dropbox HTTP API).
+- **S0543 Spark** (software) — Spark has exfiltrated data over the C2 channel.
+- **S0568 EVILNUM** (software) — EVILNUM can upload files over the C2 channel from the infected host.
+- **S0572 Caterpillar WebShell** (software) — Caterpillar WebShell can upload files over the C2 channel.
+- **S0584 AppleJeus** (software) — AppleJeus has exfiltrated collected host information to a C2 server.
+- **S0587 Penquin** (software) — Penquin can execute the command code `do_upload` to send files to C2.
+- **S0588 GoldMax** (software) — GoldMax can exfiltrate files over the existing C2 channel.
+- **S0595 ThiefQuest** (software) — ThiefQuest exfiltrates targeted file extensions in the `/Users/` folder to the command and control server via unencrypted HTTP. Network packets contain a string with two pieces of information: a file path and the contents of the file in a base64 encoded string.
+- **S0600 Doki** (software) — Doki has used Ngrok to establish C2 and exfiltrate data.
+- **S0603 Stuxnet** (software) — Stuxnet sends compromised victim information via HTTP.
+- **S0604 Industroyer** (software) — Industroyer sends information about hardware profiles and previously-received commands back to the C2 server in a POST-request.
+- **S0610 SideTwist** (software) — SideTwist has exfiltrated data over its C2 channel.
+- **S0615 SombRAT** (software) — SombRAT has uploaded collected data and files from a compromised host to its C2 server.
+- **S0622 AppleSeed** (software) — AppleSeed can exfiltrate files via the C2 channel.
+- **S0632 GrimAgent** (software) — GrimAgent has sent data related to a compromise host over its C2 channel.
+- **S0633 Sliver** (software) — Sliver can exfiltrate files from the victim using the `download` command.
+- **S0649 SMOKEDHAM** (software) — SMOKEDHAM has exfiltrated data to its C2 server.
+- **S0650 QakBot** (software) — QakBot can send stolen information to C2 nodes including passwords, accounts, and emails.
+- **S0651 BoxCaon** (software) — BoxCaon uploads files and data from a compromised host over the existing C2 channel.
+- **S0652 MarkiRAT** (software) — MarkiRAT can exfiltrate locally stored data via its C2.
+- **S0657 BLUELIGHT** (software) — BLUELIGHT has exfiltrated data over its C2 channel.
+- **S0658 XCSSET** (software) — XCSSET retrieves files that match the pattern defined in the INAME_QUERY variable within the user's home directory, such as `*test.txt`, and are below a specific size limit. It then archives the files and exfiltrates the data over its C2 channel.
+- **S0661 FoggyWeb** (software) — FoggyWeb can remotely exfiltrate sensitive information from a compromised AD FS server.
+- **S0663 SysUpdate** (software) — SysUpdate has exfiltrated data over its C2 channel.
+- **S0667 Chrommme** (software) — Chrommme can exfiltrate collected data via C2.
+- **S0670 WarzoneRAT** (software) — WarzoneRAT can send collected victim data to its C2 server.
+- **S0671 Tomiris** (software) — Tomiris can upload files matching a hardcoded set of extensions, such as .doc, .docx, .pdf, and .rar, to its C2 server.
+- **S0674 CharmPower** (software) — CharmPower can exfiltrate gathered data to a hardcoded C2 URL via HTTP POST.
+- **S0678 Torisma** (software) — Torisma can send victim data to an actor-controlled C2 server.
+- **S0680 LitePower** (software) — LitePower can send collected data, including screenshots, over its C2 channel.
+- **S0687 Cyclops Blink** (software) — Cyclops Blink has the ability to upload exfiltrated files to a C2 server.
+- **S0692 SILENTTRINITY** (software) — SILENTTRINITY can transfer files from an infected host to the C2 server.
+- **S0696 Flagpro** (software) — Flagpro has exfiltrated data to the C2 server.
+- **S1016 MacMa** (software) — MacMa exfiltrates data from a supplied path over its C2 channel.
+- **S1017 OutSteel** (software) — OutSteel can upload files from a compromised host over its C2 channel.
+- **S1019 Shark** (software) — Shark has the ability to upload files from the compromised host over a DNS or HTTP C2 channel.
+- **S1020 Kevin** (software) — Kevin can send data from the victim host through a DNS C2 channel.
+- **S1021 DnsSystem** (software) — DnsSystem can exfiltrate collected data to its C2 server.
+- **S1022 IceApple** (software) — IceApple's Multi File Exfiltrator module can exfiltrate multiple files from a compromised host as an HTTP response over C2.
+- **S1024 CreepySnail** (software) — CreepySnail can connect to C2 for data exfiltration.
+- **S1025 Amadey** (software) — Amadey has sent victim data to its C2 servers.
+- **S1026 Mongall** (software) — Mongall can upload files and information from a compromised host to its C2 server.
+- **S1029 AuTo Stealer** (software) — AuTo Stealer can exfiltrate data over actor-controlled C2 servers via HTTP or TCP.
+- **S1030 Squirrelwaffle** (software) — Squirrelwaffle has exfiltrated victim data using HTTP POST requests to its C2 servers.
+- **S1031 PingPull** (software) — PingPull has the ability to exfiltrate stolen victim data through its C2 channel.
+- **S1034 StrifeWater** (software) — StrifeWater can send data and files from a compromised host to its C2 server.
+- **S1037 STARWHALE** (software) — STARWHALE can exfiltrate collected data to its C2 servers.
+- **S1039 Bumblebee** (software) — Bumblebee can send collected data in JSON format to C2.
+- **S1042 SUGARDUMP** (software) — SUGARDUMP has sent stolen credentials and other data to its C2 server.
+- **S1044 FunnyDream** (software) — FunnyDream can execute commands, including gathering user information, and send the results to C2.
+- **S1050 PcShare** (software) — PcShare can upload files and information from a compromised host to its C2 servers.
+- **S1059 metaMain** (software) — metaMain can upload collected files and data to its C2 server.
+- **S1060 Mafalda** (software) — Mafalda can send network system data and files to its C2 server.
+- **S1064 SVCReady** (software) — SVCReady can send collected data in JSON format to its C2 server.
+- **S1065 Woody RAT** (software) — Woody RAT can exfiltrate files from an infected machine to its C2 server.
+- **S1075 KOPILUWAK** (software) — KOPILUWAK has exfiltrated collected data to its C2 via POST requests.
+- **S1078 RotaJakiro** (software) — RotaJakiro sends device and other collected data back to the C2 using the established C2 channels over TCP.
+- **S1081 BADHATCH** (software) — BADHATCH can exfiltrate data over the C2 channel.
+- **S1089 SharpDisco** (software) — SharpDisco can load a plugin to exfiltrate stolen files to SMB shares also used in C2.
+- **S1090 NightClub** (software) — NightClub can use SMTP and DNS for file exfiltration and C2.
+- **S1111 DarkGate** (software) — DarkGate uses existing command and control channels to retrieve captured cryptocurrency wallet credentials.
+- **S1122 Mispadu** (software) — Mispadu can sends the collected financial data to the C2 server.
+- **S1132 IPsec Helper** (software) — IPsec Helper exfiltrates specific files through its command and control framework.
+- **S1142 LunarMail** (software) — LunarMail can use email image attachments with embedded data for receiving C2 commands and data exfiltration.
+- **S1145 Pikabot** (software) — During the initial Pikabot command and control check-in, Pikabot will transmit collected system information encrypted using RC4.
+- **S1148 Raccoon Stealer** (software) — Raccoon Stealer uses existing HTTP-based command and control channels for exfiltration.
+- **S1149 CHIMNEYSWEEP** (software) — CHIMNEYSWEEP can upload collected files to the command-and-control server.
+- **S1153 Cuckoo Stealer** (software) — Cuckoo Stealer can send information about the targeted system to C2 including captured passwords, OS build, hostname, and username.
+- **S1156 Manjusaka** (software) — Manjusaka data exfiltration takes place over HTTP channels.
+- **S1159 DUSTTRAP** (software) — DUSTTRAP can exfiltrate collected data over C2 channels.
+- **S1160 Latrodectus** (software) — Latrodectus can exfiltrate encrypted system information to the C2 server.
+- **S1166 Solar** (software) — Solar can send staged files to C2 for exfiltration.
+- **S1169 Mango** (software) — Mango can use its HTTP C2 channel for exfiltration.
+- **S1170 ODAgent** (software) — ODAgent can use an attacker-controlled OneDrive account to receive C2 commands and to exfiltrate files.
+- **S1172 OilBooster** (software) — OilBooster can use an actor-controlled OneDrive account for C2 communication and exfiltration.
+- **S1173 PowerExchange** (software) — PowerExchange can exfiltrate files via its email C2 channel.
+- **S1178 ShrinkLocker** (software) — ShrinkLocker will exfiltrate victim system information along with the encryption key via an HTTP POST.
+- **S1182 MagicRAT** (software) — MagicRAT exfiltrates data via HTTP over existing command and control channels.
+- **S1183 StrelaStealer** (software) — StrelaStealer exfiltrates collected email credentials via HTTP POST to command and control servers.
+- **S1185 LightSpy** (software) — To exfiltrate data, LightSpy configures each module to send an obfuscated JSON blob to hardcoded URL endpoints or paths aligned to the module name.
+- **S1186 Line Dancer** (software) — Line Dancer exfiltrates collected data via command and control channels.
+- **S1188 Line Runner** (software) — Line Runner utilizes HTTP to retrieve and exfiltrate information staged using Line Dancer.
+- **S1196 Troll Stealer** (software) — Troll Stealer exfiltrates collected information to its command and control infrastructure.
+- **S1201 TRANSLATEXT** (software) — TRANSLATEXT has exfiltrated collected credentials to the C2 server.
+- **S1210 Sagerunex** (software) — Sagerunex encrypts collected system data then exfiltrates via existing command and control channels.
+- **S1213 Lumma Stealer** (software) — Lumma Stealer has exfiltrated collected data over existing HTTP and HTTPS C2 channels.
+- **S1240 RedLine Stealer** (software) — RedLine Stealer has sent victim data to its C2 server or RedLine panel server.
+- **S1245 InvisibleFerret** (software) — InvisibleFerret has used HTTP communications to the “/Uploads” URI for file exfiltration.
+- **S1246 BeaverTail** (software) — BeaverTail has exfiltrated data collected from victim devices to C2 servers.
+- **S1248 XORIndex Loader** (software) — XORIndex Loader has exfiltrated victim data using HTTPS POST requests to its C2 servers.
+- **S1249 HexEval Loader** (software) — HexEval Loader has exfiltrated victim data using HTTPS POST requests to its C2 servers.
+- **S9007 HTTPTroy** (software) — HTTPTroy has exfiltrated encrypted data over the C2 channel using the `up <FILENAME>` command.
+- **S9008 Shai-Hulud** (software) — Shai-Hulud has used POST to exfiltrate secrets from the victim environment to an attacker-controlled URL.
+- **S9014 PHASEJAM** (software) — PHASEJAM has the ability to exfiltrate data from the victim appliance.
+- **S9015 BRICKSTORM** (software) — BRICKSTORM has uploaded files from the victim system to C2 servers.
+- **S9020 LODEINFO** (software) — LODEINFO can exfiltrate collected credentials and browser cookies to the C2 server.
+- **S9031 AshTag** (software) — AshTag has exfiltrated reconnaissance data on targeted systems to C2 servers.
+- **S9032 MuddyViper** (software) — MuddyViper has uploaded files to the C2 server. Additionally, MuddyViper has the ability to upload the specified file in chunks with sleep time between each chunk.
+- **S9035 LAMEHUG** (software) — LAMEHUG can exfiltrate collected system information and documents to C2.
+- **S9041 TeamPCP Cloud Stealer** (software) — TeamPCP Cloud Stealer has exfiltrated collected data to typosquat C2 domains including scan.aquasecurtiy[.]org.
+- **S9043 Mini Shai-Hulud** (software) — Mini Shai-Hulud has exfiltrated encrypted archives over C2 domains.
+- **S9050 Vidar** (software) — Vidar has exfiltrated sensitive data, such as credentials and cryptocurrency wallets, over the C2 server at 136.243.203[.]109. Vidar has exfiltrated collected data through its C2 channel.
+- **S9052 MiniFast** (software) — MiniFast has the ability to upload files over C2 communications.
+- **S9059 MiniBike** (software) — MiniBike has uploaded files over the C2.
+- **S9062 MiniBrowse** (software) — MiniBrowse has the ability to upload stolen data over C2 communications.
+- **S9063 DEEPROOT** (software) — DEEPROOT has the ability to upload files to C2.
+- **S9066 POLLBLEND** (software) — POLLBLEND has exfiltrated the victim device’s username and computer name within the JSON body through HTTP POST requests to the URI pathway `/register/`.
+- **S9067 TWOSTROKE** (software) — TWOSTROKE can exfiltrate data over C2.

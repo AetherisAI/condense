@@ -9,6 +9,7 @@ from __future__ import annotations
 import html
 import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from sift.eval.golden import GoldenItem
@@ -558,13 +559,16 @@ def _lower_is_better(key: str) -> bool:
     )
 
 
+def _flat_metrics(summary: Mapping[str, Any]) -> dict[str, float]:
+    flat: dict[str, float] = {}
+    for section in ("surfaces", "noise"):
+        _flatten(section, summary.get(section, {}), flat)
+    return flat
+
+
 def compare(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
     """A markdown delta table of every numeric metric both summaries share (B relative to A)."""
-    flat_a: dict[str, float] = {}
-    flat_b: dict[str, float] = {}
-    for section in ("surfaces", "noise"):
-        _flatten(section, a.get(section, {}), flat_a)
-        _flatten(section, b.get(section, {}), flat_b)
+    flat_a, flat_b = _flat_metrics(a), _flat_metrics(b)
     rows = []
     for key in sorted(flat_a.keys() & flat_b.keys()):
         if key.endswith(_SKIP_SUFFIXES) or ".ratio" in key or ".actual_ratio" in key:
@@ -597,3 +601,74 @@ def compare(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
     return (
         f"# sift-eval compare: {label_a} → {label_b}\n\n" + warning + _md_table(header, rows) + "\n"
     )
+
+
+# --- regression gate (compare --fail-on) ------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GateCheck:
+    """One gated metric: how far the candidate moved from the baseline, in the bad direction."""
+
+    metric: str
+    baseline: float
+    candidate: float
+    tolerance: float
+    lower_is_better: bool
+
+    @property
+    def worse_by(self) -> float:
+        delta = self.candidate - self.baseline
+        return (delta if self.lower_is_better else -delta) + 0.0  # no -0.000 in the table
+
+    @property
+    def failed(self) -> bool:
+        return self.worse_by > self.tolerance + 1e-9
+
+
+def check_regressions(
+    baseline: Mapping[str, Any], candidate: Mapping[str, Any], limits: Mapping[str, float]
+) -> list[GateCheck]:
+    """Check each ``metric -> tolerance`` (as ``compare`` prints the metric) between two runs.
+
+    A metric fails when it got worse by more than its tolerance; improvements always pass.
+    Raises ``ValueError`` for a metric either summary lacks (a typo must not pass silently) and
+    for runs over different golden sets, whose deltas say nothing about the system.
+    """
+    sha_a = baseline.get("run", {}).get("golden_sha256")
+    sha_b = candidate.get("run", {}).get("golden_sha256")
+    if sha_a and sha_b and sha_a != sha_b:
+        raise ValueError(
+            "the two runs used different golden sets: re-run the baseline on the current set"
+        )
+    flat_a, flat_b = _flat_metrics(baseline), _flat_metrics(candidate)
+    checks = []
+    for metric, tolerance in limits.items():
+        key = next((k for k in (f"surfaces.{metric}", metric) if k in flat_a and k in flat_b), None)
+        if key is None:
+            raise ValueError(f"metric {metric!r} is not in both summaries (see the compare table)")
+        checks.append(GateCheck(metric, flat_a[key], flat_b[key], tolerance, _lower_is_better(key)))
+    return checks
+
+
+def render_gate(checks: Sequence[GateCheck]) -> str:
+    """The gate's verdict as markdown, for the terminal and a CI job summary."""
+    rows = [
+        [
+            c.metric,
+            f"{c.baseline:.3f}",
+            f"{c.candidate:.3f}",
+            f"{c.worse_by:+.3f}",
+            f"{c.tolerance:.3f}",
+            "✗ fail" if c.failed else "✓ pass",
+        ]
+        for c in checks
+    ]
+    header = ["metric", "baseline", "candidate", "worse by", "allowed", ""]
+    failed = sum(c.failed for c in checks)
+    verdict = (
+        f"**FAILED**: {failed} of {len(checks)} metric(s) got worse beyond tolerance."
+        if failed
+        else f"**passed**: no gated metric got worse beyond tolerance ({len(checks)} checked)."
+    )
+    return "\n## Regression gate\n\n" + _md_table(header, rows) + "\n\n" + verdict + "\n"

@@ -1,0 +1,266 @@
+# T1005 — Data from Local System
+
+- **Type:** technique
+- **Domain:** Enterprise ATT&CK
+- **Tactics:** Collection
+- **Platforms:** ESXi, Linux, macOS, Network Devices, Windows
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T1005
+- **Last modified:** 2026-09-11
+
+## Description
+
+Adversaries may search local system sources, such as file systems, configuration files, local databases, virtual machine files, or process memory, to find files of interest and sensitive data prior to Exfiltration.
+
+Adversaries may do this using a Command and Scripting Interpreter, such as cmd as well as a Network Device CLI, which have functionality to interact with the file system to gather information. Adversaries may also use Automated Collection on the local system.
+
+## Mitigations
+
+- **M1057 Data Loss Prevention** — Data loss prevention can restrict access to sensitive data and detect sensitive data that is unencrypted.
+
+## Detection strategies
+
+- **DET0380 Detection of Local Data Collection Prior to Exfiltration**
+  - AN1070 (Windows): Adversaries collecting local files via PowerShell, WMI, or direct file API calls often include recursive file listings, targeted file reads, and temporary file staging. Log sources: WinEventLog:Security (EventCode=4688); WinEventLog:Sysmon (EventCode=11).
+  - AN1071 (Linux): Adversaries using bash scripts or tools to recursively enumerate user home directories, config files, or SSH keys. Log sources: auditd:SYSCALL (open); auditd:SYSCALL (execve).
+  - AN1072 (macOS): Adversary use of bash/zsh or AppleScript to locate files and exfil targets like user keychains or documents. Log sources: macos:unifiedlog (process:spawn); fs:fsusage (read/write).
+  - AN1073 (Network Devices): Collection of device configuration via CLI commands (e.g., `show running-config`, `copy flash`, `more`), often followed by TFTP/SCP transfers. Log sources: networkdevice:cli (command logging).
+  - AN1074 (ESXi): Adversaries accessing datastore or configuration files via `vim-cmd`, `esxcli`, or SCP to extract logs, VMs, or host configurations. Log sources: esxis:vmkernel (Datastore Access); esxi:hostd (Command Execution).
+
+## Procedure examples
+
+- **C0001 Frankenstein** (campaign) — During Frankenstein, the threat actors used Empire to gather various local system information.
+- **C0002 Night Dragon** (campaign) — During Night Dragon, the threat actors collected files and other data from compromised systems.
+- **C0004 CostaRicto** (campaign) — During CostaRicto, the threat actors collected data and files from compromised networks.
+- **C0006 Operation Honeybee** (campaign) — During Operation Honeybee, the threat actors collected data from compromised hosts.
+- **C0012 Operation CuckooBees** (campaign) — During Operation CuckooBees, the threat actors collected data, files, and other information from compromised networks.
+- **C0014 Operation Wocao** (campaign) — During Operation Wocao, threat actors exfiltrated files and directories of interest from the targeted system.
+- **C0015 C0015** (campaign) — During C0015, the threat actors obtained files and data from the compromised network.
+- **C0017 C0017** (campaign) — During C0017, APT41 collected information related to compromised machines as well as Personal Identifiable Information (PII) from victim networks.
+- **C0022 Operation Dream Job** (campaign) — During Operation Dream Job, Lazarus Group used malicious Trojans and DLL files to exfiltrate data from an infected host.
+- **C0024 SolarWinds Compromise** (campaign) — During the SolarWinds Compromise, APT29 extracted files from compromised networks.
+- **C0026 C0026** (campaign) — During C0026, the threat actors collected documents from compromised hosts.
+- **C0029 Cutting Edge** (campaign) — During Cutting Edge, threat actors stole the running configuration and cache data from targeted Ivanti Connect Secure VPNs.
+- **C0048 Operation MidnightEclipse** (campaign) — During Operation MidnightEclipse, threat actors stole saved cookies and login data from targeted systems.
+- **C0058 SharePoint ToolShell Exploitation** (campaign) — During SharePoint ToolShell Exploitation, threat actors extracted information from the compromised systems.
+- **C0062 Anthropic AI-orchestrated Campaign** (campaign) — During the Anthropic AI-orchestrated Campaign, the adversary tasked Claude Code to automatically gather sensitive data stored within the local system to include credentials, system configurations and sensitive operational data.
+- **G0001 Axiom** (group) — Axiom has collected data from a compromised network.
+- **G0004 Ke3chang** (group) — Ke3chang gathered information and files from local directories for exfiltration.
+- **G0006 APT1** (group) — APT1 has collected files from a local victim.
+- **G0007 APT28** (group) — APT28 has retrieved internal documents from machines inside victim environments, including by using Forfiles to stage documents before exfiltration.
+- **G0010 Turla** (group) — Turla RPC backdoors can upload files from victim machines.
+- **G0016 APT29** (group) — APT29 has stolen data from compromised hosts.
+- **G0022 APT3** (group) — APT3 will identify Microsoft Office documents on the victim's computer.
+- **G0027 Threat Group-3390** (group) — Threat Group-3390 ran a command to compile an archive of file types of interest from the victim user's directories.
+- **G0032 Lazarus Group** (group) — Lazarus Group has collected data and files from compromised networks.
+- **G0034 Sandworm Team** (group) — Sandworm Team has exfiltrated internal documents, files, and other data from compromised hosts.
+- **G0035 Dragonfly** (group) — Dragonfly has collected data from local victim systems.
+- **G0037 FIN6** (group) — FIN6 has collected and exfiltrated payment card data from compromised systems.
+- **G0038 Stealth Falcon** (group) — Stealth Falcon malware gathers data from the local victim system.
+- **G0040 Patchwork** (group) — Patchwork collected and exfiltrated files from the infected system.
+- **G0045 menuPass** (group) — menuPass has collected various files from the compromised computers.
+- **G0046 FIN7** (group) — FIN7 has collected files and other sensitive information from a compromised network.
+- **G0047 Gamaredon Group** (group) — Gamaredon Group has collected files from infected systems and uploaded them to a C2 server.
+- **G0049 OilRig** (group) — OilRig has used PowerShell to upload files from compromised systems.
+- **G0059 Magic Hound** (group) — Magic Hound has used a web shell to exfiltrate a ZIP file containing a dump of LSASS memory on a compromised machine.
+- **G0060 BRONZE BUTLER** (group) — BRONZE BUTLER has exfiltrated files stolen from local systems.
+- **G0067 APT37** (group) — APT37 has collected data from victims' local systems.
+- **G0070 Dark Caracal** (group) — Dark Caracal collected complete contents of the 'Pictures' folder from compromised Windows systems.
+- **G0082 APT38** (group) — APT38 has collected data from a compromised host.
+- **G0087 APT39** (group) — APT39 has used various tools to steal files from the compromised host.
+- **G0093 GALLIUM** (group) — GALLIUM collected data from the victim's local system, including password hashes from the SAM hive in the Registry.
+- **G0094 Kimsuky** (group) — Kimsuky has collected Office, PDF, and HWP documents from its victims. Kimsuky has also harvested victim files through the use of the `RecentFiles()` function that collects paths of recently accessed files by parsing .lnk shortcuts from `%APPDATA%\Microsoft\Windows\Recent`.
+- **G0096 APT41** (group) — APT41 has uploaded files and data from a compromised host.
+- **G0100 Inception** (group) — Inception used a file hunting plugin to collect .txt, .pdf, .xls or .doc files from the infected host.
+- **G0102 Wizard Spider** (group) — Wizard Spider has collected data from a compromised host prior to exfiltration.
+- **G0117 Fox Kitten** (group) — Fox Kitten has searched local system resources to access sensitive documents.
+- **G0124 Windigo** (group) — Windigo has used a script to gather credentials in files left on disk by OpenSSH backdoors.
+- **G0125 HAFNIUM** (group) — HAFNIUM has collected data and files from a compromised machine.
+- **G0138 Andariel** (group) — Andariel has collected large numbers of files from compromised network systems for later extraction.
+- **G0143 Aquatic Panda** (group) — Aquatic Panda captured local Windows security event log data from victim machines using the `wevtutil` utility to extract contents to an `evtx` output file.
+- **G1003 Ember Bear** (group) — Ember Bear gathers victim system information such as enumerating the volume of a given device or extracting system and security event logs for analysis.
+- **G1004 LAPSUS$** (group) — LAPSUS$ uploaded sensitive files, information, and credentials from a targeted organization for extortion or public release.
+- **G1012 CURIUM** (group) — CURIUM has exfiltrated data from a compromised machine.
+- **G1014 LuminousMoth** (group) — LuminousMoth has collected files and data from compromised machines.
+- **G1016 FIN13** (group) — FIN13 has gathered stolen credentials, sensitive data such as point-of-sale (POS), and ATM data from a compromised network before exfiltration.
+- **G1017 Volt Typhoon** (group) — Volt Typhoon has stolen files from a sensitive file server and the Active Directory database from targeted environments, and used Wevtutil to extract event log information.
+- **G1022 ToddyCat** (group) — ToddyCat has run scripts to collect documents from targeted hosts.
+- **G1030 Agrius** (group) — Agrius gathered data from database and other critical servers in victim environments, then used wiping mechanisms as an anti-analysis and anti-forensics mechanism.
+- **G1039 RedCurl** (group) — RedCurl has collected data from the local disk of compromised hosts.
+- **G1045 Salt Typhoon** (group) — Salt Typhoon has gathered data from victim devices.
+- **G1054 MirrorFace** (group) — MirrorFace gathered data and files of interest from victim's systems.
+- **G1055 VOID MANTICORE** (group) — VOID MANTICORE has collected cached data and files from within the victim environment.
+- **G1056 TeamPCP** (group) — TeamPCP has stolen source code from victim environments including Mistral AI.
+- **S0009 Hikit** (software) — Hikit can upload files from compromised machines.
+- **S0011 Taidoor** (software) — Taidoor can upload data and files from a victim's machine.
+- **S0012 PoisonIvy** (software) — PoisonIvy creates a backdoor through which remote attackers can steal system information.
+- **S0015 Ixeshe** (software) — Ixeshe can collect data from a local system.
+- **S0020 China Chopper** (software) — China Chopper's server component can upload local files.
+- **S0022 Uroburos** (software) — Uroburos can use its `Get` command to exfiltrate specified files from the compromised system.
+- **S0036 FLASHFLOOD** (software) — FLASHFLOOD searches for interesting files (either a default or customized set of file extensions) on the local system. FLASHFLOOD will scan the My Recent Documents, Desktop, Temporary Internet Files, and TEMP directories. FLASHFLOOD also collects information stored in the Windows Address Book.
+- **S0048 PinchDuke** (software) — PinchDuke collects user files from the compromised host based on predefined file extensions.
+- **S0050 CosmicDuke** (software) — CosmicDuke steals user files from local hard drives with file extensions that match a predefined list.
+- **S0079 MobileOrder** (software) — MobileOrder exfiltrates data collected from the victim mobile device.
+- **S0083 Misdat** (software) — Misdat has collected files and data from a compromised host.
+- **S0084 Mis-Type** (software) — Mis-Type has collected files and data from a compromised host.
+- **S0090 Rover** (software) — Rover searches for files on local drives based on a predefined list of file extensions.
+- **S0115 Crimson** (software) — Crimson can collect information from a compromised host.
+- **S0128 BADNEWS** (software) — When it first starts, BADNEWS crawls the victim's local drives and collects documents with the following extensions: .doc, .docx, .pdf, .ppt, .pptx, and .txt.
+- **S0154 Cobalt Strike** (software) — Cobalt Strike can collect data from a local system.
+- **S0169 RawPOS** (software) — RawPOS dumps memory from specific processes on a victim system, parses the dumped files, and scrapes them for credit card data.
+- **S0193 Forfiles** (software) — Forfiles can be used to act on (ex: copy, move, etc.) files/directories in a system during (ex: copy files into a staging area before).
+- **S0194 PowerSploit** (software) — PowerSploit contains a collection of Exfiltration modules that can access data from local files, volumes, and processes.
+- **S0197 PUNCHTRACK** (software) — PUNCHTRACK scrapes memory for properly formatted payment card data.
+- **S0203 Hydraq** (software) — Hydraq creates a backdoor through which remote attackers can read data from files.
+- **S0208 Pasam** (software) — Pasam creates a backdoor through which remote attackers can retrieve files.
+- **S0211 Linfo** (software) — Linfo creates a backdoor through which remote attackers can obtain data from local systems.
+- **S0223 POWERSTATS** (software) — POWERSTATS can upload files from compromised hosts.
+- **S0234 Bandook** (software) — Bandook can collect local files from the system .
+- **S0237 GravityRAT** (software) — GravityRAT steals files with the following extensions: .docx, .doc, .pptx, .ppt, .xlsx, .xls, .rtf, and .pdf.
+- **S0238 Proxysvc** (software) — Proxysvc searches the local system and gathers data.
+- **S0239 Bankshot** (software) — Bankshot collects files from the local system.
+- **S0240 ROKRAT** (software) — ROKRAT can collect host data and specific file types.
+- **S0248 yty** (software) — yty collects files with the following extensions: .ppt, .pptx, .pdf, .doc, .docx, .xls, .xlsx, .docm, .rtf, .inp, .xlsm, .csv, .odt, .pps, .vcf and sends them back to the C2 server.
+- **S0250 Koadic** (software) — Koadic can download files off the target system to send back to the server.
+- **S0260 InvisiMole** (software) — InvisiMole can collect data from the system, and can monitor changes in specified directories.
+- **S0262 QuasarRAT** (software) — QuasarRAT can retrieve files from compromised client machines.
+- **S0265 Kazuar** (software) — Kazuar uploads files from a specified directory to the C2 server.
+- **S0266 TrickBot** (software) — TrickBot collects local files and information from the victim’s local machine.
+- **S0268 Bisonal** (software) — Bisonal has collected information from a compromised host.
+- **S0274 Calisto** (software) — Calisto can collect data from user directories.
+- **S0275 UPPERCUT** (software) — UPPERCUT can upload files to the C2 from infected machines.
+- **S0337 BadPatch** (software) — BadPatch collects files from the local system that have the following extensions, then prepares them for exfiltration: .xls, .xlsx, .pdf, .mdb, .rar, .zip, .doc, .docx.
+- **S0340 Octopus** (software) — Octopus can exfiltrate files from the system using a documents collector tool.
+- **S0352 OSX_OCEANLOTUS.D** (software) — OSX_OCEANLOTUS.D has the ability to upload files from a compromised host.
+- **S0356 KONNI** (software) — KONNI has stored collected information and discovered processes in a tmp file.
+- **S0381 FlawedAmmyy** (software) — FlawedAmmyy has collected information and files from a compromised machine.
+- **S0385 njRAT** (software) — njRAT can collect data from a local system.
+- **S0386 Ursnif** (software) — Ursnif has collected files from victim machines, including certificates and cookies.
+- **S0395 LightNeuron** (software) — LightNeuron can collect files from a local system.
+- **S0404 esentutl** (software) — esentutl can be used to collect data from local file systems.
+- **S0409 Machete** (software) — Machete searches the File system for files of interest.
+- **S0412 ZxShell** (software) — ZxShell can transfer files from a compromised host.
+- **S0444 ShimRat** (software) — ShimRat has the capability to upload collected files to a C2.
+- **S0448 Rising Sun** (software) — Rising Sun has collected data and files from a compromised host.
+- **S0452 USBferry** (software) — USBferry can collect information from an air-gapped host machine.
+- **S0458 Ramsay** (software) — Ramsay can collect Microsoft Word documents from the target's file system, as well as `.txt`, `.doc`, and `.xls` files from the Internet Explorer cache.
+- **S0461 SDBbot** (software) — SDBbot has the ability to access the file system on a compromised host.
+- **S0467 TajMahal** (software) — TajMahal has the ability to steal documents from the local system including the print spooler queue.
+- **S0477 Goopy** (software) — Goopy has the ability to exfiltrate documents from infected systems.
+- **S0492 CookieMiner** (software) — CookieMiner has retrieved iPhone text messages from iTunes phone backup files.
+- **S0498 Cryptoistic** (software) — Cryptoistic can retrieve files from the local file system.
+- **S0500 MCMD** (software) — MCMD has the ability to upload files from an infected device.
+- **S0502 Drovorub** (software) — Drovorub can transfer files from the victim machine.
+- **S0503 FrameworkPOS** (software) — FrameworkPOS can collect elements related to credit card data from process memory.
+- **S0512 FatDuke** (software) — FatDuke can copy files and directories from a compromised host.
+- **S0514 WellMess** (software) — WellMess can send files from the victim machine to C2.
+- **S0515 WellMail** (software) — WellMail can exfiltrate files from the victim machine.
+- **S0517 Pillowmint** (software) — Pillowmint has collected credit card data using native API functions.
+- **S0520 BLINDINGCAN** (software) — BLINDINGCAN has uploaded files from victim machines.
+- **S0526 KGH_SPY** (software) — KGH_SPY can send a file containing victim system information to C2.
+- **S0533 SLOTHFULMEDIA** (software) — SLOTHFULMEDIA has uploaded files and information from victim machines.
+- **S0534 Bazar** (software) — Bazar can retrieve information from the infected machine.
+- **S0538 Crutch** (software) — Crutch can exfiltrate files from compromised systems.
+- **S0559 SUNBURST** (software) — SUNBURST collected information from a compromised host.
+- **S0564 BlackMould** (software) — BlackMould can copy files on a compromised host.
+- **S0567 Dtrack** (software) — Dtrack can collect a variety of information from victim machines.
+- **S0572 Caterpillar WebShell** (software) — Caterpillar WebShell has a module to collect information from the local database.
+- **S0594 Out1** (software) — Out1 can copy files and Registry data from compromised hosts.
+- **S0598 P.A.S. Webshell** (software) — P.A.S. Webshell has the ability to copy files on a compromised host.
+- **S0610 SideTwist** (software) — SideTwist has the ability to upload files from a compromised host.
+- **S0615 SombRAT** (software) — SombRAT has collected data and files from a compromised host.
+- **S0622 AppleSeed** (software) — AppleSeed can collect data on a compromised host.
+- **S0629 RainyDay** (software) — RainyDay can use a file exfiltration tool to collect recently changed files on a compromised host.
+- **S0630 Nebulae** (software) — Nebulae has the capability to upload collected files to C2.
+- **S0632 GrimAgent** (software) — GrimAgent can collect data and files from a compromised host.
+- **S0634 EnvyScout** (software) — EnvyScout can collect sensitive NTLM material from a compromised host.
+- **S0642 BADFLICK** (software) — BADFLICK has uploaded files from victims' machines.
+- **S0645 Wevtutil** (software) — Wevtutil can be used to export events from a specific log.
+- **S0646 SpicyOmelette** (software) — SpicyOmelette has collected data and other information from a compromised host.
+- **S0650 QakBot** (software) — QakBot can use a variety of commands, including esentutl.exe to steal sensitive data from Internet Explorer and Microsoft Edge, to acquire information that is subsequently exfiltrated.
+- **S0651 BoxCaon** (software) — BoxCaon can upload files from a compromised host.
+- **S0652 MarkiRAT** (software) — MarkiRAT can upload data from the victim's machine to the C2 server.
+- **S0653 xCaon** (software) — xCaon has uploaded files from victims' machines.
+- **S0658 XCSSET** (software) — XCSSET collects contacts and application data from files in Desktop, Documents, Downloads, Dropbox, and WeChat folders.
+- **S0660 Clambling** (software) — Clambling can collect information from a compromised host.
+- **S0661 FoggyWeb** (software) — FoggyWeb can retrieve configuration data from a compromised AD FS server.
+- **S0662 RCSession** (software) — RCSession can collect data from a compromised host.
+- **S0663 SysUpdate** (software) — SysUpdate can collect information and files from a compromised host.
+- **S0665 ThreatNeedle** (software) — ThreatNeedle can collect data and files from a compromised host.
+- **S0666 Gelsemium** (software) — Gelsemium can collect data from a compromised host.
+- **S0667 Chrommme** (software) — Chrommme can collect data from a local system.
+- **S0668 TinyTurla** (software) — TinyTurla can upload files from a compromised host.
+- **S0670 WarzoneRAT** (software) — WarzoneRAT can collect data from a compromised host.
+- **S0671 Tomiris** (software) — Tomiris has the ability to collect recent files matching a hardcoded list of extensions prior to exfiltration.
+- **S0672 Zox** (software) — Zox has the ability to upload files from a targeted system.
+- **S0673 DarkWatchman** (software) — DarkWatchman can collect files from a compromised host.
+- **S0674 CharmPower** (software) — CharmPower can collect data and files from a compromised host.
+- **S0686 QuietSieve** (software) — QuietSieve can collect files from a compromised host.
+- **S0687 Cyclops Blink** (software) — Cyclops Blink can upload files from a compromised host.
+- **S0690 Green Lambert** (software) — Green Lambert can collect data from a compromised host.
+- **S0691 Neoichor** (software) — Neoichor can upload files from a victim's machine.
+- **S0694 DRATzarus** (software) — DRATzarus can collect information from a compromised host.
+- **S0696 Flagpro** (software) — Flagpro can collect data from a compromised host, including Windows authentication information.
+- **S1012 PowerLess** (software) — PowerLess has the ability to exfiltrate data, including Chrome and Edge browser database files, from compromised machines.
+- **S1013 ZxxZ** (software) — ZxxZ can collect data from a compromised host.
+- **S1014 DanBot** (software) — DanBot can upload files from compromised hosts.
+- **S1015 Milan** (software) — Milan can upload files from a compromised host.
+- **S1016 MacMa** (software) — MacMa can collect then exfiltrate files from the compromised system.
+- **S1017 OutSteel** (software) — OutSteel can collect information from a compromised host.
+- **S1018 Saint Bot** (software) — Saint Bot can collect files and information from a compromised host.
+- **S1019 Shark** (software) — Shark can upload files to its C2.
+- **S1020 Kevin** (software) — Kevin can upload logs and other data from a compromised host.
+- **S1021 DnsSystem** (software) — DnsSystem can upload files from infected machines after receiving a command with `uploaddd` in the string.
+- **S1022 IceApple** (software) — IceApple can collect files, passwords, and other data from a compromised host.
+- **S1023 CreepyDrive** (software) — CreepyDrive can upload files to C2 from victim machines.
+- **S1025 Amadey** (software) — Amadey can collect information from a compromised host.
+- **S1026 Mongall** (software) — Mongall has the ability to upload files from victim's machines.
+- **S1028 Action RAT** (software) — Action RAT can collect local data from an infected machine.
+- **S1029 AuTo Stealer** (software) — AuTo Stealer can collect data such as PowerPoint files, Word documents, Excel files, PDF files, text files, database files, and image files from an infected machine.
+- **S1031 PingPull** (software) — PingPull can collect data from a compromised host.
+- **S1034 StrifeWater** (software) — StrifeWater can collect data from a compromised host.
+- **S1037 STARWHALE** (software) — STARWHALE can collect data from an infected local host.
+- **S1039 Bumblebee** (software) — Bumblebee can capture and compress stolen credentials from the Registry and volume shadow copies.
+- **S1043 ccf32** (software) — ccf32 can collect files from a compromised host.
+- **S1044 FunnyDream** (software) — FunnyDream can upload files from victims' machines.
+- **S1050 PcShare** (software) — PcShare can collect files and information from a compromised host.
+- **S1059 metaMain** (software) — metaMain can collect files and system information from a compromised host.
+- **S1060 Mafalda** (software) — Mafalda can collect files and information from a compromised host.
+- **S1063 Brute Ratel C4** (software) — Brute Ratel C4 has the ability to upload files from a compromised system.
+- **S1064 SVCReady** (software) — SVCReady can collect data from an infected host.
+- **S1065 Woody RAT** (software) — Woody RAT can collect information from a compromised host.
+- **S1075 KOPILUWAK** (software) — KOPILUWAK can gather information from compromised hosts.
+- **S1085 Sardonic** (software) — Sardonic has the ability to collect data from a compromised machine to deliver to the attacker.
+- **S1089 SharpDisco** (software) — SharpDisco has dropped a recent-files stealer plugin to `C:\Users\Public\WinSrcNT\It11.exe`.
+- **S1090 NightClub** (software) — NightClub can use a file monitor to steal specific files from targeted systems.
+- **S1099 Samurai** (software) — Samurai can leverage an exfiltration module to download arbitrary files from compromised machines.
+- **S1101 LoFiSe** (software) — LoFiSe can collect files of interest from targeted systems.
+- **S1102 Pcexter** (software) — Pcexter can upload files from targeted systems.
+- **S1110 SLIGHTPULSE** (software) — SLIGHTPULSE can read files specified on the local system.
+- **S1111 DarkGate** (software) — DarkGate has stolen `sitemanager.xml` and `recentservers.xml` from `%APPDATA%\FileZilla\` if present.
+- **S1113 RAPIDPULSE** (software) — RAPIDPULSE retrieves files from the victim system via encrypted commands sent to the web shell.
+- **S1131 NPPSPY** (software) — NPPSPY records data entered from the local system logon at Winlogon to capture credentials in cleartext.
+- **S1132 IPsec Helper** (software) — IPsec Helper can identify specific files and folders for follow-on exfiltration.
+- **S1146 MgBot** (software) — MgBot includes modules for collecting files from local systems based on a given set of properties and filenames.
+- **S1148 Raccoon Stealer** (software) — Raccoon Stealer collects data from victim machines based on configuration information received from command and control nodes.
+- **S1149 CHIMNEYSWEEP** (software) — CHIMNEYSWEEP can collect files from compromised hosts.
+- **S1159 DUSTTRAP** (software) — DUSTTRAP can gather data from infected systems.
+- **S1160 Latrodectus** (software) — Latrodectus can collect data from a compromised host using a stealer module.
+- **S1196 Troll Stealer** (software) — Troll Stealer gathers information from infected systems such as SSH information from the victim's `.ssh` directory. Troll Stealer collects information from local FileZilla installations and Microsoft Sticky Note.
+- **S1200 StealBit** (software) — StealBit can upload data and files to the LockBit victim-shaming site.
+- **S1224 CASTLETAP** (software) — CASTLETAP can execute a C2 command to transfer files from victim machines.
+- **S1229 Havoc** (software) — Havoc can download files from the victim's computer.
+- **S1240 RedLine Stealer** (software) — RedLine Stealer has collected data stored locally including chat logs and files associated with chat services such as Steam, Discord, and Telegram.
+- **S1245 InvisibleFerret** (software) — InvisibleFerret has collected data utilizing a script that contained a list of excluded files and directory names and naming patterns of interest such as environment and configuration files, documents, spreadsheets, and other files that contained the words secret, wallet, private, and password.
+- **S1246 BeaverTail** (software) — BeaverTail has exfiltrated data collected from local systems.
+- **S9009 TruffleHog** (software) — TruffleHog has gathered data from home directories of the victim environment.
+- **S9010 GlassWorm** (software) — GlassWorm has collected local data from a compromised host to include desktop cryptocurrency wallet data, and documents from within Desktop, Documents, and Downloads.
+- **S9015 BRICKSTORM** (software) — BRICKSTORM has commands that allow the actor download files from the compromised host to the C2 server, and to also download specific sections of a file.
+- **S9020 LODEINFO** (software) — LODEINFO can upload files from infected hosts to the C2.
+- **S9023 HiddenFace** (software) — HiddenFace can upload files from the victim machine to C2 nodes.
+- **S9024 SPAWNCHIMERA** (software) — SPAWNCHIMERA has extracted the device’s Linux kernel image (vmlinux).
+- **S9035 LAMEHUG** (software) — LAMEHUG has the ability to collect system information and files of interest from compromised systems.
+- **S9050 Vidar** (software) — Vidar has attempted to collect browser information.
+- **S9052 MiniFast** (software) — MiniFast has collected data from local files and directories on the victim device.
+- **S9058 SIGHTGRAB** (software) — SIGHTGRAB has captured and staged stolen data in folders named using a captured timestamp in the format of YYYY-MM-DD-HH-MM.
+- **S9059 MiniBike** (software) — MiniBike has collected files from the local victim machines.
+- **S9065 DCSYNCER.SLICK** (software) — DCSYNCER.SLICK has gathered stolen credentials in hardcoded filenames and pathways to include `C:\users\public\LOG.txt` and `C:\Program Files\VMware\VMware Tools\VMware VGAuth\LOG.txt`.

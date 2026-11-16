@@ -1,0 +1,105 @@
+name: Retrieval eval
+
+# Manual only. Ingests the committed MITRE ATT&CK slice (evals/ci/: 263 documents, 75 English
+# questions) with bge-m3 on the runner's CPU, runs sift-eval's Find surface without a judge,
+# reranker or recap, and fails if retrieval got worse than evals/ci/baseline/ beyond the
+# tolerances in the "Gate" step. No secrets, no LLM: retrieval only. See evals/ci/README.md.
+on:
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: "Skip the gate; upload this run's summary.json to commit as the new baseline"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  OLLAMA_IMAGE: ollama/ollama:0.31.1@sha256:f1a705f2bd113fb8d15f85f7c217f0dc5f6bebda6b0cc42b82c3ad165ffcb9dc
+  # Ollama library bge-m3 (567M, F16). The digest pins the weights the baseline was made with.
+  BGE_M3_DIGEST: 7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab
+  STORE_BACKEND: libsql
+  TURSO_DATABASE_URL: file:eval-ci.db
+  EMBED_BASE_URL: http://127.0.0.1:11434/v1
+  EMBED_MODEL: bge-m3
+  RERANK_STRATEGY: none
+  RECAP_ENABLED: "false"
+  EVAL_OUTPUT_DIR: eval-runs
+
+jobs:
+  retrieval:
+    name: Retrieval · MITRE slice · bge-m3 on CPU
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install (no eval extra; --skip-judge never imports RAGAS)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[store,parsing,chunking,inference]'
+
+      - name: Restore bge-m3 weights
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/ollama-models
+          key: ollama-bge-m3-${{ env.BGE_M3_DIGEST }}
+      - name: Start Ollama (CPU) and pull bge-m3
+        run: |
+          mkdir -p ~/ollama-models
+          docker run -d --name ollama -p 127.0.0.1:11434:11434 \
+            -v "$HOME/ollama-models:/root/.ollama/models" "$OLLAMA_IMAGE"
+          for _ in $(seq 60); do curl -sf http://127.0.0.1:11434/api/version && break; sleep 1; done
+          curl -sf --max-time 900 http://127.0.0.1:11434/api/pull \
+            -d '{"model": "bge-m3", "stream": false}'
+          echo
+          digest=$(curl -sf http://127.0.0.1:11434/api/tags | python -c \
+            'import json,sys; print(next(m["digest"] for m in json.load(sys.stdin)["models"] if m["name"] == "bge-m3:latest"))')
+          if [ "$digest" != "$BGE_M3_DIGEST" ]; then
+            echo "::error::bge-m3 digest $digest, expected $BGE_M3_DIGEST: the library tag moved"
+            exit 1
+          fi
+          # The container writes as root; hand the files to the runner so the cache can save them.
+          sudo chown -R "$(id -u):$(id -g)" ~/ollama-models
+
+      - name: Ingest the corpus slice
+        run: python evals/ci/ingest.py evals/ci/corpus
+      - name: Run the retrieval eval
+        run: |
+          sift-eval run --golden evals/ci/golden.jsonl --surfaces find --skip-judge --label ci-retrieval
+          echo "RUN_DIR=$(ls -d eval-runs/*/)" >> "$GITHUB_ENV"
+
+      # One question is 1/75 ≈ 0.013 of hit@1: 0.03 lets two questions slip, a third fails.
+      # find.errors:0 fails the run if any question errored (e.g. an embed timeout).
+      - name: Gate against evals/ci/baseline
+        if: ${{ !inputs.update_baseline }}
+        run: |
+          sift-eval compare evals/ci/baseline "$RUN_DIR" \
+            --fail-on find.errors:0 \
+            --fail-on find.retrieval.final.doc.hit@1:0.03 \
+            --fail-on find.retrieval.final.doc.recall@10:0.03 \
+            --fail-on find.retrieval.final.doc.mrr:0.03 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Compare only (baseline update)
+        if: ${{ inputs.update_baseline }}
+        run: |
+          {
+            echo "Baseline update: copy summary.json from the retrieval-run artifact to"
+            echo "evals/ci/baseline/summary.json and commit it."
+            echo
+            sift-eval compare evals/ci/baseline "$RUN_DIR"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the run folder
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: retrieval-run
+          path: eval-runs/
+          if-no-files-found: ignore

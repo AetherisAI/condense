@@ -2,7 +2,7 @@
 
     sift-eval run --golden evals/golden.jsonl [--surfaces find,ask] [--skip-judge] [--noise]
     sift-eval judge eval-runs/<run> [--metrics answer_recall]   # re-score with the current judge
-    sift-eval compare eval-runs/<a> eval-runs/<b>
+    sift-eval compare eval-runs/<a> eval-runs/<b> [--fail-on find.retrieval.final.doc.hit@1:0.03]
     sift-eval validate --golden evals/golden.jsonl
     sift-eval bootstrap --out evals/draft.jsonl [--n 30]
 
@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -26,7 +27,7 @@ from sift.eval.config import load_settings
 from sift.eval.golden import GoldenError
 from sift.eval.judge import METRICS
 from sift.eval.records import SURFACES, Surface
-from sift.eval.report import compare
+from sift.eval.report import check_regressions, compare, render_gate
 
 
 def _progress(message: str) -> None:
@@ -53,6 +54,19 @@ def _metrics(raw: str) -> list[str]:
     return chosen
 
 
+def _limit(raw: str) -> tuple[str, float]:
+    metric, sep, tolerance = raw.rpartition(":")
+    try:
+        value = abs(float(tolerance))
+        if not (sep and metric and math.isfinite(value)):
+            raise ValueError
+        return metric, value
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{raw!r}: expected METRIC:TOLERANCE, e.g. find.retrieval.final.doc.hit@1:0.03"
+        ) from None
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sift-eval", description="Evaluate Condense quality")
     parser.add_argument("--env-file", type=Path, help="config file (default: ./.env)")
@@ -77,6 +91,15 @@ def _build_parser() -> argparse.ArgumentParser:
     comp = sub.add_parser("compare", help="diff two runs' summaries (B relative to A)")
     comp.add_argument("run_a", type=Path)
     comp.add_argument("run_b", type=Path)
+    comp.add_argument(
+        "--fail-on",
+        type=_limit,
+        action="append",
+        default=[],
+        metavar="METRIC:TOLERANCE",
+        help="exit 1 if METRIC (as the table names it) got worse in B by more than TOLERANCE; "
+        "repeatable",
+    )
 
     validate = sub.add_parser("validate", help="check a golden set against the index")
     validate.add_argument("--golden", type=Path, required=True)
@@ -109,8 +132,12 @@ async def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "compare":
         a = json.loads((args.run_a / "summary.json").read_text())
         b = json.loads((args.run_b / "summary.json").read_text())
+        checks = check_regressions(a, b, dict(args.fail_on)) if args.fail_on else []
         print(compare(a, b), end="")
-        return 0
+        if not checks:
+            return 0
+        print(render_gate(checks), end="")
+        return 1 if any(c.failed for c in checks) else 0
 
     app, es = load_settings(args.env_file)
     if args.command == "run":

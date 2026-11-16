@@ -1,0 +1,384 @@
+# T1140 — Deobfuscate/Decode Files or Information
+
+- **Type:** technique
+- **Domain:** Enterprise ATT&CK
+- **Tactics:** Stealth
+- **Platforms:** ESXi, Linux, macOS, Windows
+- **ATT&CK URL:** https://attack.mitre.org/techniques/T1140
+- **Last modified:** 2026-09-11
+
+## Description
+
+Adversaries may use Obfuscated Files or Information to hide artifacts of an intrusion from analysis. They may require separate mechanisms to decode or deobfuscate that information depending on how they intend to use it. Methods for doing that include built-in functionality of malware or by using utilities present on the system.
+
+One such example is the use of certutil to decode a remote access tool portable executable file that has been hidden inside a certificate file. Another example is using the Windows `copy /b` or `type` command to reassemble binary fragments into a malicious payload.
+
+Sometimes a user's action may be required to open it for deobfuscation or decryption as part of User Execution. The user may also be required to input a password to open a password protected compressed/encrypted file that was provided by the adversary.
+
+## Detection strategies
+
+- **DET0275 Detect Adversary Deobfuscation or Decoding of Files and Payloads**
+  - AN0767 (Windows): An adversary leverages built-in tools such as certutil.exe, powershell.exe, or copy.exe to decode, reassemble, or extract hidden malicious content from obfuscated containers or encoded formats. The decoding utility often spawns shortly after file staging or download and may be chained with script interpreters or further payload execution. Log sources: WinEventLog:Sysmon (EventCode=1); WinEventLog:Sysmon (EventCode=11); WinEventLog:Sysmon (EventCode=10).
+  - AN0768 (Linux): The adversary uses native utilities like base64, gzip, tar, or openssl to decode, decompress, or decrypt files that were previously staged or downloaded. These tools may be chained with curl/wget and executed via bash/zsh, often to extract an embedded payload or reverse shell script. Log sources: auditd:SYSCALL (bash/zsh of base64, tar, gzip, or openssl immediately after file write).
+  - AN0769 (macOS): The adversary invokes built-in scripting or decoding tools like base64, plutil, or AppleScript-based utilities to decode files embedded in staging artifacts. Decoding often occurs post-download or as part of post-exploitation payload deployment via zsh, python, or osascript. Log sources: macos:unifiedlog (base64 -d or osascript invoked on staged file).
+
+## Procedure examples
+
+- **C0001 Frankenstein** (campaign) — During Frankenstein, the threat actors deobfuscated Base64-encoded commands following the execution of a malicious script, which revealed a small script designed to obtain an additional payload.
+- **C0005 Operation Spalax** (campaign) — For Operation Spalax, the threat actors used a variety of packers and droppers to decrypt malicious payloads.
+- **C0006 Operation Honeybee** (campaign) — During Operation Honeybee, malicious files were decoded prior to execution.
+- **C0016 Operation Dust Storm** (campaign) — During Operation Dust Storm, attackers used VBS code to decode payloads.
+- **C0017 C0017** (campaign) — During C0017, APT41 used the DUSTPAN loader to decrypt embedded payloads.
+- **C0021 C0021** (campaign) — During C0021, the threat actors deobfuscated encoded PowerShell commands including use of the specific string `'FromBase'+0x40+'String'`, in place of `FromBase64String` which is normally used to decode base64.
+- **C0024 SolarWinds Compromise** (campaign) — During the SolarWinds Compromise, APT29 used 7-Zip to decode their Raindrop malware.
+- **C0037 Water Curupira Pikabot Distribution** (campaign) — Water Curupira Pikabot Distribution used highly obfuscated JavaScript files as one initial installer for Pikabot.
+- **C0044 Juicy Mix** (campaign) — During Juicy Mix, OilRig used a script to concatenate and deobfuscate encoded strings in Mango.
+- **C0046 ArcaneDoor** (campaign) — ArcaneDoor involved the use of Base64 obfuscated scripts and commands.
+- **C0051 APT28 Nearest Neighbor Campaign** (campaign) — During APT28 Nearest Neighbor Campaign, APT28 unarchived data using the GUI version of WinRAR.
+- **C0056 RedPenguin** (campaign) — During RedPenguin, UNC3886 used malware implants to deobfuscate incoming C2 messages and encoded archives.
+- **C0058 SharePoint ToolShell Exploitation** (campaign) — During SharePoint ToolShell Exploitation, threat actors decrypted scripts prior to execution.
+- **C0063 2025 Poland Wiper Attacks** (campaign) — During the 2025 Poland Wiper Attacks, the adversaries decoded a Base64-encoded ZIP archive using the built-in certutil.
+- **G0004 Ke3chang** (group) — Ke3chang has deobfuscated Base64-encoded shellcode strings prior to loading them.
+- **G0007 APT28** (group) — An APT28 macro uses the command `certutil -decode` to decode contents of a .txt file storing the base64 encoded payload.
+- **G0010 Turla** (group) — Turla has used a custom decryption routine, which pulls key and salt values from other artifacts such as a WMI filter or PowerShell Profile, to decode encrypted PowerShell payloads.
+- **G0012 Darkhotel** (group) — Darkhotel has decrypted strings and imports using RC4 during execution.
+- **G0021 Molerats** (group) — Molerats decompresses ZIP files once on the victim machine.
+- **G0027 Threat Group-3390** (group) — During execution, Threat Group-3390 malware deobfuscates and decompresses code that was encoded with Metasploit’s shikata_ga_nai encoder as well as compressed with LZNT1 compression.
+- **G0032 Lazarus Group** (group) — Lazarus Group has used shellcode within macros to decrypt and manually map DLLs and shellcode into memory at runtime.
+- **G0034 Sandworm Team** (group) — Sandworm Team's VBS backdoor can decode Base64-encoded data and save it to the %TEMP% folder. The group also decrypted received information using the Triple DES algorithm and decompresses it using GZip.
+- **G0045 menuPass** (group) — menuPass has used certutil in a macro to decode base64-encoded content contained in a dropper document attached to an email. The group has also used `certutil -decode` to decode files on the victim’s machine when dropping UPPERCUT.
+- **G0046 FIN7** (group) — FIN7 has decoded a malicious PowerShell script using `certutil -decode hex` and has decoded an XOR-obfuscated block of data with the key `qawsed1q2w3e`, which led to the installation of Lizar.
+- **G0047 Gamaredon Group** (group) — Gamaredon Group tools decrypted additional payloads from the C2. Gamaredon Group has also decoded Base64-encoded source code of a downloader. Additionally, Gamaredon Group has decoded Telegram content to reveal the IP address for C2 communications.
+- **G0049 OilRig** (group) — A OilRig macro has run a PowerShell command to decode file contents. OilRig has also used certutil to decode base64-encoded files on victims.
+- **G0060 BRONZE BUTLER** (group) — BRONZE BUTLER downloads encoded payloads and decodes them on the victim.
+- **G0065 Leviathan** (group) — Leviathan has used a DLL known as SeDll to decrypt and execute other JavaScript backdoors.
+- **G0069 MuddyWater** (group) — MuddyWater has decoded base64-encoded PowerShell, JavaScript, and VBScript.
+- **G0073 APT19** (group) — An APT19 HTTP malware variant decrypts strings using single-byte XOR keys.
+- **G0078 Gorgon Group** (group) — Gorgon Group malware can decode contents from a payload that was Base64 encoded and write the contents to a file.
+- **G0081 Tropic Trooper** (group) — Tropic Trooper used shellcode with an XOR algorithm to decrypt a payload. Tropic Trooper also decrypted image files which contained a payload.
+- **G0082 APT38** (group) — APT38 has used the RC4 algorithm to decrypt configuration data. APT38 has decocoded Base64 encoded PowerShell scripts prior to execution.
+- **G0087 APT39** (group) — APT39 has used malware to decrypt encrypted CAB files.
+- **G0090 WIRTE** (group) — WIRTE has used Base64 to decode malicious VBS script.
+- **G0092 TA505** (group) — TA505 has decrypted packed DLLs with an XOR key.
+- **G0094 Kimsuky** (group) — Kimsuky has decoded malicious VBScripts using Base64. Kimsuky has also decoded malicious PowerShell scripts using Base64. Kimsuky has decoded RC4 obfuscated files prior to downloading files from their infrastructure.
+- **G0106 Rocke** (group) — Rocke has extracted tar.gz files after downloading them from a C2 server.
+- **G0126 Higaisa** (group) — Higaisa used certutil to decode Base64 binaries at runtime and a 16-byte XOR key to decrypt data.
+- **G0128 ZIRCONIUM** (group) — ZIRCONIUM has used the AES256 algorithm with a SHA1 derived key to decrypt exploit code.
+- **G0129 Mustang Panda** (group) — Mustang Panda has the ability to decrypt its payload prior to execution. Mustang Panda has also utilized RC4 encryption for malicious payloads.
+- **G0139 TeamTNT** (group) — TeamTNT has used a script that decodes a Base64-encoded version of WeaveWorks Scope.
+- **G1006 Earth Lusca** (group) — Earth Lusca has used certutil to decode a string into a cabinet file.
+- **G1016 FIN13** (group) — FIN13 has utilized `certutil` to decode base64 encoded versions of custom malware.
+- **G1017 Volt Typhoon** (group) — Volt Typhoon has used Base64-encoded data to transfer payloads and commands, including deobfuscation via certutil.
+- **G1021 Cinnamon Tempest** (group) — Cinnamon Tempest has used weaponized DLLs to load and decrypt payloads.
+- **G1026 Malteiro** (group) — Malteiro has the ability to deobfuscate downloaded files prior to execution.
+- **G1030 Agrius** (group) — Agrius has deployed base64-encoded variants of ASPXSpy to evade detection.
+- **G1035 Winter Vivern** (group) — Winter Vivern delivered exploit payloads via base64-encoded payloads in malicious email messages.
+- **G1036 Moonstone Sleet** (group) — Moonstone Sleet delivered payloads using multiple rounds of obfuscation and encoding to evade defenses and analysis.
+- **G1043 BlackByte** (group) — BlackByte has encoded commands in base64-encoded sections concatenated together in PowerShell. BlackByte uses PowerShell commands to disable Windows Defender.
+- **G1046 Storm-1811** (group) — Storm-1811 has distributed password-protected archives such as ZIP files during intrusions.
+- **S0011 Taidoor** (software) — Taidoor can use a stream cipher to decrypt stings used by the malware.
+- **S0013 PlugX** (software) — PlugX decompresses and decrypts itself using the Microsoft API call RtlDecompressBuffer. PlugX has also decrypted its payloads in memory.
+- **S0022 Uroburos** (software) — Uroburos can decrypt command parameters sent through C2 and use unpacking code to extract its packed executable.
+- **S0024 Dyre** (software) — Dyre decrypts resources needed for targeting the victim.
+- **S0032 gh0st RAT** (software) — gh0st RAT has decrypted and loaded the gh0st RAT DLL into memory, once the initial dropper executable is launched.
+- **S0052 OnionDuke** (software) — OnionDuke can use a custom decryption algorithm to decrypt strings.
+- **S0115 Crimson** (software) — Crimson can decode its encoded PE file prior to execution.
+- **S0126 ComRAT** (software) — ComRAT has used unique per machine passwords to decrypt the orchestrator payload and a hardcoded XOR key to decrypt its communications module. ComRAT has also used a unique password to decrypt the file used for its hidden file system.
+- **S0127 BBSRAT** (software) — BBSRAT uses Expand to decompress a CAB file into executable content.
+- **S0140 Shamoon** (software) — Shamoon decrypts ciphertext using an XOR cipher and a base64-encoded string.
+- **S0141 Winnti for Windows** (software) — The Winnti for Windows dropper can decrypt and decompresses a data blob.
+- **S0147 Pteranodon** (software) — Pteranodon can decrypt encrypted data strings prior to using them.
+- **S0154 Cobalt Strike** (software) — Cobalt Strike can deobfuscate shellcode using a rolling XOR and decrypt metadata from Beacon sessions. The Cobalt Strike loader component can also decrypt the .bss section of the Beacon binary prior to execution.
+- **S0160 certutil** (software) — certutil has been used to decode binaries hidden inside certificate files as Base64 information.
+- **S0180 Volgmer** (software) — Volgmer deobfuscates its strings and APIs once its executed.
+- **S0182 FinFisher** (software) — FinFisher extracts and decrypts stage 3 malware, which is stored in encrypted resources.
+- **S0188 Starloader** (software) — Starloader decrypts and executes shellcode from a file called Stars.jps.
+- **S0189 ISMInjector** (software) — ISMInjector uses the `certutil` command to decode a payload file.
+- **S0196 PUNCHBUGGY** (software) — PUNCHBUGGY has used PowerShell to decode base64-encoded assembly.
+- **S0223 POWERSTATS** (software) — POWERSTATS can deobfuscate the main backdoor code.
+- **S0226 Smoke Loader** (software) — Smoke Loader deobfuscates its code.
+- **S0230 ZeroT** (software) — ZeroT shellcode decrypts and decompresses its RC4-encrypted payload.
+- **S0234 Bandook** (software) — Bandook has decoded its PowerShell script.
+- **S0236 Kwampirs** (software) — Kwampirs decrypts and extracts a copy of its main DLL payload when executing.
+- **S0239 Bankshot** (software) — Bankshot decodes embedded XOR strings.
+- **S0240 ROKRAT** (software) — ROKRAT can decrypt strings using the victim's hostname as the key.
+- **S0251 Zebrocy** (software) — Zebrocy decodes its secondary payload and writes it to the victim’s machine. Zebrocy also uses AES and XOR to decrypt strings and payloads.
+- **S0255 DDKONG** (software) — DDKONG decodes an embedded configuration using XOR.
+- **S0257 VERMIN** (software) — VERMIN decrypts code, strings, and commands to use once it's on the victim's machine.
+- **S0258 RGDoor** (software) — RGDoor decodes Base64 strings and decrypts strings using a custom XOR algorithm.
+- **S0260 InvisiMole** (software) — InvisiMole can decrypt, unpack and load a DLL from its resources, or from blobs encrypted with Data Protection API, two-key triple DES, and variations of the XOR cipher.
+- **S0263 TYPEFRAME** (software) — One TYPEFRAME variant decrypts an archive using an RC4 key, then decompresses and installs the decrypted malicious DLL module. Another variant decodes the embedded file by XORing it with the value "0x35".
+- **S0264 OopsIE** (software) — OopsIE concatenates then decompresses multiple resources to load an embedded .Net Framework assembly.
+- **S0266 TrickBot** (software) — TrickBot decodes the configuration data and modules.
+- **S0268 Bisonal** (software) — Bisonal has decoded strings in the malware using XOR and RC4.
+- **S0269 QUADAGENT** (software) — QUADAGENT uses AES and a preshared key to decrypt the custom Base64 routine used to encode strings and scripts.
+- **S0270 RogueRobin** (software) — RogueRobin decodes an embedded executable using base64 and decompresses it.
+- **S0279 Proton** (software) — Proton uses an encrypted file to store commands and configuration values.
+- **S0280 MirageFox** (software) — MirageFox has a function for decrypting data containing C2 configuration information.
+- **S0284 More_eggs** (software) — More_eggs will decode malware components that are then dropped to the system.
+- **S0330 Zeus Panda** (software) — Zeus Panda decrypts strings in the code during the execution process.
+- **S0331 Agent Tesla** (software) — Agent Tesla has the ability to decrypt strings encrypted with the Rijndael symmetric encryption algorithm.
+- **S0335 Carbon** (software) — Carbon decrypts task and configuration files for execution.
+- **S0344 Azorult** (software) — Azorult uses an XOR key to decrypt content and uses Base64 to decode the C2 address.
+- **S0347 AuditCred** (software) — AuditCred uses XOR and RC4 to perform decryption on the code functions.
+- **S0348 Cardinal RAT** (software) — Cardinal RAT decodes many of its artifacts and is decrypted (AES-128) after being downloaded.
+- **S0352 OSX_OCEANLOTUS.D** (software) — OSX_OCEANLOTUS.D uses a decode routine combining bit shifting and XOR operations with a variable key that depends on the length of the string that was encoded. If the computation for the variable XOR key turns out to be 0, the default XOR key of 0x1B is used. This routine is also referenced as the `rotate` function in reporting.
+- **S0353 NOKKI** (software) — NOKKI uses a unique, custom de-obfuscation technique.
+- **S0354 Denis** (software) — Denis will decrypt important strings used for C&C communication.
+- **S0355 Final1stspy** (software) — Final1stspy uses Python code to deobfuscate base64-encoded strings.
+- **S0356 KONNI** (software) — KONNI has used certutil to download and decode base64 encoded strings and has also devoted a custom section to performing all the components of the deobfuscation process.
+- **S0361 Expand** (software) — Expand can be used to decompress a local or remote CAB file into an executable.
+- **S0367 Emotet** (software) — Emotet has used a self-extracting RAR file to deliver modules to victims. Emotet has also extracted embedded executables from files using hard-coded buffer offsets.
+- **S0369 CoinTicker** (software) — CoinTicker decodes the initially-downloaded hidden encoded file using OpenSSL.
+- **S0373 Astaroth** (software) — Astaroth uses a fromCharCode() deobfuscation method to avoid explicitly writing execution commands and to hide its code.
+- **S0375 Remexi** (software) — Remexi decrypts the configuration data using XOR with 25-character keys.
+- **S0377 Ebury** (software) — Ebury has verified C2 domain ownership by decrypting the TXT record using an embedded RSA public key.
+- **S0386 Ursnif** (software) — Ursnif has used crypto key information stored in the Registry to decrypt Tor clients dropped to disk.
+- **S0388 YAHOYAH** (software) — YAHOYAH decrypts downloaded files before execution.
+- **S0390 SQLRat** (software) — SQLRat has scripts that are responsible for deobfuscating additional scripts.
+- **S0394 HiddenWasp** (software) — HiddenWasp uses a cipher to implement a decoding function.
+- **S0395 LightNeuron** (software) — LightNeuron has used AES and XOR to decrypt configuration files and commands.
+- **S0398 HyperBro** (software) — HyperBro can unpack and decrypt its payload prior to execution.
+- **S0401 Exaramel for Linux** (software) — Exaramel for Linux can decrypt its configuration file.
+- **S0402 OSX/Shlayer** (software) — OSX/Shlayer can base64-decode and AES-decrypt downloaded payloads. Versions of OSX/Shlayer pass encrypted and password-protected code to `openssl` and then write the payload to the `/tmp` folder.
+- **S0409 Machete** (software) — Machete’s downloaded data is decrypted using AES.
+- **S0414 BabyShark** (software) — BabyShark has the ability to decode downloaded files prior to execution.
+- **S0415 BOOSTWRITE** (software) — BOOSTWRITE has used a a 32-byte long multi-XOR key to decode data inside its payload.
+- **S0428 PoetRAT** (software) — PoetRAT has used LZMA and base64 libraries to decode obfuscated scripts.
+- **S0430 Winnti for Linux** (software) — Winnti for Linux has decoded XOR encoded strings holding its configuration upon execution.
+- **S0434 Imminent Monitor** (software) — Imminent Monitor has decoded malware components that are then dropped to the system.
+- **S0436 TSCookie** (software) — TSCookie has the ability to decrypt, load, and execute a DLL and its resources.
+- **S0439 Okrum** (software) — Okrum's loader can decrypt the backdoor code, embedded within the loader or within a legitimate PNG file. A custom XOR cipher or RC4 is used for decryption.
+- **S0443 MESSAGETAP** (software) — After checking for the existence of two files, keyword_parm.txt and parm.txt, MESSAGETAP XOR decodes and read the contents of the files.
+- **S0444 ShimRat** (software) — ShimRat has decompressed its core DLL using shellcode once an impersonated antivirus component was running on a system.
+- **S0447 Lokibot** (software) — Lokibot has decoded and decrypted its stages multiple times using hard-coded keys to deliver the final payload, and has decoded its server response hex string using XOR.
+- **S0448 Rising Sun** (software) — Rising Sun has decrypted itself using a single-byte XOR scheme. Additionally, Rising Sun can decrypt its configuration data at runtime.
+- **S0455 Metamorfo** (software) — Upon execution, Metamorfo has unzipped itself after being downloaded to the system and has performed string decryption.
+- **S0456 Aria-body** (software) — Aria-body has the ability to decrypt the loader configuration and payload DLL.
+- **S0457 Netwalker** (software) — Netwalker's PowerShell script can decode and decrypt multiple layers of obfuscation, leading to the Netwalker DLL being loaded into memory.
+- **S0458 Ramsay** (software) — Ramsay can extract its agent from the body of a malicious document.
+- **S0461 SDBbot** (software) — SDBbot has the ability to decrypt and decompress its payload to enable code execution.
+- **S0466 WindTail** (software) — WindTail has the ability to decrypt strings using hard-coded AES keys.
+- **S0468 Skidmap** (software) — Skidmap has the ability to download, unpack, and decrypt tar.gz files .
+- **S0469 ABK** (software) — ABK has the ability to decrypt AES encrypted payloads.
+- **S0470 BBK** (software) — BBK has the ability to decrypt AES encrypted payloads.
+- **S0473 Avenger** (software) — Avenger has the ability to decrypt files downloaded from C2.
+- **S0475 BackConfig** (software) — BackConfig has used a custom routine to decrypt strings.
+- **S0476 Valak** (software) — Valak has the ability to decode and decrypt downloaded files.
+- **S0477 Goopy** (software) — Goopy has used a polymorphic decryptor to decrypt itself at runtime.
+- **S0482 Bundlore** (software) — Bundlore has used `openssl` to decrypt AES encrypted payload data. Bundlore has also used base64 and RC4 with a hardcoded key to deobfuscate data.
+- **S0487 Kessel** (software) — Kessel has decrypted the binary's configuration once the `main` function was launched.
+- **S0492 CookieMiner** (software) — CookieMiner has used Google Chrome's decryption and extraction operations.
+- **S0495 RDAT** (software) — RDAT can deobfuscate the base64-encoded and AES-encrypted files downloaded from the C2 server.
+- **S0496 REvil** (software) — REvil can decode encrypted strings to enable execution of commands and payloads.
+- **S0499 Hancitor** (software) — Hancitor has decoded Base64 encoded URLs to insert a recipient’s name into the filename of the Word document. Hancitor has also extracted executables from ZIP files.
+- **S0501 PipeMon** (software) — PipeMon can decrypt password-protected executables.
+- **S0502 Drovorub** (software) — Drovorub has de-obsfuscated XOR encrypted payloads in WebSocket messages.
+- **S0511 RegDuke** (software) — RegDuke can decrypt strings with a key either stored in the Registry or hardcoded in the code.
+- **S0512 FatDuke** (software) — FatDuke can decrypt AES encrypted C2 communications.
+- **S0513 LiteDuke** (software) — LiteDuke has the ability to decrypt and decode multiple layers of obfuscation.
+- **S0514 WellMess** (software) — WellMess can decode and decrypt data received from C2.
+- **S0515 WellMail** (software) — WellMail can decompress scripts received from C2.
+- **S0516 SoreFang** (software) — SoreFang can decode and decrypt exfiltrated data sent to C2.
+- **S0517 Pillowmint** (software) — Pillowmint has been decompressed by included shellcode prior to being launched.
+- **S0518 PolyglotDuke** (software) — PolyglotDuke can use a custom algorithm to decrypt strings used by the malware.
+- **S0520 BLINDINGCAN** (software) — BLINDINGCAN has used AES and XOR to decrypt its DLLs.
+- **S0526 KGH_SPY** (software) — KGH_SPY can decrypt encrypted strings and write them to a newly created folder.
+- **S0531 Grandoreiro** (software) — Grandoreiro can decrypt its encrypted internal strings.
+- **S0532 Lucifer** (software) — Lucifer can decrypt its C2 address upon execution.
+- **S0534 Bazar** (software) — Bazar can decrypt downloaded payloads. Bazar also resolves strings and other artifacts at runtime.
+- **S0543 Spark** (software) — Spark has used a custom XOR algorithm to decrypt the payload.
+- **S0546 SharpStage** (software) — SharpStage has decompressed data received from the C2 server.
+- **S0547 DropBook** (software) — DropBook can unarchive data downloaded from the C2 to obtain the payload and persistence modules.
+- **S0554 Egregor** (software) — Egregor has been decrypted before execution.
+- **S0560 TEARDROP** (software) — TEARDROP was decoded using a custom rolling XOR algorithm to execute a customized Cobalt Strike payload.
+- **S0562 SUNSPOT** (software) — SUNSPOT decrypts SUNBURST, which was stored in AES128-CBC encrypted blobs.
+- **S0565 Raindrop** (software) — Raindrop decrypted its Cobalt Strike payload using an AES-256 encryption algorithm in CBC mode with a unique key per sample.
+- **S0567 Dtrack** (software) — Dtrack has used a decryption routine that is part of an executable physical patch.
+- **S0574 BendyBear** (software) — BendyBear has decrypted function blocks using a XOR key during runtime to evade detection.
+- **S0575 Conti** (software) — Conti has decrypted its payload using a hardcoded AES-256 key.
+- **S0576 MegaCortex** (software) — MegaCortex has used a Base64 key to decode its components.
+- **S0579 Waterbear** (software) — Waterbear has the ability to decrypt its RC4 encrypted payload for execution.
+- **S0581 IronNetInjector** (software) — IronNetInjector has the ability to decrypt embedded .NET and PE payloads.
+- **S0582 LookBack** (software) — LookBack has a function that decrypts malicious data.
+- **S0584 AppleJeus** (software) — AppleJeus has decoded files received from a C2.
+- **S0585 Kerrdown** (software) — Kerrdown can decode, decrypt, and decompress multiple layers of shellcode.
+- **S0588 GoldMax** (software) — GoldMax has decoded and decrypted the configuration file when executed.
+- **S0589 Sibot** (software) — Sibot can decrypt data received from a C2 and save to a file.
+- **S0596 ShadowPad** (software) — ShadowPad has decrypted a binary blob to start execution.
+- **S0598 P.A.S. Webshell** (software) — P.A.S. Webshell can use a decryption mechanism to process a user supplied password and allow execution.
+- **S0601 Hildegard** (software) — Hildegard has decrypted ELF files with AES.
+- **S0603 Stuxnet** (software) — Stuxnet decrypts resources that are loaded into memory and executed.
+- **S0604 Industroyer** (software) — Industroyer decrypts code to connect to a remote C2 server.
+- **S0610 SideTwist** (software) — SideTwist can decode and decrypt messages received from C2.
+- **S0611 Clop** (software) — Clop has used a simple XOR operation to decrypt strings.
+- **S0612 WastedLocker** (software) — WastedLocker's custom cryptor, CryptOne, used an XOR based algorithm to decrypt the payload.
+- **S0613 PS1** (software) — PS1 can use an XOR key to decrypt a PowerShell loader and payload binary.
+- **S0614 CostaBricks** (software) — CostaBricks has the ability to use bytecode to decrypt embedded payloads.
+- **S0615 SombRAT** (software) — SombRAT can run `upload` to decrypt and upload files from storage.
+- **S0618 FIVEHANDS** (software) — FIVEHANDS has the ability to decrypt its payload prior to execution.
+- **S0622 AppleSeed** (software) — AppleSeed can decode its payload prior to execution.
+- **S0623 Siloscape** (software) — Siloscape has decrypted the password of the C2 server with a simple byte by byte XOR. Siloscape also writes both an archive of Tor and the `unzip` binary to disk from data embedded within the payload using Visual Studio’s Resource Manager.
+- **S0624 Ecipekac** (software) — Ecipekac has the ability to decrypt fileless loader modules.
+- **S0628 FYAnti** (software) — FYAnti has the ability to decrypt an embedded .NET module.
+- **S0629 RainyDay** (software) — RainyDay can decrypt its payload via a XOR key.
+- **S0631 Chaes** (software) — Chaes has decrypted an AES encrypted binary file to trigger the download of other files.
+- **S0632 GrimAgent** (software) — GrimAgent can use a decryption algorithm for strings based on Rotate on Right (RoR) and Rotate on Left (RoL) functionality.
+- **S0634 EnvyScout** (software) — EnvyScout can deobfuscate and write malicious ISO files to disk.
+- **S0635 BoomBox** (software) — BoomBox can decrypt AES-encrypted files downloaded from C2.
+- **S0636 VaporRage** (software) — VaporRage can deobfuscate XOR-encoded shellcode prior to execution.
+- **S0637 NativeZone** (software) — NativeZone can decrypt and decode embedded Cobalt Strike beacon stage shellcode.
+- **S0638 Babuk** (software) — Babuk has the ability to unpack itself into memory using XOR.
+- **S0640 Avaddon** (software) — Avaddon has decrypted encrypted strings.
+- **S0641 Kobalos** (software) — Kobalos decrypts strings right after the initial communication, but before the authentication process.
+- **S0642 BADFLICK** (software) — BADFLICK can decode shellcode using a custom rotating XOR cipher.
+- **S0647 Turian** (software) — Turian has the ability to use a XOR decryption key to extract C2 server domains and IP addresses.
+- **S0650 QakBot** (software) — QakBot can deobfuscate and re-assemble code strings for execution.
+- **S0653 xCaon** (software) — xCaon has decoded strings from the C2 server before executing commands.
+- **S0660 Clambling** (software) — Clambling can deobfuscate its payload prior to execution.
+- **S0661 FoggyWeb** (software) — FoggyWeb can be decrypted in memory using a Lightweight Encryption Algorithm (LEA)-128 key and decoded using a XOR key.
+- **S0663 SysUpdate** (software) — SysUpdate can deobfuscate packed binaries in memory.
+- **S0665 ThreatNeedle** (software) — ThreatNeedle can decrypt its payload using RC4, AES, or one-byte XORing.
+- **S0666 Gelsemium** (software) — Gelsemium can decompress and decrypt DLLs and shellcode.
+- **S0667 Chrommme** (software) — Chrommme can decrypt its encrypted internal code.
+- **S0669 KOCTOPUS** (software) — KOCTOPUS has deobfuscated itself before executing its commands.
+- **S0670 WarzoneRAT** (software) — WarzoneRAT can use XOR 0x45 to decrypt obfuscated code.
+- **S0673 DarkWatchman** (software) — DarkWatchman has the ability to self-extract as a RAR archive.
+- **S0674 CharmPower** (software) — CharmPower can decrypt downloaded modules prior to execution.
+- **S0678 Torisma** (software) — Torisma has used XOR and Base64 to decode C2 data.
+- **S0681 Lizar** (software) — Lizar has decrypted its configuration data, such as the C2 IP address, ports and other network communication.
+- **S0687 Cyclops Blink** (software) — Cyclops Blink can decrypt and parse instructions sent from C2.
+- **S0689 WhisperGate** (software) — WhisperGate can deobfuscate downloaded files stored in reverse byte order and decrypt embedded resources using multiple XOR operations.
+- **S0690 Green Lambert** (software) — Green Lambert can use multiple custom routines to decrypt strings prior to execution.
+- **S0697 HermeticWiper** (software) — HermeticWiper can decompress and copy driver files using `LZCopy`.
+- **S1012 PowerLess** (software) — PowerLess can use base64 and AES ECB decryption prior to execution of downloaded modules.
+- **S1013 ZxxZ** (software) — ZxxZ has used a XOR key to decrypt strings.
+- **S1014 DanBot** (software) — DanBot can use a VBA macro to decode its payload prior to installation and execution.
+- **S1016 MacMa** (software) — MacMa decrypts a downloaded file using AES-128-EBC with a custom delta.
+- **S1018 Saint Bot** (software) — Saint Bot can deobfuscate strings and files for execution.
+- **S1019 Shark** (software) — Shark can extract and decrypt downloaded .zip files.
+- **S1022 IceApple** (software) — IceApple can use a Base64-encoded AES key to decrypt tasking.
+- **S1025 Amadey** (software) — Amadey has decoded antivirus name strings.
+- **S1026 Mongall** (software) — Mongall has the ability to decrypt its payload prior to execution.
+- **S1027 Heyoka Backdoor** (software) — Heyoka Backdoor can decrypt its payload prior to execution.
+- **S1028 Action RAT** (software) — Action RAT can use Base64 to decode actor-controlled C2 server communications.
+- **S1030 Squirrelwaffle** (software) — Squirrelwaffle has decrypted files and payloads using a XOR-based algorithm.
+- **S1031 PingPull** (software) — PingPull can decrypt received data from its C2 server by using AES.
+- **S1032 PyDCrypt** (software) — PyDCrypt has decrypted and dropped the DCSrv payload to disk.
+- **S1039 Bumblebee** (software) — Bumblebee can deobfuscate C2 server responses and unpack its code on targeted hosts.
+- **S1041 Chinoxy** (software) — The Chinoxy dropping function can initiate decryption of its config file.
+- **S1046 PowGoop** (software) — PowGoop can decrypt PowerShell scripts for execution.
+- **S1047 Mori** (software) — Mori can resolve networking APIs from strings that are ADD-encrypted.
+- **S1050 PcShare** (software) — PcShare has decrypted its strings by applying a XOR operation and a decompression using a custom implemented LZM algorithm.
+- **S1051 KEYPLUG** (software) — KEYPLUG can decode its configuration file to determine C2 protocols.
+- **S1052 DEADEYE** (software) — DEADEYE has the ability to combine multiple sections of a binary which were broken up to evade detection into a single .dll prior to execution.
+- **S1053 AvosLocker** (software) — AvosLocker has deobfuscated XOR-encoded strings.
+- **S1059 metaMain** (software) — metaMain can decrypt and load other modules.
+- **S1060 Mafalda** (software) — Mafalda can decrypt files and data.
+- **S1063 Brute Ratel C4** (software) — Brute Ratel C4 has the ability to deobfuscate its payload prior to execution.
+- **S1065 Woody RAT** (software) — Woody RAT can deobfuscate Base64-encoded strings and scripts.
+- **S1066 DarkTortilla** (software) — DarkTortilla can decrypt its payload and associated configuration elements using the Rijndael cipher.
+- **S1076 QUIETCANARY** (software) — QUIETCANARY can use a custom parsing routine to decode the command codes and additional parameters from the C2 before executing them.
+- **S1078 RotaJakiro** (software) — RotaJakiro uses the AES algorithm, bit shifts in a function called `rotate`, and an XOR cipher to decrypt resources required for persistence, process guarding, and file locking. It also performs this same function on encrypted stack strings and the `head` and `key` sections in the network packet structure used for C2 communications.
+- **S1085 Sardonic** (software) — Sardonic can first decrypt with the RC4 algorithm using a hardcoded decryption key before decompressing.
+- **S1086 Snip3** (software) — Snip3 can decode its second-stage PowerShell script prior to execution.
+- **S1097 HUI Loader** (software) — HUI Loader can decrypt and load files containing malicious payloads.
+- **S1100 Ninja** (software) — The Ninja loader component can decrypt and decompress the payload.
+- **S1105 COATHANGER** (software) — COATHANGER decodes configuration items from a bundled file for command and control activity.
+- **S1110 SLIGHTPULSE** (software) — SLIGHTPULSE can deobfuscate base64 encoded and RC4 encrypted C2 messages.
+- **S1111 DarkGate** (software) — DarkGate installation includes binary code stored in a file located in a hidden directory, such as `shell.txt`, that is decrypted then executed. DarkGate uses hexadecimal-encoded shellcode payloads during installation that are called via Windows API `CallWindowProc()` to decode and then execute.
+- **S1112 STEADYPULSE** (software) — STEADYPULSE can URL decode key/value pairs sent over C2.
+- **S1113 RAPIDPULSE** (software) — RAPIDPULSE listens for specific HTTP query parameters in received communications. If specific parameters match, a hard-coded RC4 key is used to decrypt the HTTP query paremter `hmacTime`. This decrypts to a filename that is then open, read, encrypted with the same RC4 key, base64-encoded, written to standard out, then passed as a response to the HTTP request.
+- **S1115 WIREFIRE** (software) — WIREFIRE can decode, decrypt, and decompress data received in C2 HTTP `POST` requests.
+- **S1117 GLASSTOKEN** (software) — GLASSTOKEN has the ability to decode hexadecimal and Base64 C2 requests.
+- **S1118 BUSHWALK** (software) — BUSHWALK can Base64 decode and RC4 decrypt malicious payloads sent through a web request’s command parameter.
+- **S1119 LIGHTWIRE** (software) — LIGHTWIRE can RC4 decrypt and Base64 decode C2 commands.
+- **S1120 FRAMESTING** (software) — FRAMESTING can decompress data received within `POST` requests.
+- **S1122 Mispadu** (software) — Mispadu decrypts its encrypted configuration files prior to execution.
+- **S1123 PITSTOP** (software) — PITSTOP can deobfuscate base64 encoded and AES encrypted commands.
+- **S1130 Raspberry Robin** (software) — Raspberry Robin contains several layers of obfuscation to hide malicious code from detection and analysis.
+- **S1133 Apostle** (software) — Apostle compiled code is obfuscated in an unspecified fashion prior to delivery to victims.
+- **S1134 DEADWOOD** (software) — DEADWOOD XORs some strings within the binary using the value `0xD5`, and deobfuscates these items at runtime.
+- **S1138 Gootloader** (software) — Gootloader has the ability to decode and decrypt malicious payloads prior to execution.
+- **S1139 INC Ransomware** (software) — INC Ransomware can run `CryptStringToBinaryA` to decrypt base64 content containing its ransom note.
+- **S1140 Spica** (software) — Upon execution Spica can decode an embedded .pdf and write it to the desktop as a decoy document.
+- **S1141 LunarWeb** (software) — LunarWeb can decrypt strings related to communication configuration using RC4 with a static key.
+- **S1142 LunarMail** (software) — LunarMail can decrypt strings to retrieve configuration settings.
+- **S1143 LunarLoader** (software) — LunarLoader can deobfuscate files containing the next stages in the infection chain.
+- **S1145 Pikabot** (software) — Pikabot decrypts command and control URIs using ADVobfuscator, and decrypts IP addresses and port numbers with a custom algorithm. Other versions of Pikabot decode chunks of stored stage 2 payload content in the initial payload `.text` section before consolidating them for further execution. Overall LunarMail is associated with multiple encoding and encryption mechanisms to obfuscate the malware's presence and avoid analysis or detection.
+- **S1147 Nightdoor** (software) — Nightdoor stores network configuration data in a file XOR encoded with the key value of `0x7A`.
+- **S1148 Raccoon Stealer** (software) — Raccoon Stealer uses RC4-encrypted, base64-encoded strings to obfuscate functionality and command and control servers.
+- **S1149 CHIMNEYSWEEP** (software) — CHIMNEYSWEEP can use an embedded RC4 key to decrypt Windows API function strings.
+- **S1150 ROADSWEEP** (software) — ROADSWEEP can decrypt embedded scripts prior to execution.
+- **S1153 Cuckoo Stealer** (software) — Cuckoo Stealer strings are deobfuscated prior to execution.
+- **S1158 DUSTPAN** (software) — DUSTPAN decodes and decrypts embedded payloads.
+- **S1159 DUSTTRAP** (software) — DUSTTRAP deobfuscates embedded payloads.
+- **S1160 Latrodectus** (software) — Latrodectus has the ability to deobfuscate encrypted strings.
+- **S1164 UPSTYLE** (software) — UPSTYLE encodes its main content prior to loading via Python as base64-encoded blobs.
+- **S1168 SampleCheck5000** (software) — SampleCheck5000 can decode and decrypt command line strings and files received through C2.
+- **S1170 ODAgent** (software) — ODAgent can Base64-decode and XOR decrypt received C2 commands.
+- **S1172 OilBooster** (software) — OilBooster can Base64-decode and XOR-decrypt C2 commands taken from JSON files.
+- **S1173 PowerExchange** (software) — PowerExchange can decode and decrypt C2 commands received via email.
+- **S1179 Exbyte** (software) — Exbyte decodes and decrypts data stored in the configuration file with a key provided on the command line during execution.
+- **S1180 BlackByte Ransomware** (software) — BlackByte Ransomware is distributed as an obfuscated JavaScript launcher file.
+- **S1182 MagicRAT** (software) — MagicRAT stores command and control URLs using base64 encoding in the malware's configuration file.
+- **S1183 StrelaStealer** (software) — StrelaStealer payloads have included strings encrypted via XOR. StrelaStealer JavaScript payloads utilize Base64-encoded payloads that are decoded via certutil to create a malicious DLL file.
+- **S1186 Line Dancer** (software) — Line Dancer shellcode payloads are base64 encoded when transmitted to compromised devices.
+- **S1190 Kapeka** (software) — Kapeka utilizes obfuscated JSON structures for various data storage and configuration management items.
+- **S1199 LockBit 2.0** (software) — LockBit 2.0 can decode scripts and strings in loaded modules.
+- **S1200 StealBit** (software) — StealBit can deobfuscate loaded modules prior to execution.
+- **S1202 LockBit 3.0** (software) — The LockBit 3.0 payload is decrypted at runtime.
+- **S1207 XLoader** (software) — XLoader uses XOR and RC4 algorithms to decrypt payloads and functions. XLoader can be distributed as a self-extracting RAR archive that launches an AutoIT loader.
+- **S1210 Sagerunex** (software) — Sagerunex uses a custom decryption routine to unpack itself during installation.
+- **S1212 RansomHub** (software) — RansomHub can use a provided passphrase to decrypt its configuration file.
+- **S1213 Lumma Stealer** (software) — Lumma Stealer has used Base64-encoded content during execution, decoded via PowerShell.
+- **S1219 REPTILE** (software) — The REPTILE launcher component can decrypt kernel module code from a file and load it into memory.
+- **S1221 MOPSLED** (software) — MOPSLED can decrypt obfuscated configuration files.
+- **S1222 RIFLESPINE** (software) — RIFLESPINE can deobfuscate encrypted files prior to execution on targeted hosts.
+- **S1223 THINCRUST** (software) — THINCRUST can deobfuscate RSA encrypted C2 commands received through the DEVICEID cookie.
+- **S1224 CASTLETAP** (software) — CASTLETAP can filter and deobfuscate an XOR encrypted activation string in the payload of an ICMP echo request.
+- **S1226 BOOKWORM** (software) — BOOKWORM has decoded its Base64 encoded payload prior to execution. BOOKWORM has also encrypted files with RC4 and has decrypted its payload prior to execution.
+- **S1227 StarProxy** (software) — StarProxy has decrypted network packets using a custom algorithm.
+- **S1228 PUBLOAD** (software) — PUBLOAD has decoded its payload prior to execution.
+- **S1232 SplatDropper** (software) — SplatDropper has decoded XOR encrypted payload.
+- **S1235 CorKLOG** (software) — CorKLOG has decoded XOR encrypted strings.
+- **S1236 CLAIMLOADER** (software) — CLAIMLOADER has decoded its payload prior to execution.
+- **S1239 TONESHELL** (software) — TONESHELL has decoded its payload prior to execution.
+- **S1240 RedLine Stealer** (software) — RedLine Stealer has decoded its payload prior to execution.
+- **S1244 Medusa Ransomware** (software) — Medusa Ransomware has decoded XOR encrypted strings prior to execution in memory.
+- **S1245 InvisibleFerret** (software) — InvisibleFerret has decoded XOR-encrypted and Base-64-encoded payloads prior to execution.
+- **S1247 Embargo** (software) — Embargo has utilized MDeployer to decrypt two payloads that contain MS4Killer toolkit b.cache and the Embargo ransomware executable a.cache with a hardcoded RC4 key `wlQYLoPCil3niI7x8CvR9EtNtL/aeaHrZ23LP3fAsJogVTIzdnZ5Pi09ZVeHFkiB`.
+- **S1248 XORIndex Loader** (software) — XORIndex Loader can decode its payload prior to execution.
+- **S1249 HexEval Loader** (software) — HexEval Loader has decoded its payload prior to execution.
+- **S9001 SystemBC** (software) — SystemBC has the ability to decrypt RC4 encrypted packets and to decode obfuscated data before C2 communication. Additionally, SystemBC has decrypted its config file that was encoded with XOR and a hardcoded 40-byte key.
+- **S9007 HTTPTroy** (software) — HTTPTroy has decoded strings encoded with Base64 and XOR prior to execution.
+- **S9010 GlassWorm** (software) — GlassWorm has decoded its Base64 instructions. GlassWorm has also decrypted its AES protected payloads.
+- **S9011 BRUSHFIRE** (software) — BRUSHFIRE has decrypted XOR strings prior to execution.
+- **S9014 PHASEJAM** (software) — PHASEJAM has the ability to decode Base64 commands and data.
+- **S9015 BRICKSTORM** (software) — BRICKSTORM has decoded its encrypted C2 traffic prior to execution. BRICKSTORM also has the ability to decode its obfuscated payload before execution.
+- **S9016 Caminho** (software) — Caminho can deobfuscate downloaded files prior to execution.
+- **S9018 HeartCrypt** (software) — HeartCrypt can decrypt payloads prior to execution.
+- **S9019 PureCrypter** (software) — PureCrypter can decrypt downloaded resources and parse internal files to determine its settings.
+- **S9021 DOWNIISSA** (software) — DOWNIISSA can decode strings prior to execution.
+- **S9023 HiddenFace** (software) — HiddenFace has the ability to decrypt its payload prior to execution.
+- **S9024 SPAWNCHIMERA** (software) — SPAWNCHIMERA has decoded a XOR encoded private key.
+- **S9025 NOOPLDR** (software) — NOOPLDR can decrypt its payload prior to execution.
+- **S9026 ROAMINGHOUSE** (software) — ROAMINGHOUSE can decode and drop a malicious ZIP file prior to execution.
+- **S9027 ANELLDR** (software) — ANELLDR can decrypt encrypted payload data using AES-256-CBC and subsequently execute the payload in memory.
+- **S9028 PHPsert** (software) — PHPsert has the ability to decode and decrypt obfuscated strings prior to execution.
+- **S9029 IronWind** (software) — IronWind can deobfuscate the next stage payload using Base64 and XOR operations with the key "53".
+- **S9031 AshTag** (software) — The AshTag stager compoment can decode and decrypt Base64 and XOR-encrypted payloads.
+- **S9032 MuddyViper** (software) — MuddyViper has decrypted the embedded HackBrowserData tool prior to execution.
+- **S9033 Fooder** (software) — Fooder has decrypted payloads using the WinCrypt API and the AES key.
+- **S9034 Tsundere Botnet** (software) — Tsundere Botnet’s loader has decrypted obfuscated JavaScript files using the AES-256 CBC algorithm, a build-specific key, and initialization vector.
+- **S9035 LAMEHUG** (software) — LAMEHUG can decode and drop a decoy file attached to spearphishing emails.
+- **S9036 LP-Notes** (software) — LP-Notes has decrypted strings with lengths ranging from 15 to 19 characters using the same decryption key for each string.
+- **S9037 RustyWater** (software) — RustyWater has used the WriteHexToFile function to transform an embedded hex string to the payload CertificationKit.ini.
+- **S9041 TeamPCP Cloud Stealer** (software) — TeamPCP Cloud Stealer can deobfuscate an encoded Python script prior to execution.
+- **S9042 CanisterWorm** (software) — CanisterWorm has decoded a long Base64 string to obtain a Python script for its second-stage payload.
+- **S9043 Mini Shai-Hulud** (software) — Mini Shai-Hulud has the ability to decrypt obfuscated payloads.
+- **S9046 IOControl** (software) — IOCONTROL has used the AES-256-CBC algorithm to decrypt configuration files associated with the malware.
+- **S9050 Vidar** (software) — Vidar has used the function `CryptDecrypt`. Additionally, Vidar has decoded the .data section using bitwise XOR operations. Vidar has decoded its core code after confirming debugger and/or analysis tools.
+- **S9052 MiniFast** (software) — MiniFast has decoded Base64-encoded tasks from the C2.
+- **S9057 CRASHPAD** (software) — CRASHPAD has decrypted the config file ` C:\Program Files\VMware\VMware Tools\VMware VGAuth\config.txt ` to move the contents to a newly created file called ` C:\Program Files\VMware\VMware Tools\VMware VGAuth\crash.log `.
+- **S9058 SIGHTGRAB** (software) — SIGHTGRAB has decrypted XOR-encrypted strings.
