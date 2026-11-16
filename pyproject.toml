@@ -52,6 +52,11 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.format]
+# Newer ruff also formats Python code blocks inside Markdown. Doc snippets (archived plans,
+# channel notes) are illustrative, not code we ship, so the formatter stays on code files.
+exclude = ["*.md"]
+
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
