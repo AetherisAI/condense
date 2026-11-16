@@ -1,0 +1,380 @@
+{
+  "run": {
+    "label": "ci-retrieval",
+    "created_at": "2026-11-16 22:06:37 UTC",
+    "git_sha": "7dfac31",
+    "git_dirty": false,
+    "golden_file": "evals/ci/golden.jsonl",
+    "golden_sha256": "0fc950786f36df8b6bcf248c28ca9c91b707cea62bccebc8cee32e596ba1bb11",
+    "n_items": 75,
+    "surfaces": [
+      "find"
+    ],
+    "judge": null,
+    "judge_model": null,
+    "generator_model": null,
+    "ragas_version": "0.4.3",
+    "warnings": [],
+    "config": {
+      "embed_model": "bge-m3",
+      "embed_dim": 1024,
+      "retrieve_k": 30,
+      "final_k": 1,
+      "rerank_strategy": "none",
+      "rerank_model": "bge-reranker-v2-m3",
+      "recap_enabled": false,
+      "recap_context_k": 3,
+      "version_collapse_enabled": true,
+      "chunk_size": 512,
+      "chunk_overlap": 64,
+      "chunk_tokenizer": "auto",
+      "llm_model": null,
+      "answer_tool_mode": "auto",
+      "answer_max_tool_calls": 10
+    },
+    "settings": {
+      "store_backend": "libsql",
+      "turso_database_url": "file:eval-ci.db",
+      "turso_auth_token": null,
+      "embed_base_url": "http://127.0.0.1:11435/v1",
+      "embed_model": "bge-m3",
+      "embed_dim": 1024,
+      "embed_api_key": null,
+      "embed_batch_size": 64,
+      "embed_timeout_s": 60.0,
+      "embed_connect_timeout_s": 5.0,
+      "embed_retry_attempts": 3,
+      "embed_query_prefix": "",
+      "embed_document_prefix": "",
+      "rerank_strategy": "none",
+      "rerank_base_url": null,
+      "rerank_model": "bge-reranker-v2-m3",
+      "rerank_timeout_s": 120.0,
+      "retrieve_k": 30,
+      "final_k": 1,
+      "version_collapse_enabled": true,
+      "version_similarity_threshold": 0.8,
+      "recap_enabled": false,
+      "recap_context_k": 3,
+      "recap_max_tokens": 512,
+      "recap_temperature": 0.3,
+      "source_snippet_chars": 300,
+      "llm_base_url": null,
+      "llm_model": null,
+      "llm_api_key": null,
+      "ocr_enabled": false,
+      "ocr_base_url": "",
+      "ocr_model": "mistral-ocr-latest",
+      "ocr_api_key": null,
+      "ocr_timeout_s": 60.0,
+      "ocr_connect_timeout_s": 5.0,
+      "parse_max_xlsx_cells": 2000000,
+      "chunk_size": 512,
+      "chunk_overlap": 64,
+      "chunk_tokenizer": "auto",
+      "chunk_min_chars": 24,
+      "ingest_token": "set",
+      "parse_max_chars": 2000000,
+      "parse_timeout_s": 60.0,
+      "tools_search_k": 8,
+      "tools_search_max_k": 20,
+      "auth_tokens": null,
+      "answer_tool_mode": "auto",
+      "answer_max_tool_calls": 10,
+      "answer_timeout_s": 120.0,
+      "answer_max_tokens": 1024,
+      "answer_history_max_turns": 20,
+      "answer_history_ttl_days": 30,
+      "answer_autotitle_enabled": true,
+      "answer_grounding_default": "strict",
+      "cors_origins": "tauri://localhost,http://tauri.localhost,https://tauri.localhost"
+    },
+    "eval_settings": {
+      "judge_base_url": "",
+      "judge_model": "",
+      "judge_api_key": null,
+      "judge_provider": "openai",
+      "judge_concurrency": 4,
+      "embed_base_url": "",
+      "embed_model": "",
+      "embed_api_key": null,
+      "k_values": "1,3,5,10",
+      "evidence_match_threshold": 0.6,
+      "noise_ratios": "0,0.25,0.5,0.75",
+      "noise_context_size": 4,
+      "ask_max_contexts": 20,
+      "bootstrap_min_chars": 200,
+      "grounding": "strict",
+      "strip_citations": true,
+      "warmup": 1,
+      "seed": 13,
+      "tenant": "default",
+      "output_dir": "eval-runs"
+    },
+    "noise_skipped": []
+  },
+  "surfaces": {
+    "find": {
+      "n": 75,
+      "errors": 0,
+      "retrieval": {
+        "retrieved": {
+          "doc": {
+            "recall@1": 0.4666666666666667,
+            "complete@1": 0.4,
+            "precision@1": 0.5333333333333333,
+            "hit@1": 0.5333333333333333,
+            "recall@3": 0.68,
+            "complete@3": 0.6133333333333333,
+            "precision@3": 0.26666666666666666,
+            "hit@3": 0.7466666666666667,
+            "recall@5": 0.74,
+            "complete@5": 0.68,
+            "precision@5": 0.17600000000000002,
+            "hit@5": 0.8,
+            "recall@10": 0.8866666666666667,
+            "complete@10": 0.8533333333333334,
+            "precision@10": 0.11066666666666668,
+            "hit@10": 0.92,
+            "mrr": 0.6614430438842204
+          },
+          "chunk": {
+            "recall@1": 0.42,
+            "complete@1": 0.38666666666666666,
+            "precision@1": 0.4533333333333333,
+            "hit@1": 0.4533333333333333,
+            "recall@3": 0.6,
+            "complete@3": 0.5333333333333333,
+            "precision@3": 0.24,
+            "hit@3": 0.6666666666666666,
+            "recall@5": 0.6466666666666666,
+            "complete@5": 0.5866666666666667,
+            "precision@5": 0.15733333333333335,
+            "hit@5": 0.7066666666666667,
+            "recall@10": 0.7933333333333333,
+            "complete@10": 0.7333333333333333,
+            "precision@10": 0.09866666666666667,
+            "hit@10": 0.8533333333333334,
+            "mrr": 0.5798115921115922
+          }
+        },
+        "final": {
+          "doc": {
+            "recall@1": 0.4666666666666667,
+            "complete@1": 0.4,
+            "precision@1": 0.5333333333333333,
+            "hit@1": 0.5333333333333333,
+            "recall@3": 0.68,
+            "complete@3": 0.6133333333333333,
+            "precision@3": 0.26666666666666666,
+            "hit@3": 0.7466666666666667,
+            "recall@5": 0.74,
+            "complete@5": 0.68,
+            "precision@5": 0.17600000000000002,
+            "hit@5": 0.8,
+            "recall@10": 0.8866666666666667,
+            "complete@10": 0.8533333333333334,
+            "precision@10": 0.11066666666666668,
+            "hit@10": 0.92,
+            "mrr": 0.6614430438842204
+          },
+          "chunk": {
+            "recall@1": 0.42,
+            "complete@1": 0.38666666666666666,
+            "precision@1": 0.4533333333333333,
+            "hit@1": 0.4533333333333333,
+            "recall@3": 0.6,
+            "complete@3": 0.5333333333333333,
+            "precision@3": 0.24,
+            "hit@3": 0.6666666666666666,
+            "recall@5": 0.6466666666666666,
+            "complete@5": 0.5866666666666667,
+            "precision@5": 0.15733333333333335,
+            "hit@5": 0.7066666666666667,
+            "recall@10": 0.7933333333333333,
+            "complete@10": 0.7333333333333333,
+            "precision@10": 0.09866666666666667,
+            "hit@10": 0.8533333333333334,
+            "mrr": 0.5798115921115922
+          }
+        }
+      },
+      "answer": {},
+      "abstention": {},
+      "latency_ms": {
+        "embed": {
+          "n": 75,
+          "mean": 124.7736350260675,
+          "p50": 125.0470420345664,
+          "p95": 143.35769542958585,
+          "max": 164.85583316534758
+        },
+        "retrieve": {
+          "n": 75,
+          "mean": 3.722568337495128,
+          "p50": 3.744041081517935,
+          "p95": 3.8580457447096705,
+          "max": 3.9368749130517244
+        },
+        "collapse": {
+          "n": 75,
+          "mean": 5.267805522307754,
+          "p50": 5.3012080024927855,
+          "p95": 6.12895826343447,
+          "max": 6.383333122357726
+        },
+        "rerank": {
+          "n": 75,
+          "mean": 0.0009605816255013148,
+          "p50": 0.0009171199053525925,
+          "p95": 0.0011920463293790815,
+          "max": 0.0017909333109855652
+        },
+        "recap": {
+          "n": 75,
+          "mean": 0.00043716902534166974,
+          "p50": 0.0004169996827840805,
+          "p95": 0.0005413778126239777,
+          "max": 0.0007078051567077637
+        },
+        "total": {
+          "n": 75,
+          "mean": 133.93791889461377,
+          "p50": 133.9222921524197,
+          "p95": 152.9513043584302,
+          "max": 174.4264999870211
+        }
+      }
+    }
+  },
+  "tags": {
+    "alias": {
+      "n": 9,
+      "find.doc_hit@1": 0.8888888888888888
+    },
+    "attribution": {
+      "n": 4,
+      "find.doc_hit@1": 0.25
+    },
+    "base": {
+      "n": 29,
+      "find.doc_hit@1": 0.5862068965517241
+    },
+    "campaign": {
+      "n": 17,
+      "find.doc_hit@1": 0.5294117647058824
+    },
+    "comparison": {
+      "n": 12,
+      "find.doc_hit@1": 0.6666666666666666
+    },
+    "detection": {
+      "n": 6,
+      "find.doc_hit@1": 0.16666666666666666
+    },
+    "enterprise": {
+      "n": 51,
+      "find.doc_hit@1": 0.6078431372549019
+    },
+    "group": {
+      "n": 16,
+      "find.doc_hit@1": 0.625
+    },
+    "hard": {
+      "n": 12,
+      "find.doc_hit@1": 0.3333333333333333
+    },
+    "has-variants": {
+      "n": 20,
+      "find.doc_hit@1": 0.7
+    },
+    "ics": {
+      "n": 13,
+      "find.doc_hit@1": 0.38461538461538464
+    },
+    "iot": {
+      "n": 1,
+      "find.doc_hit@1": 1.0
+    },
+    "keywords": {
+      "n": 20,
+      "find.doc_hit@1": 0.55
+    },
+    "medium": {
+      "n": 9,
+      "find.doc_hit@1": 0.7777777777777778
+    },
+    "mitigation": {
+      "n": 6,
+      "find.doc_hit@1": 0.5
+    },
+    "mobile": {
+      "n": 17,
+      "find.doc_hit@1": 0.5294117647058824
+    },
+    "multi-hop": {
+      "n": 16,
+      "find.doc_hit@1": 0.625
+    },
+    "near-duplicate": {
+      "n": 6,
+      "find.doc_hit@1": 0.16666666666666666
+    },
+    "number": {
+      "n": 2,
+      "find.doc_hit@1": 1.0
+    },
+    "procedure": {
+      "n": 4,
+      "find.doc_hit@1": 0.5
+    },
+    "real-incident": {
+      "n": 2,
+      "find.doc_hit@1": 0.5
+    },
+    "recent": {
+      "n": 1,
+      "find.doc_hit@1": 0.0
+    },
+    "reword": {
+      "n": 6,
+      "find.doc_hit@1": 0.3333333333333333
+    },
+    "same-name-twin": {
+      "n": 1,
+      "find.doc_hit@1": 0.0
+    },
+    "scenario": {
+      "n": 20,
+      "find.doc_hit@1": 0.5
+    },
+    "set-difference": {
+      "n": 3,
+      "find.doc_hit@1": 0.3333333333333333
+    },
+    "software": {
+      "n": 14,
+      "find.doc_hit@1": 0.7857142857142857
+    },
+    "technique": {
+      "n": 19,
+      "find.doc_hit@1": 0.47368421052631576
+    },
+    "temporal": {
+      "n": 2,
+      "find.doc_hit@1": 0.0
+    },
+    "variant": {
+      "n": 46,
+      "find.doc_hit@1": 0.5
+    },
+    "very-hard": {
+      "n": 8,
+      "find.doc_hit@1": 0.75
+    },
+    "yes-no": {
+      "n": 1,
+      "find.doc_hit@1": 0.0
+    }
+  }
+}
