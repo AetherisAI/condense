@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Condense app icon — the SOURCE of desktop/icon/icon-source.png (rsvg-convert renders this
+  1:1, then `npx tauri icon` derives the platform set in desktop/src-tauri/icons/).
+
+  This is a small-size-legible derivative of the brand mark (condense-mark.svg /
+  web/src/Logo.tsx), revised per design-owner review — NOT the faithful mark:
+  - ring centered on the tile, outer diameter ~62% of tile width, stroked in the full-strength
+    brand purple (#aa3bff) instead of the mark's 16%-opacity hairline (which vanished on the
+    near-black tile);
+  - soft glow + bright core kept, scaled to the mark's own proportions (glow r = ring*0.5625,
+    core r = ring*0.2625);
+  - the "emit" dot sits ON the ring path at ~7:30 (a lighter purple accent suggesting orbital
+    motion, separated by a thin tile-color gap) instead of floating below the ring;
+  - the 8 input dots are dropped (they are tile-colored and only fragment the ring).
+
+  Tile: 1024x1024 rounded square, corner radius 225 (~22%), fill #0b0a10 (the app near-black,
+  index.css - -text-h / the mark's dot fill).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="#0b0a10"/>
+  <!-- soft glow (kept from the mark: flat brand purple at low opacity) -->
+  <circle cx="512" cy="512" r="160" fill="#aa3bff" opacity="0.14"/>
+  <!-- ring: path radius 285 + stroke 64 => outer radius 317 (~62% of tile width) -->
+  <circle cx="512" cy="512" r="285" fill="none" stroke="#aa3bff" stroke-width="64"/>
+  <!-- bright core -->
+  <circle cx="512" cy="512" r="76" fill="#aa3bff"/>
+  <!-- emit dot ON the ring at ~7:30 (225deg clockwise from 12): tile-color gap, then a
+       lighter-purple dot slightly larger than the ring stroke -->
+  <circle cx="310" cy="714" r="58" fill="#0b0a10"/>
+  <circle cx="310" cy="714" r="44" fill="#dcb2ff"/>
+</svg>

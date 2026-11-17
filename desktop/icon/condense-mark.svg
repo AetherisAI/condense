@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Condense brand mark (codename "Sift") — standalone, static recreation of the animated
+  React source at web/src/Logo.tsx. Faithful geometry/colors, no animation: this is the
+  locked design handoff's resting frame (8 input dots on the r=8 ring, feeding a purple
+  core, emitting one distilled dot below — "many -> one").
+
+  Source of truth: web/src/Logo.tsx (viewBox 0 0 32 32, same coordinates/colors/radii).
+  This file exists so the desktop app icon pipeline (desktop/icon/) has a plain SVG to
+  rasterize without a React/CSS toolchain.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Condense">
+  <circle cx="16" cy="12.5" r="8" fill="none" stroke="#aa3bff" stroke-width=".6" opacity=".16" />
+  <circle cx="16" cy="12.5" r="4.5" fill="#aa3bff" opacity=".14" />
+  <g fill="#0b0a10">
+    <circle cx="16" cy="4.5" r="1.15" />
+    <circle cx="21.66" cy="6.84" r="1.15" />
+    <circle cx="24" cy="12.5" r="1.15" />
+    <circle cx="21.66" cy="18.16" r="1.15" />
+    <circle cx="16" cy="20.5" r="1.15" />
+    <circle cx="10.34" cy="18.16" r="1.15" />
+    <circle cx="8" cy="12.5" r="1.15" />
+    <circle cx="10.34" cy="6.84" r="1.15" />
+  </g>
+  <circle cx="16" cy="12.5" r="2.1" fill="#aa3bff" />
+  <circle cx="16" cy="26" r="1.8" fill="#8f1fe6" />
+</svg>

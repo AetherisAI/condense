@@ -887,7 +887,6 @@ Overnight run delivered `feat/desktop-standalone` (awaiting Quentin's merge word
 4. Also merged tonight (all on the branch): `Settings.api_bind`/`api_port` (config-parity maintained), `packaging/sift-engine.spec` + entry (flagged in update 30), and a `desktop/` Tauri workspace that doesn't touch your dirs.
 
 Landing-page suggestion when v0.4.0 tags: Download → "Condense for Ubuntu/.deb · macOS/.dmg · Windows/.exe" + a secondary "Server only (API, no UI)" row → the tar.gz/zip assets. Screenshots of the first-run wizard available if you want them for the page.
-
 ---
 
 ## 2026-07-08 — update 32: full-repo audit + public-hardening wave merged (#22–#25), your desktop-standalone caveat re-raised, the 06-28 test-isolation bug closed out, and a CRITICAL history-rewrite heads-up
