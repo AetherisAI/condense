@@ -1,14 +1,14 @@
-# Sift — dev/PoC topology (README §9). One instance on the strong host, reached over LAN.
+# Sift — dev/PoC topology: one instance on a single host, optionally reached over LAN.
 #
 # Inference that is NOT containerized here:
 #   - Ollama serving bge-m3 runs on the HOST (Metal) and is reached by URL (EMBED_BASE_URL).
-# The cross-encoder reranker IS (the `reranker` service, D88): Ollama can't serve rerankers.
+# The cross-encoder reranker IS containerized (the `reranker` service): Ollama can't serve rerankers.
 #   - Turso / libSQL is cloud or an embedded-replica file — no container.
 #
 # Bind model (README "Security & privacy"): every published port defaults to loopback-only
 # (`127.0.0.1`) — `docker compose up` is safe on a machine with a public IP out of the box.
 # Set `API_HOST`/`WEB_HOST`/`RERANKER_HOST`/`TEI_HOST=0.0.0.0` (or a LAN interface IP) to opt in to LAN
-# access for the co-dev-over-LAN topology this file was written for. Whichever you choose, the
+# access from other machines on your LAN. Whichever you choose, the
 # bearer token (`INGEST_TOKEN`/`AUTH_TOKENS`) still gates every write and query, and the hard
 # rule stands either way: NEVER port-forward any of these ports to the public internet.
 # Containers themselves still listen on 0.0.0.0 *inside* their own network namespace (see
@@ -21,7 +21,7 @@ services:
       dockerfile: api.Dockerfile
     environment:
       STORE_BACKEND: ${STORE_BACKEND:-libsql}
-      # Defaults to an embedded-replica file under the named `sift-data` volume below (D39) —
+      # Defaults to an embedded-replica file under the named `sift-data` volume below —
       # `docker compose up` gets a working store with zero manual setup; point at a real
       # `libsql://...` URL (+ TURSO_AUTH_TOKEN) to use cloud Turso instead.
       TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-file:/data/sift.db}
@@ -30,8 +30,8 @@ services:
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       EMBED_DIM: ${EMBED_DIM:-1024}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
-      # Batch size + bounded timeout phases + 429 retry budget — see .env.example (D40 amendment:
-      # full env parity, these were configurable via .env but silently ignored by compose).
+      # Batch size + bounded timeout phases + 429 retry budget — see .env.example. Listed here so
+      # these .env keys actually reach the container (full env parity with .env.example).
       EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-64}
       EMBED_TIMEOUT_S: ${EMBED_TIMEOUT_S:-60.0}
       EMBED_CONNECT_TIMEOUT_S: ${EMBED_CONNECT_TIMEOUT_S:-5.0}
@@ -54,7 +54,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
-      # /v1/answer reference agent (D40) — see .env.example for what each knob does.
+      # /v1/answer reference agent — see .env.example for what each knob does.
       ANSWER_TOOL_MODE: ${ANSWER_TOOL_MODE:-auto}
       ANSWER_MAX_TOOL_CALLS: ${ANSWER_MAX_TOOL_CALLS:-10}
       ANSWER_TIMEOUT_S: ${ANSWER_TIMEOUT_S:-120.0}
@@ -72,58 +72,59 @@ services:
       OCR_CONNECT_TIMEOUT_S: ${OCR_CONNECT_TIMEOUT_S:-5.0}
       CHUNK_SIZE: ${CHUNK_SIZE:-512}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-64}
-      # Chunk tokenizer (factory.py audit fix) — see .env.example.
+      # Chunk tokenizer — see .env.example.
       CHUNK_TOKENIZER: ${CHUNK_TOKENIZER:-auto}
-      # Degenerate-chunk floor (D50) — see .env.example.
+      # Degenerate-chunk floor — see .env.example.
       CHUNK_MIN_CHARS: ${CHUNK_MIN_CHARS:-24}
-      # Parse guards (D34/D39) — see .env.example.
+      # Parse guards — see .env.example.
       PARSE_MAX_XLSX_CELLS: ${PARSE_MAX_XLSX_CELLS:-2000000}
       PARSE_MAX_CHARS: ${PARSE_MAX_CHARS:-2000000}
       PARSE_TIMEOUT_S: ${PARSE_TIMEOUT_S:-60.0}
-      # Toolbox `/v1/tools/*` surface (D38) — see .env.example.
+      # Toolbox `/v1/tools/*` surface — see .env.example.
       TOOLS_SEARCH_K: ${TOOLS_SEARCH_K:-8}
       TOOLS_SEARCH_MAX_K: ${TOOLS_SEARCH_MAX_K:-20}
       TOOLS_SEARCH_RERANK: ${TOOLS_SEARCH_RERANK:-false}
       INGEST_TOKEN: ${INGEST_TOKEN:?set a shared bearer token in .env}
       AUTH_TOKENS: ${AUTH_TOKENS:-}
-      # CORS (D55) — allow-list for the Tauri desktop shell's webview; see .env.example.
+      # CORS — allow-list for the Tauri desktop shell's webview; see .env.example.
       CORS_ORIGINS: ${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,https://tauri.localhost}
-      # API_BIND/API_PORT became real `Settings` fields for the frozen-engine entry point (D62,
-      # packaging/sift_engine_entry.py) — parity requires them in this block too now (see
+      # API_BIND/API_PORT are real `Settings` fields for the frozen-engine entry point
+      # (packaging/sift_engine_entry.py) — parity requires them in this block too (see
       # tests/contract/test_config_env_parity.py). The containerized deployment is unaffected:
       # api.Dockerfile's CMD still hardcodes `--port 8000` inside the container, and the actual
       # host-facing bind for `docker compose up` is controlled below, at the `ports:` publish
-      # layer, via API_HOST (D70) — not by these two.
+      # layer, via API_HOST — not by these two.
       API_BIND: ${API_BIND:-0.0.0.0}
       API_PORT: ${API_PORT:-8000}
     ports:
       # Loopback by default; set API_HOST=0.0.0.0 (or a LAN IP) to expose beyond this host.
       - "${API_HOST:-127.0.0.1}:${API_PORT:-8000}:8000"
-    # No hard dependency on the reranker (D88): it downloads its model on first start, and until
+    # No hard dependency on the reranker: it downloads its model on first start, and until
     # it answers the API keeps the vector ranking instead of failing searches.
     # Linux: let the container reach host-side inference (Ollama/LLM) at
     # http://host.docker.internal:<port> just like on Docker Desktop.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Named volume so the default embedded-replica file (TURSO_DATABASE_URL above) survives a
-    # container recreate instead of starting empty every `docker compose up` (D39).
+    # container recreate instead of starting empty every `docker compose up`.
     volumes:
       - sift-data:/data
-    # Liveness probe (D39, mirrors this repo's own systemd-run containment discipline) — an
-    # unhealthy container is visible to `docker compose ps`/orchestrators instead of silently
-    # accepting connections into a wedged process. curl is installed in api.Dockerfile for this.
+    # Liveness probe — an unhealthy container is visible to `docker compose ps`/orchestrators
+    # instead of silently accepting connections into a wedged process. curl is installed in
+    # api.Dockerfile for this.
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-    # Compose-level ceiling mirroring this session's own systemd-run MemoryMax discipline
-    # (D29/D34) — a runaway ingest/embed spike gets killed by Docker instead of the host OOMing.
+    # Compose-level memory ceiling (the container counterpart of scripts/run-engine.sh's
+    # systemd MemoryMax) — a runaway ingest/embed spike gets killed by Docker instead of the
+    # host OOMing.
     mem_limit: 3g
 
   web:
-    # Dev B: built Vite UI served by nginx, which reverse-proxies the API surface
+    # Built Vite UI served by nginx, which reverse-proxies the API surface
     # (/search, /ingest, /healthz) to the api container (web/nginx.conf).
     build:
       context: ./web
@@ -134,8 +135,8 @@ services:
       - api
 
   reranker:
-    # Default cross-encoder reranker (D88): bge-reranker-v2-m3, GGUF Q8_0, on llama.cpp's
-    # llama-server: the same build and weights the desktop app provisions (D89), multi-arch
+    # Default cross-encoder reranker: bge-reranker-v2-m3, GGUF Q8_0, on llama.cpp's
+    # llama-server: the same build and weights the desktop app provisions, multi-arch
     # (TEI's CPU image is amd64-only and never finishes warming up under emulation on Apple
     # silicon). On first start it downloads the GGUF (~636 MB) from Hugging Face into the
     # `reranker-models` volume, then reuses it. Serves TEI's /rerank request shape. CPU-only in
@@ -176,7 +177,7 @@ services:
     # Alternative cross-encoder backend: the same bge-reranker-v2-m3 via Text Embeddings
     # Inference — the pick for a CUDA host (swap in a GPU image). Opt-in behind the `tei` profile:
     # `docker compose --profile tei up` + RERANK_BASE_URL=http://tei:80. Port 8081 leaves 8080
-    # for Dev B's web/nginx.
+    # for the `web` service's nginx.
     profiles: ["tei"]
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
     command: ["--model-id", "${RERANK_HF_MODEL:-BAAI/bge-reranker-v2-m3}"]
@@ -191,8 +192,8 @@ services:
   #     - "11435:11434"
 
 volumes:
-  # Backs the `api` service's default embedded-replica TURSO_DATABASE_URL (D39) — a fresh
+  # Backs the `api` service's default embedded-replica TURSO_DATABASE_URL — a fresh
   # `docker compose up` gets a working, persistent store with zero manual setup.
   sift-data:
-  # The reranker's downloaded GGUF, so it's fetched once, not on every recreate (D88).
+  # The reranker's downloaded GGUF, so it's fetched once, not on every recreate.
   reranker-models:

@@ -21,7 +21,7 @@ from sift.factory import Container, build_container
 TENANT = "default"
 DIM = 16
 
-# Three small documents; refunds v1/v2 mirrors the version-aware retrieval story (D28/D33).
+# Three small documents; refunds v1/v2 mirrors the version-aware retrieval story.
 CORPUS: tuple[tuple[str, int, str], ...] = (
     ("policies/refunds.md", 1, "refunds take two to three business days after approval"),
     ("policies/shipping.md", 1, "shipping is free for orders above fifty euros"),

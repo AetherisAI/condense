@@ -26,7 +26,7 @@ def test_env_example_documents_every_eval_setting() -> None:
 
 
 def test_anthropic_judge_completer_sends_no_temperature() -> None:
-    # D82: the abstention check reuses the app's `recap_temperature`; Claude rejects it.
+    # The abstention check reuses the app's `recap_temperature`; Claude rejects it.
     app = Settings(ingest_token="t", recap_temperature=0.3)
 
     assert EvalSettings(judge_provider="anthropic").judge_settings(app).recap_temperature is None

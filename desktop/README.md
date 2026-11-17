@@ -3,15 +3,11 @@
 Standalone desktop launcher for Condense: a small Tauri 2 app that (in **local** mode) downloads
 and supervises its own backend — the PyInstaller engine bundle, `llama-server` sidecars serving
 a local `bge-m3` GGUF embedder (port 8802) and the `bge-reranker-v2-m3` GGUF cross-encoder (port
-8803, D89; downloaded in the background on the next launch of an install that predates it), and
+8803; downloaded in the background on the next launch of an install that predates it), and
 the folder-watching ingest agent — or (in **client** mode)
-just talks to any Condense server the same way the browser build does (base URL + token). See
-`docs/Quentin/active/machine.md` for the full design (D60–D64), the AppConfig schema, and the
-Tauri command contract.
-
-This directory is scaffold-only tonight (T4): the window, the app icon, the provisioning
-manifest, and a Linux bundle that boots the existing `web/` UI. Rust-side provisioning +
-process supervision (`config.rs` / `provisioning.rs` / `backend.rs` / `agent.rs`) land in T5.
+just talks to any Condense server the same way the browser build does (base URL + token). The
+AppConfig schema lives in `src-tauri/src/config.rs`; the Tauri command contract is the handler
+list in `src-tauri/src/lib.rs`, mirrored for the UI by `web/src/tauri.ts`.
 
 ## Layout
 ```
@@ -19,7 +15,7 @@ desktop/
   package.json              @tauri-apps/cli devDependency, `npm run tauri ...`
   Dockerfile.builder         builder image (webkit2gtk-dev + rust + node + QA tooling), no host install needed
   icon/                      brand mark SVG + composed 1024x1024 source PNG (`tauri icon` input)
-  provisioning/manifest.json embedder/model/engine download manifest (schema 1, see machine.md)
+  provisioning/manifest.json embedder/model/engine download manifest (schema 1)
   src-tauri/
     Cargo.toml, build.rs, tauri.conf.json
     src/{main,lib}.rs        thin main -> `condense_lib::run()`, builder registers shell+dialog plugins
@@ -29,7 +25,7 @@ desktop/
 ```
 
 ## Prerequisites for a native (non-Docker) build
-This host has neither `libwebkit2gtk-4.1-dev` nor sudo, so local builds happen in Docker (below).
+Without `libwebkit2gtk-4.1-dev` (or sudo to install it), build in Docker (below).
 On a machine that *does* have these installed natively, you only need:
 - Rust stable (`rustup`), Node.js 22+, and the Tauri 2 Linux runtime deps: `libwebkit2gtk-4.1-dev`,
   `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`,
@@ -38,13 +34,13 @@ On a machine that *does* have these installed natively, you only need:
 - Then: `npm install && npm run tauri build` (or `npm run tauri dev` — brings up the Vite dev
   server per `beforeDevCommand`).
 
-## Docker build (the way this host builds)
+## Docker build (no host toolchain needed)
 Build the builder image once (rebuild whenever `Dockerfile.builder` changes, ~4 min):
 ```bash
 docker build -t condense-tauri-builder desktop/ -f desktop/Dockerfile.builder
 ```
 
-Run a build against this worktree, with persistent cargo/npm caches so repeat builds are fast:
+Run a build against the repo checkout, with persistent cargo/npm caches so repeat builds are fast:
 ```bash
 docker run --rm \
   --memory=5g --memory-swap=5g \
@@ -116,7 +112,7 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/work/.home -v "$(pwd)":/work
 (`qa-boot.png` is gitignored — a QA artifact, not a committed asset.)
 
 ## CI
-`.github/workflows/build-desktop.yml` (T3, `feat/desktop-ci`) matrix-builds the `desktop` job on
+`.github/workflows/build-desktop.yml` matrix-builds the `desktop` job on
 ubuntu-22.04/macos-latest/windows-latest via `tauri-action`, publishing `.deb`/`.AppImage`/`.dmg`/
 `.msi`/`.nsis` artifacts (and release assets on `v*` tags). It builds the `sift-agent-cli` sidecar
 per target-triple and drops it into `desktop/src-tauri/binaries/` before invoking Tauri, exactly
@@ -124,7 +120,7 @@ like the manual steps above.
 
 ## Provisioning manifest
 `desktop/provisioning/manifest.json` (schema 1) is the config-driven source of the engine /
-embedder / model download URLs the Rust shell fetches on first run (T5). Tonight's values for the
+embedder / model download URLs the Rust shell fetches on first run. The values for the
 `llama-server` (b9878) + `bge-m3` GGUF embedder are real and sha256-verified for Linux x64; engine
 URLs point at the `v0.4.0` release naming and stay `null` for sha256/size until that release
 exists (see the manifest's own `_notes`). `AppConfig.manifest_url: null` resolves to this file's

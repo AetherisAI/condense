@@ -1,10 +1,10 @@
-"""Regression test: ``PATCH /settings`` is permanently excluded from the toolbox (D38, §2.4).
+"""Regression test: ``PATCH /settings`` is permanently excluded from the toolbox.
 
 An injected prompt reaching a future tool-calling loop must be structurally unable to retune
 retrieval/embedding/store settings — so ``ToolRegistry`` must never register a ``settings``
 tool, and neither of its renders (``to_openai_functions``/``to_json_schema_manifest``) may
 mention any :class:`~sift.api.schemas.SettingsPatch` field name. This is the standing
-regression test named in the v0.2.0 design doc §3 and in D38.
+regression test for that rule.
 """
 
 from __future__ import annotations
@@ -51,9 +51,9 @@ def test_manifest_never_mentions_settings_patch_type_name() -> None:
 
 
 def test_registry_exposes_exactly_the_three_corpus_tools() -> None:
-    """Chat-session management (``GET``/``DELETE /v1/conversations*``, WP v0.2.0 T6, D42) is
+    """Chat-session management (``GET``/``DELETE /v1/conversations*``) is
     plain REST over ``Container.conversations`` directly — it must NEVER become a registry
-    tool, only the three deterministic corpus capabilities belong here (§0's north star)."""
+    tool, only the three deterministic corpus capabilities belong here."""
     settings = Settings(ingest_token="t", embed_dim=DIM)
     registry = build_tool_registry(FakeEmbedder(DIM), FakeVectorStore(), settings)
 

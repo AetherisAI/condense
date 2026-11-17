@@ -1,4 +1,4 @@
-"""Public API request/response schemas (README §8).
+"""Public API request/response schemas.
 
 Pydantic lives here (the api layer), never in ``core``. These DTOs are the frozen HTTP
 contract; the routes layer maps the domain :class:`~sift.core.types.Hit` onto ``Source``.
@@ -49,7 +49,7 @@ class ManifestResponse(BaseModel):
 class DocumentSummary(BaseModel):
     """One ingested source file in the document-admin listing (aggregated from its chunks).
 
-    ``modified_at``/``indexed_at`` (D44, additive) are the source file's true last-modified
+    ``modified_at``/``indexed_at`` (additive) are the source file's true last-modified
     time (``None`` if never provided at ingest) and when the store indexed it — the temporal
     signal a "when was this written/modified" question should be answered from, never a date
     guessed from the filename.
@@ -99,7 +99,7 @@ class DocumentIngestRequest(BaseModel):
     A non-multipart sibling of the existing ``POST /ingest``: the same pipeline runs on the
     encoded text of a single "file". ``text`` must be non-empty (422 on ``""``) and no longer
     than ``Settings.parse_max_chars`` (422 on oversized — the same post-parse guardrail every
-    other ingest path enforces, D39/D40 amendment: an inline JSON document 422s up front instead
+    other ingest path enforces: an inline JSON document 422s up front instead
     of being accepted here and only failing deep inside the parse pipeline). ``filename``
     defaults to ``note-<hash8>.txt`` (derived from the content hash) when omitted.
     """
@@ -126,7 +126,7 @@ class SearchResponse(BaseModel):
 
 
 class ToolSearchFilters(BaseModel):
-    """Search-time narrowing for ``POST /v1/tools/search`` (WP v0.2.0 T2, D38).
+    """Search-time narrowing for ``POST /v1/tools/search``.
 
     Applied by the store BEFORE the ranking limit — narrows the candidate set, never a
     post-hoc filter on an already-capped top-K. ``metadata`` is equality on every given key;
@@ -202,7 +202,7 @@ class ToolSchemaResponse(BaseModel):
     """Response for ``GET /v1/tools/schema`` — the registry's manifest, in both formats.
 
     Generated FROM :class:`~sift.pipelines.tools.ToolRegistry`, never hand-written; ``PATCH
-    /settings`` is never registered and so can never appear here (WP v0.2.0 T2, D38 — see
+    /settings`` is never registered and so can never appear here (see
     ``tests/pipelines/test_tools_schema.py``).
     """
 
@@ -211,13 +211,13 @@ class ToolSchemaResponse(BaseModel):
 
 
 class AnswerRequest(BaseModel):
-    """Request body for ``POST /v1/answer`` — the reference tool-calling agent (WP v0.2.0 T3).
+    """Request body for ``POST /v1/answer`` — the reference tool-calling agent.
 
     ``conversation_id`` threads a follow-up turn's context; omitted on the first turn (the
     server generates and returns one). ``format="json"`` constrains the final answer to
     ``json_schema`` (loose, best-effort validation — see ``pipelines/answer.py``).
     ``stream=true`` switches the response to ``text/event-stream`` SSE of the same event
-    vocabulary the non-stream ``trace`` carries. ``grounding`` (D46) overrides
+    vocabulary the non-stream ``trace`` carries. ``grounding`` overrides
     ``Settings.answer_grounding_default`` for this one request; ``None`` (the default) falls
     back to the configured default — see ``pipelines/answer.py`` for what each mode means.
     """
@@ -231,7 +231,7 @@ class AnswerRequest(BaseModel):
 
 
 class GroundingSegment(BaseModel):
-    """One ordered slice of ``AnswerResponse.answer`` (D48) — the structured, machine-parseable
+    """One ordered slice of ``AnswerResponse.answer`` — the structured, machine-parseable
     sibling of ``from_general_knowledge``: a consumer can tell WHICH parts of the answer are
     grounded in the ingested documents vs the model's own general/training knowledge, not just
     THAT some part is (previously only the inline literal ``"[General knowledge]"`` marker text
@@ -256,14 +256,14 @@ class AnswerResponse(BaseModel):
     ``trace`` is the ordered event log minus ``answer_delta`` (collapsed into ``answer``) —
     the SAME event vocabulary the ``stream=true`` SSE response emits incrementally, so a
     non-streaming caller still gets full tool-use observability, just not incrementally.
-    ``sources`` (WP v0.2.0 T6, D42) is the SAME compact citation list as the ``sources`` SSE
+    ``sources`` is the SAME compact citation list as the ``sources`` SSE
     event / trace entry, surfaced as its own top-level field so a caller never has to mine the
     trace for it; empty when no ``search`` tool call happened. ``grounding_used``/
-    ``from_general_knowledge`` (D46) are the SAME fields the ``grounding`` SSE event carries —
+    ``from_general_knowledge`` are the SAME fields the ``grounding`` SSE event carries —
     which mode actually answered this turn, and whether the answer contains any content the
     pipeline detected as drawn from the model's own knowledge rather than the corpus (always
     ``False`` in ``"strict"`` mode, regardless of what the model returned). ``grounding_segments``
-    (D48) is the structured breakdown backing that boolean — see :class:`GroundingSegment`.
+    is the structured breakdown backing that boolean — see :class:`GroundingSegment`.
     """
 
     answer: str
@@ -278,7 +278,7 @@ class AnswerResponse(BaseModel):
 
 
 class ConversationSummary(BaseModel):
-    """One row of ``GET /v1/conversations`` (WP v0.2.0 T6, D42) — no turns, just enough to
+    """One row of ``GET /v1/conversations`` — no turns, just enough to
     render a History list entry. ``title`` is ``None`` until the auto-title pass fires."""
 
     conversation_id: str
@@ -297,13 +297,13 @@ class ConversationListResponse(BaseModel):
 
 class ConversationTurnOut(BaseModel):
     """One turn as returned by ``GET /v1/conversations/{id}`` — ``sources`` is set only on a
-    citing assistant turn (persisted alongside it, WP v0.2.0 T6, D42).
+    citing assistant turn (persisted alongside it).
 
-    ``grounding_used``/``from_general_knowledge``/``grounding_segments`` (D51) are the SAME
+    ``grounding_used``/``from_general_knowledge``/``grounding_segments`` are the SAME
     per-turn immutable grounding fields the ``grounding`` SSE event carries live — persisted on
     the assistant turn at receive time and rendered as-is on reload, never re-derived from
     whichever grounding mode happens to be selected when the conversation is reopened. ``None``/
-    ``False``/``[]`` on a user turn, or on an assistant turn from before D51.
+    ``False``/``[]`` on a user turn, or on an assistant turn recorded before these fields existed.
     """
 
     role: str

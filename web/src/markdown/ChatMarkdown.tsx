@@ -44,7 +44,7 @@ const components: Components = {
   ),
 }
 
-/** The chat answer body's markdown renderer (D47): GFM tables/lists/bold/links as before, plus
+/** The chat answer body's markdown renderer: GFM tables/lists/bold/links as before, plus
  * real fenced code blocks (syntax-highlighted, own scroll box, copy button) and lazy Mermaid
  * diagrams. No raw-HTML passthrough — `rehype-raw` is deliberately never added, so any HTML the
  * model emits renders as inert escaped text, never live markup.

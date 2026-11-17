@@ -2,10 +2,10 @@
 
 This is Condense's engine (the FastAPI API — ingest, search, `/v1/tools/*`, `/v1/answer`) frozen
 into a self-contained download: no Python, no Docker, no `pip install`. It is the artifact
-Arthur's landing page offers as the **"API only"** download, next to the full desktop app
-installer (DECISIONS.md D63) — for anyone who wants Condense as a backend behind their own
-frontend or another product (e.g. WorkyTalky) rather than the bundled chat UI. It is also
-exactly what the desktop launcher itself downloads and supervises in local mode (D62) — one
+the landing page offers as the **"API only"** download, next to the full desktop app
+installer — for anyone who wants Condense as a backend behind their own
+frontend or another application rather than the bundled chat UI. It is also
+exactly what the desktop launcher itself downloads and supervises in local mode — one
 build, two consumption paths, so the two can never drift apart.
 
 ## Quickstart
@@ -59,7 +59,7 @@ chunk sizes, grounding mode, OCR, ...) is documented in the main repo's `.env.ex
 `Settings` field (`src/sift/config.py`) can be set here the same way; unset ones just use the
 engine's built-in default.
 
-**Auth (CLAUDE.md §3):** the upload/ingest endpoint is not meant to face the public internet.
+**Auth:** the upload/ingest endpoint is not meant to face the public internet.
 `API_BIND=127.0.0.1` (this bundle's default) keeps it local-only regardless of `INGEST_TOKEN`; if
 you do bind it wider, treat `INGEST_TOKEN` as a real secret (`env.example` ships a `CHANGE-ME`
 placeholder on purpose — the bundle refuses to start with no token at all, since `Settings`
@@ -72,5 +72,5 @@ onedir, `packaging/sift-agent-cli.spec` onefile) and assembles this directory's 
 source files under `packaging/server-bundle/` (this README, `run.sh`, `run.bat`, `env.example`)
 plus the two frozen builds, then tars the result. See `packaging/README.md` for the engine
 target's own packaging details (hidden imports, native-lib landmines, etc.) and CI
-(`build-desktop.yml`, D63) for how the triple-named per-OS archives get published as release
+(`build-desktop.yml`) for how the triple-named per-OS archives get published as release
 assets.

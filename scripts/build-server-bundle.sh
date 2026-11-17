@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# Build the standalone "server bundle" (D62/D63): both PyInstaller targets this needs --
+# Build the standalone "server bundle": both PyInstaller targets this needs --
 # `packaging/sift-engine.spec` (the frozen FastAPI engine, onedir) and
-# `packaging/sift-agent-cli.spec` (the headless ingestion CLI, onefile, already exists since
-# v0.3.0) -- then assembles `dist/condense-server-<target-triple>/` from the frozen builds plus
-# the source files under `packaging/server-bundle/` (README/run.sh/run.bat/env.example), and tars
-# the result. This is the SAME artifact the desktop launcher downloads in local mode and Arthur's
-# landing page offers as the "API only" install (D63) -- one build, two consumption paths.
+# `packaging/sift-agent-cli.spec` (the headless ingestion CLI, onefile) -- then assembles
+# `dist/condense-server-<target-triple>/` from the frozen builds plus the source files under
+# `packaging/server-bundle/` (README/run.sh/run.bat/env.example), and tars the result. This is
+# the SAME artifact the desktop launcher downloads in local mode and the landing page offers as
+# the "API only" install -- one build, two consumption paths.
 #
 # This script does its own RAM accounting deliberately lightly (no systemd-run baked in) so it
 # stays portable to CI runners that don't have a systemd --user session bus (GitHub Actions
 # ubuntu-latest does not, by default); when running it BY HAND on a memory-constrained dev box,
-# wrap the whole invocation the same way every other pyinstaller/pytest run in this repo is
-# wrapped (DECISIONS.md D29/D34):
+# wrap the whole invocation in a memory-capped systemd --user unit:
 #   systemd-run --user --pipe --wait -p MemoryMax=3G -p MemorySwapMax=0 -p OOMScoreAdjust=1000 \
 #     --working-directory="$PWD" --collect scripts/build-server-bundle.sh
 #
@@ -33,8 +32,8 @@ if [[ -n "${TARGET_TRIPLE:-}" ]]; then
 elif command -v rustc >/dev/null 2>&1; then
   TRIPLE="$(rustc --print host-tuple)"
 else
-  # TODO: no rustc on this build host to ask -- x86_64-unknown-linux-gnu is this repo's only
-  # verified build target tonight (D64); a macOS/Windows/arm64 build MUST override via
+  # TODO: no rustc on this build host to ask -- fall back to x86_64-unknown-linux-gnu, the
+  # only verified local build target; a macOS/Windows/arm64 build MUST override via
   # TARGET_TRIPLE rather than trust this fallback.
   TRIPLE="x86_64-unknown-linux-gnu"
 fi

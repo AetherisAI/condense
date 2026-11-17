@@ -154,7 +154,7 @@ async def test_retries_give_up_after_max(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 async def test_server_error_500_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A 500 can mean "tools not supported" — auto mode must see it at once (D79)."""
+    """A 500 can mean "tools not supported" — auto mode must see it at once."""
     seen = _patch_transport(monkeypatch, lambda _r: httpx.Response(500, json={"error": "no"}))
     delays = _no_wait(monkeypatch)
     completer = OpenAICompatCompleter(base_url="http://llm/v1", model="gpt")

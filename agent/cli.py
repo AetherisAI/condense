@@ -16,11 +16,11 @@ failure from the caller's shell.
 ``main`` takes an optional ``client`` so tests can inject a :class:`~agent.client.SiftClient`
 built on an ``httpx.MockTransport`` and run the whole flow offline.
 
-**``--json``** (added for the Tauri desktop sidecar, see DECISIONS.md D54): every line normally
+**``--json``** (added for the Tauri desktop sidecar): every line normally
 printed to stdout becomes one NDJSON object instead (``emit``), so a supervising process can
 parse progress/failures without scraping human text. Never changes exit codes; never touches
-stderr. Human output (no flag) is byte-for-byte unchanged. **SIGTERM** (added alongside it,
-D54 — a supervisor's ``kill()`` sends SIGTERM, not the Ctrl-C SIGINT this used to require) stops
+stderr. Human output (no flag) is byte-for-byte unchanged. **SIGTERM** (added alongside it —
+a supervisor's ``kill()`` sends SIGTERM, not the Ctrl-C SIGINT this used to require) stops
 ``--watch`` the same clean way Ctrl-C always has: the watcher is stopped and the process exits 0.
 """
 
@@ -234,7 +234,7 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
     try:
         known = client.manifest(args.tenant)
         todo = [(rel, h, data, mtime) for rel, h, data, mtime in files if h not in known]
-        skipped_known = len(files) - len(todo)  # already on server — never even sent (D45 parity)
+        skipped_known = len(files) - len(todo)  # already on server — never even sent
         if not todo:
             if args.json:
                 emit(
@@ -270,7 +270,7 @@ def main(argv: list[str] | None = None, client: SiftClient | None = None) -> int
                 modified_at={rel: mtime for rel, _h, _data, mtime in todo},
             )
         except PartialIngestError as exc:
-            # One or more batches landed before a later one failed (A4) — report every status the
+            # One or more batches landed before a later one failed — report every status the
             # server actually confirmed rather than nothing, then a clear, greppable summary so a
             # partial ingest can never read as either "silent success" or "total failure".
             results = exc.partial.get("results", [])

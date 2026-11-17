@@ -4,20 +4,20 @@ Implements the :class:`~sift.core.ports.Reranker` port by POSTing ``{query, text
 ``/rerank`` endpoint in Text-Embeddings-Inference's request shape, which returns a list of
 ``{index, score}`` ordered by descending relevance. Two servers speak it: TEI, and llama.cpp's
 ``llama-server --reranking`` (the desktop app's sidecar and the compose ``reranker`` service, both
-serving ``bge-reranker-v2-m3``; D88). Each candidate :class:`~sift.core.types.Hit` is reordered to
+serving ``bge-reranker-v2-m3``). Each candidate :class:`~sift.core.types.Hit` is reordered to
 match and re-scored with the cross-encoder score (via :func:`dataclasses.replace`).
 
 Scores: TEI sigmoids its scores unless asked for ``raw_scores``; llama-server ignores that flag
 and always returns raw logits. The adapter asks for raw logits and applies the sigmoid itself,
-so every backend reports the same 0..1 relevance (D88).
+so every backend reports the same 0..1 relevance.
 
 Availability: a reranker that isn't listening at all (``httpx.ConnectError``: the desktop sidecar
 not downloaded yet, or crashed) leaves the retrieval order in place with a warning instead of
-failing the search; a reranker that answers with an error still raises (D88).
+failing the search; a reranker that answers with an error still raises.
 
 One ``httpx.AsyncClient`` per call (no shared state), mirroring the embeddings/chat adapters, with
 ``RERANK_TIMEOUT_S`` as its budget: httpx's 5 s default is too short for a CPU cross-encoder
-scoring up to ``RETRIEVE_K`` full chunks (D83).
+scoring up to ``RETRIEVE_K`` full chunks.
 """
 
 from __future__ import annotations

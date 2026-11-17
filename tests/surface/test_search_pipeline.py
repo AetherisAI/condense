@@ -167,7 +167,7 @@ async def test_search_surfaces_hit_metadata_on_source() -> None:
         page=1,
         source_hash="h1",
         index=0,
-        metadata={"author": "quentin"},
+        metadata={"author": "alice"},
     )
     await _seed(store, embedder, [chunk])
     pipeline = SearchPipeline(embedder, store, NullReranker(), NullCompleter(), _settings())
@@ -175,7 +175,7 @@ async def test_search_surfaces_hit_metadata_on_source() -> None:
     response = await pipeline.search("tagged passage about cats")
 
     (source,) = response.sources
-    assert source.metadata == {"author": "quentin"}
+    assert source.metadata == {"author": "alice"}
 
 
 async def test_empty_store_returns_no_results() -> None:

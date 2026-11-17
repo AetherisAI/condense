@@ -10,7 +10,7 @@ Upload names are the file's path **relative to the watched root, normalised to P
 same file maps to the same server ``path`` key on macOS, Windows, and Linux — which is what
 makes path-based replacement deterministic across machines. This is true for a **single**
 watched root regardless of which collector built the key (:func:`collect` for one-shot,
-:func:`collect_roots` for ``--watch``/the desktop app) — see DECISIONS.md D45: before D45,
+:func:`collect_roots` for ``--watch``/the desktop app). Previously,
 :func:`collect_roots` keyed by *absolute* path while :func:`collect` keyed root-relative, so a
 watch-mode reconcile against a one-shot-ingested corpus never matched anything and re-uploaded
 (almost) the whole tree every restart. With **multiple** watched roots, each key is prefixed
@@ -38,7 +38,7 @@ from agent.client import PartialIngestError, SiftClient
 DEFAULT_MAX_FILE_SIZE_MB = 100
 
 # Streamed sha256 chunk size — large enough to be fast, small enough that hashing a multi-GB file
-# never holds more than this much of it in memory at once (A3).
+# never holds more than this much of it in memory at once.
 _HASH_CHUNK_BYTES = 1 << 20  # 1 MiB
 
 # Text + office formats markitdown parses directly, plus image formats that carry text. Images
@@ -69,7 +69,7 @@ DEFAULT_INCLUDE = [
 # directory *basename*, not a path — so it prunes a ``.venv`` wherever it appears in the tree, not
 # just at the watched root. Overridable per call (``collect``/``collect_roots``/``sync``), via
 # ``agent.config.AgentConfig.exclude_dirs`` (desktop app), and via ``agent.cli --exclude-dir``
-# (headless one-shot/``--watch``) — see DECISIONS.md D35.
+# (headless one-shot/``--watch``).
 DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
     {
         ".git",
@@ -104,10 +104,10 @@ def _is_excluded_dir(name: str, exclude_dirs: frozenset[str] | set[str]) -> bool
 # Individual *filenames* (not directories — see DEFAULT_EXCLUDE_DIRS above) never matched even
 # when their extension is in ``includes``: an agent's own bookkeeping files sitting inside a
 # watched folder are not the user's content. Glob (``fnmatch``) patterns, matched against the
-# bare basename — a real corpus audit found a stray ``MEMORY.md`` polluting an index (D39).
+# bare basename — a real corpus audit found a stray ``MEMORY.md`` polluting an index.
 # Overridable per call (``collect``/``collect_roots``/``sync``), via
 # ``agent.config.AgentConfig.exclude_files`` (desktop app), and via ``agent.cli --exclude-file``
-# (headless one-shot/``--watch``) — same shape as ``DEFAULT_EXCLUDE_DIRS`` (D35).
+# (headless one-shot/``--watch``) — same shape as ``DEFAULT_EXCLUDE_DIRS``.
 DEFAULT_EXCLUDE_FILES: frozenset[str] = frozenset(
     {
         "MEMORY.md",
@@ -135,7 +135,7 @@ def _name_root(root: str) -> str:
     A file ``root`` (as opposed to a directory) has no directory of its own to be relative to,
     so its key is computed relative to its *parent* — giving just the bare filename, same as
     :func:`collect` has always done. Shared by :func:`collect` and :func:`collect_roots` so both
-    collectors agree on a single root's keys byte-for-byte (D45).
+    collectors agree on a single root's keys byte-for-byte.
     """
     return (os.path.dirname(root) or ".") if os.path.isfile(root) else root
 
@@ -144,7 +144,7 @@ def _root_prefixes(roots: list[str]) -> dict[str, str | None]:
     """Per-root upload-key prefix: ``None`` for a lone root, else a disambiguated basename.
 
     A single watched root needs **no prefix at all** — that's what makes :func:`collect_roots`
-    produce the exact same keys as one-shot :func:`collect` for the single-root case (D45), which
+    produce the exact same keys as one-shot :func:`collect` for the single-root case, which
     is what lets ``--watch`` reconcile cleanly against a corpus ingested one-shot.
 
     With multiple roots, each file's key is prefixed with its root's basename so two roots that
@@ -256,7 +256,7 @@ def _sha256_file(path: str) -> str:
 
     This is what makes cataloguing a folder full of large files (images for OCR, big PDFs, …)
     memory-bounded: a file's full contents used to be read into a Python ``bytes`` object just to
-    compute its digest and sit in the returned list until upload (A3).
+    compute its digest and sit in the returned list until upload.
     """
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -304,11 +304,11 @@ def collect(
 
     ``loader`` is a zero-arg callable that reads the file's bytes on demand; the digest itself is
     computed by streaming the file, so no matched file's full contents are held in memory just to
-    catalogue it (A3). A file larger than ``max_file_size_mb`` is skipped entirely (with a
+    catalogue it. A file larger than ``max_file_size_mb`` is skipped entirely (with a
     ``UserWarning``) — never hashed, never loaded. Any directory named in ``exclude_dirs`` (default
-    :data:`DEFAULT_EXCLUDE_DIRS`) is pruned from the walk before it's ever listed (D35); any
+    :data:`DEFAULT_EXCLUDE_DIRS`) is pruned from the walk before it's ever listed; any
     filename matching ``exclude_files`` (default :data:`DEFAULT_EXCLUDE_FILES`) is skipped the
-    same way, even when its extension is otherwise included (D39). ``hash_cache`` (owned by a
+    same way, even when its extension is otherwise included. ``hash_cache`` (owned by a
     long-lived watch caller) skips re-hashing files whose mtime/size are unchanged (see
     :func:`_sha256_cached`); ``None`` hashes every file fresh.
     """
@@ -334,7 +334,7 @@ def collect_roots(
 ) -> list[tuple[str, str, Callable[[], bytes], str]]:
     """Walk every root; return ``(name, sha256_hex, loader, modified_at)``, de-duped across roots.
 
-    **Keying (D45):** for a single root, the key is root-relative POSIX — byte-for-byte the same
+    **Keying:** for a single root, the key is root-relative POSIX — byte-for-byte the same
     key :func:`collect` would produce for that same root, which is what lets a ``--watch``
     reconcile match a corpus ingested one-shot instead of re-uploading it every restart. For
     *multiple* roots, each key is prefixed with its root's (disambiguated) basename — see
@@ -348,7 +348,7 @@ def collect_roots(
 
     Ordered oldest-modified first (see :func:`_stat_sorted`) so recency survives into the index.
     ``loader``, the size guard, ``exclude_dirs``, and ``exclude_files`` behave exactly as in
-    :func:`collect` (A3/D35/D39).
+    :func:`collect`.
     """
     max_bytes = max_file_size_mb * 1024 * 1024
     prefixes = _root_prefixes(roots)
@@ -403,18 +403,18 @@ class Summary:
     :func:`sync` call as ``managed=`` so ``delete_removed`` only ever removes files this agent
     actually tracked (never other documents that happen to share the tenant).
 
-    ``skipped`` is **truthful** (D45): it counts both a client-side skip (reconcile decided the
+    ``skipped`` is **truthful**: it counts both a client-side skip (reconcile decided the
     path's hash already matches remote, so the file was never even uploaded) AND a server-side
     ``skipped_dedup`` result (the file WAS uploaded — reconcile thought it was new/changed — but
-    the engine's own content-hash dedup recognised the bytes and skipped re-embedding). Before
-    D45, only the client-side count was tallied, so a path-keying mismatch that forced every file
+    the engine's own content-hash dedup recognised the bytes and skipped re-embedding). Previously,
+    only the client-side count was tallied, so a path-keying mismatch that forced every file
     through the upload path (server dedup catching it every time) still reported ``0 skipped`` —
     a misleading zero that hid exactly the bandwidth/round-trip waste it should have surfaced.
 
     ``failures`` names every file counted in ``failed`` that came from a server-reported ingest
     result (path + the server's ``detail`` string) — before this, a watch-mode "2 failed" line
     gave no way to tell *which* two files without digging through server logs (the corrupt-xlsx
-    gap, see DECISIONS.md D52/D54). A failure folded in from the delete-stale-hash pass below
+    gap). A failure folded in from the delete-stale-hash pass below
     (keyed by content hash, not a watched path) is counted in ``failed`` but has no natural path
     to report, so it is *not* added here — a known, narrow gap, not a silent one.
     """
@@ -455,7 +455,7 @@ def reconcile(
     path" — only safe for a single agent that owns the whole tenant; :func:`sync` always passes
     an explicit set so it never deletes documents another source ingested.
 
-    **Ordering invariant** (relied on by :func:`sync` for partial-batch accounting, A4):
+    **Ordering invariant** (relied on by :func:`sync` for partial-batch accounting):
     ``actions.delete_hashes[:len(actions.replace)]`` is exactly the old hash for each path in
     ``actions.replace``, **in the same order** — every ``replace.append(path)`` above is
     immediately followed by the matching ``delete_hashes.append(prior)``. Any further entries
@@ -501,14 +501,13 @@ def sync(
     are eligible for removal — so the agent never deletes documents another source ingested. The
     returned ``Summary.managed`` is this pass's on-disk set, to thread into the next call.
     ``max_file_size_mb``, ``exclude_dirs``, and ``exclude_files`` are the per-file size guard,
-    vendored-dir pruning, and junk-filename pruning passed through to :func:`collect_roots`
-    (A3/D35/D39).
+    vendored-dir pruning, and junk-filename pruning passed through to :func:`collect_roots`.
 
     Falls back to add-only if the store doesn't support listing documents (``supported=False``):
     replacement/removal need ``/documents``, so without it we can still ingest (the engine's
     content-hash dedup keeps identical files from re-embedding).
 
-    **Partial-batch accounting (A4):** if :meth:`SiftClient.ingest` raises
+    **Partial-batch accounting:** if :meth:`SiftClient.ingest` raises
     :class:`~agent.client.PartialIngestError` (a later batch failed after earlier ones landed),
     the earlier batches' indexed/replaced counts are still credited and ``Summary.error`` reports
     the failure — a mid-run failure no longer discards already-confirmed progress. A *replaced*
@@ -556,7 +555,7 @@ def sync(
         try:
             resp = client.ingest(tenant, payload, modified_at=mtimes)
         except PartialIngestError as exc:
-            # One or more batches landed before the failure — credit them (A4) instead of
+            # One or more batches landed before the failure — credit them instead of
             # discarding all progress; the failure is still surfaced via ``error`` below.
             resp = exc.partial
             error = str(exc)
@@ -575,7 +574,7 @@ def sync(
                 failures.append(Failure(path=path, error=r.get("detail")))
             elif status == "skipped_dedup":
                 # The engine's own content-hash dedup caught a file reconcile() thought was
-                # new/changed (D45) — not lost, not an error, just wasted bandwidth; tallied into
+                # new/changed — not lost, not an error, just wasted bandwidth; tallied into
                 # the truthful ``skipped`` total below rather than silently dropped.
                 skipped_dedup += 1
 

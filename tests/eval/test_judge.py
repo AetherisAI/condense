@@ -178,7 +178,7 @@ class _StubFactualCorrectness:
 
 
 async def test_answer_recall_is_the_share_of_reference_claims_the_response_states() -> None:
-    # The live case behind D84: RAGAS's recall mode scored this correct answer 0.
+    # A live case: RAGAS's recall mode scored this correct answer 0.
     stub = _StubFactualCorrectness([True, False])
 
     result = await _ReferenceRecall(stub).ascore(
@@ -234,7 +234,7 @@ async def test_noise_sensitivity_counts_relevant_grounded_claims_the_reference_l
     )
 
     assert result.value == pytest.approx(1 / 3)  # only "misled"
-    # D85: correctness is judged against the question + reference, never the bare reference.
+    # Correctness is judged against the question + reference, never the bare reference.
     assert ref not in stub.premises
 
 
@@ -261,7 +261,7 @@ async def test_ragas_judge_failure_or_nan_is_none(value: float | Exception) -> N
 
 
 def test_ragas_judge_anthropic_provider_sends_no_sampling_params() -> None:
-    # D82: Claude Haiku 5.5 rejects `temperature` and `top_p` (RAGAS sends 0.01 / 0.1), and
+    # Claude Haiku 5.5 rejects `temperature` and `top_p` (RAGAS sends 0.01 / 0.1), and
     # the OpenAI-compatible endpoint rejects the JSON mode RAGAS uses — so Anthropic judges go
     # through the native SDK (structured output via tool use) with both params dropped.
     pytest.importorskip("ragas")
@@ -300,7 +300,7 @@ def test_ragas_judge_requires_a_judge_model() -> None:
         )
 
 
-# --- citation stripping (D76) ------------------------------------------------------------------
+# --- citation stripping ------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(

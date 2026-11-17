@@ -9,16 +9,16 @@ import { FindTurnCard, type FindHit, type FindTurn } from './FindTurn'
 import { loadStoredGrounding, type ComposerGroundingMode } from './grounding'
 import { fetchDocuments } from './documents'
 
-/** Grounding mode (D46) — the trust boundary between the corpus and the model's own general
+/** Grounding mode — the trust boundary between the corpus and the model's own general
  * knowledge. Mirrors ``api.schemas.AnswerRequest.grounding``/``Settings.answer_grounding_
  * default``: "strict" answers only from the documents; "hybrid" may add labeled general
  * knowledge; "open" is an unrestricted general assistant. This is the WIRE/persisted type — every
  * value a turn can carry, past or present. The composer's own toggle only ever offers/produces
- * `ComposerGroundingMode` ("strict"|"open", `Composer.tsx`, D57/Task U2 — hybrid dropped from the
+ * `ComposerGroundingMode` ("strict"|"open", `Composer.tsx` — hybrid dropped from the
  * UI only); a turn already persisted with "hybrid" still renders that exact value here, untouched. */
 type GroundingMode = 'strict' | 'hybrid' | 'open'
 
-/** One ordered slice of an answer (D48) — the structured sibling of `fromGeneralKnowledge`:
+/** One ordered slice of an answer — the structured sibling of `fromGeneralKnowledge`:
  * WHICH parts of the answer are grounded in the ingested documents vs the model's own general
  * knowledge, not just THAT some part is. Mirrors `api.schemas.GroundingSegment`. */
 type GroundingSegment = { text: string; kind: 'grounded' | 'general_knowledge' }
@@ -51,7 +51,7 @@ type TimelineEntry = {
   expanded: boolean
 }
 
-/** The compact shape the backend's ``sources`` event/field carries (WP v0.2.0 T6, D42). */
+/** The compact shape the backend's ``sources`` event/field carries. */
 type RawSource = { path: string; page: number; score: number; snippet: string }
 
 /** A citation surfaced from the ``sources`` event — same shape the Search panel renders, plus
@@ -64,7 +64,7 @@ type AssistantTurn = {
   id: string
   role: 'assistant'
   text: string
-  // The user's question this turn answers (D49) — carried alongside the turn purely so the
+  // The user's question this turn answers — carried alongside the turn purely so the
   // source cards can bold the query terms they actually match, without threading a separate
   // "current query" prop through the render tree the way Search.tsx's single-result view can.
   question: string
@@ -75,23 +75,23 @@ type AssistantTurn = {
   error: string | null
   sources: ChatSource[]
   sourcesOpen: boolean
-  // Grounding (D46) — which mode actually answered this turn, and whether the pipeline
+  // Grounding — which mode actually answered this turn, and whether the pipeline
   // detected any content it flags as drawn from the model's own knowledge rather than the
   // corpus. `null`/`false` until the `grounding` SSE event arrives for a turn still streaming
-  // live; for a turn reloaded from history (D51/BUG-B) this comes from that turn's OWN
+  // live; for a turn reloaded from history this comes from that turn's OWN
   // persisted `grounding_used`/`from_general_knowledge` instead — immutable per turn, never
   // recomputed from whichever mode the pill is currently on.
   groundingUsed: GroundingMode | null
   fromGeneralKnowledge: boolean
-  // Structured grounding segments (D48/BUG-2) — same live-vs-persisted availability as the two
-  // fields above (D51/BUG-B: persisted per turn on reload, not reset to empty). Empty until the
+  // Structured grounding segments — same live-vs-persisted availability as the two
+  // fields above (persisted per turn on reload, not reset to empty). Empty until the
   // `grounding` event arrives (or the turn's own history data is loaded); the answer then
   // renders segment-by-segment instead of as one plain markdown blob, so general-knowledge
   // content can be marked BLATANTLY.
   groundingSegments: GroundingSegment[]
 }
 
-// `IngestTurn` (D57/Task U2) and `FindTurn` (D57/Task U3) are both client-side only — never sent
+// `IngestTurn` and `FindTurn` are both client-side only — never sent
 // to `/v1/answer`, never persisted — but folded into the SAME `Turn` union (discriminated by
 // `role`, like the two turns above) so an in-chat upload batch or a Find result list renders
 // inline, in its correct chronological position, among the answer turns it's a sibling of.
@@ -101,9 +101,9 @@ type Turn = UserTurn | AssistantTurn | IngestTurn | FindTurn
 
 /** One turn as returned by ``GET /v1/conversations/{id}`` (mirrors
  * ``api.schemas.ConversationTurnOut``). ``grounding_used``/``from_general_knowledge``/
- * ``grounding_segments`` (D51) are the SAME per-turn immutable fields the live ``grounding`` SSE
+ * ``grounding_segments`` are the SAME per-turn immutable fields the live ``grounding`` SSE
  * event carries — persisted on the assistant turn at receive time, so a reopened conversation
- * renders THIS turn's own recorded grounding instead of losing it on every reload (BUG-B). */
+ * renders THIS turn's own recorded grounding instead of losing it on every reload. */
 type ConversationTurnOut = {
   role: string
   content: string
@@ -125,12 +125,12 @@ type ConversationDetail = {
   turns: ConversationTurnOut[]
 }
 
-/** Persists which conversation is "current" across a tab switch (P2) — Chat unmounts when the
+/** Persists which conversation is "current" across a tab switch — Chat unmounts when the
  * Search tab is active, so a plain `useState` alone would lose it; refetching the conversation
  * on remount is simpler and cheaper than lifting the whole thread's state up into `App`. */
 const STORAGE_KEY = 'chatConversationId'
 
-/** Once dismissed, the empty-corpus nudge (D57/Task U6) never shows again — a plain boolean
+/** Once dismissed, the empty-corpus nudge never shows again — a plain boolean
  * flag, same "once and done" shape as `libraryOpen`'s own localStorage read in `App.tsx`. */
 const NUDGE_DISMISS_KEY = 'agentNudgeDismissed'
 
@@ -228,12 +228,12 @@ function toChatSources(items: RawSource[]): ChatSource[] {
 
 /** Turn a persisted conversation (``GET /v1/conversations/{id}``) into thread state. Tracks the
  * most recent user message while walking the turns in order so each assistant turn can carry
- * along the question its sources actually answer (D49 — for query-term highlighting).
+ * along the question its sources actually answer (for query-term highlighting).
  *
- * Grounding fields (D51/BUG-B) are read from THIS turn's own persisted data, never from the
+ * Grounding fields are read from THIS turn's own persisted data, never from the
  * live `grounding` pill state — a reopened conversation (tab switch, History reopen, page
  * reload) must render each message's own recorded marking, immutably, regardless of whichever
- * mode happens to be selected right now. Before D51 these were unconditionally reset to
+ * mode happens to be selected right now. These used to be unconditionally reset to
  * null/false/[] here because the backend didn't persist them, which is what actually made the
  * purple general-knowledge marking appear to vanish after any remount. */
 function turnsFromDetail(detail: ConversationDetail): Turn[] {
@@ -327,7 +327,7 @@ function SourcesPanel({
 }: {
   sources: ChatSource[]
   /** The question these sources answer — used only to bold the query terms it matches within
-   * each snippet (D49); never sent anywhere, purely a display concern. */
+   * each snippet; never sent anywhere, purely a display concern. */
   query: string
   open: boolean
   onToggleOpen: () => void
@@ -385,18 +385,18 @@ type ChatProps = {
   token: string
   // The History drawer (`ChatHistory`) is still rendered from here — right next to the
   // conversation state it reads/writes — but its OPEN state is controlled from the workbench
-  // shell so a single topbar button can trigger it (D57/Task U1: no more floating chips).
+  // shell so a single topbar button can trigger it (no floating chips).
   historyOpen: boolean
   onHistoryOpenChange: (open: boolean) => void
   // Lets the topbar show/hide "New chat" the same way the old in-panel header did (only once a
   // conversation has turns) without lifting the whole thread into `App`.
   onTurnsChange?: (hasTurns: boolean) => void
-  // The living-logo status indicator (D57/Task U4) — combines all three request-in-flight flows
+  // The living-logo status indicator — combines all three request-in-flight flows
   // this component knows about (Ask send/stream via its own `busy` state, Find query and ingest
   // upload via the two flags `Composer` reports back up) into the single boolean the workbench
   // shell drives the topbar mark with. Same lift pattern as `onTurnsChange` above.
   onBusyChange?: (busy: boolean) => void
-  // Empty-corpus nudge's "Get the agent" button (D57/Task U6) — opens the System drawer already
+  // Empty-corpus nudge's "Get the agent" button — opens the System drawer already
   // scrolled to its "Folder agent" section; implemented in `App.tsx` since that's where the
   // drawer's own open state and ref both live.
   onOpenAgent?: () => void
@@ -416,7 +416,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
-  // Find/ingest are Composer's own in-flight flags (D57/Task U4) — Composer never talks to
+  // Find/ingest are Composer's own in-flight flags — Composer never talks to
   // `App`/`TopBar` directly, so it reports them here and `isBusy` below folds all three flows
   // (ask/find/ingest) into the one boolean the living-logo indicator needs.
   const [finding, setFinding] = useState(false)
@@ -426,9 +426,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const [grounding, setGrounding] = useState<ComposerGroundingMode>(loadStoredGrounding)
   const threadRef = useRef<HTMLDivElement>(null)
   // Auto-scroll pins to the bottom while an answer streams in, but a user who scrolls up to
-  // reread something is respected — never yanked back down (P1).
+  // reread something is respected — never yanked back down.
   const pinnedToBottomRef = useRef(true)
-  // Empty-corpus nudge (D57/Task U6) — `corpusEmpty` starts `false` (not "show"/"unknown") so the
+  // Empty-corpus nudge — `corpusEmpty` starts `false` (not "show"/"unknown") so the
   // nudge never flashes on while `/documents` is still loading; it flips to `true` only once a
   // response CONFIRMS both that document listing is supported and that it returned zero rows.
   const [corpusEmpty, setCorpusEmpty] = useState(false)
@@ -437,7 +437,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   )
 
   // Checks the corpus size once a token exists, independent of the Library drawer ever opening
-  // (D57/Task U6) — the nudge must be able to show on the very first empty-state landing, before
+  // — the nudge must be able to show on the very first empty-state landing, before
   // the user has touched Library at all. Reuses `fetchDocuments` (`documents.ts`) rather than a
   // second inlined `/documents` fetch, same shared helper `Library.tsx` calls. `cancelled` avoids
   // a stale response (e.g. from a token that's since changed again) landing after a fresher one.
@@ -472,7 +472,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     return (await resp.json()) as ConversationDetail
   }
 
-  // Rehydration staleness guard (D57/Task U8) — a monotonically-increasing "session generation"
+  // Rehydration staleness guard — a monotonically-increasing "session generation"
   // bumped by every action that authoritatively decides which conversation is active: `send()`
   // (starts a turn — possibly a brand-new conversation), `newChat()` (clears to no conversation),
   // and `openConversation()` (switches to an explicit, user-picked one). The mount-time rehydrate
@@ -489,7 +489,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const sessionGenerationRef = useRef(0)
 
   // Rehydrate the last-open conversation on mount — the effect that makes switching Search ->
-  // Chat -> Search -> Chat keep the same conversation in view (P2) even though this component
+  // Chat -> Search -> Chat keep the same conversation in view even though this component
   // fully unmounts while the Search tab is active.
   useEffect(() => {
     if (!token) return
@@ -535,7 +535,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     onTurnsChange?.(turns.length > 0)
   }, [turns.length, onTurnsChange])
 
-  // Drives the living-logo status indicator in the topbar (D57/Task U4) — see `isBusy` above.
+  // Drives the living-logo status indicator in the topbar — see `isBusy` above.
   useEffect(() => {
     onBusyChange?.(isBusy)
   }, [isBusy, onBusyChange])
@@ -578,7 +578,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     }))
   }
 
-  // Ingest turns (D57/Task U2) — client-side only, driven entirely by `Composer.tsx`'s own
+  // Ingest turns — client-side only, driven entirely by `Composer.tsx`'s own
   // upload logic; these two just append/patch them into the SAME turn list the answer turns live
   // in, so a batch renders inline at the moment it started, not floating outside the thread.
   function addIngestTurn(turn: IngestTurn) {
@@ -589,7 +589,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     setTurns((prev) => prev.map((t) => (t.role === 'ingest' && t.id === id ? { ...t, files } : t)))
   }
 
-  // Find turns (D57/Task U3) — client-side only, driven entirely by `Composer.tsx`'s own
+  // Find turns — client-side only, driven entirely by `Composer.tsx`'s own
   // retrieval-only flow (`POST /v1/tools/search`); same append-then-patch shape as the ingest
   // turn pair above.
   function addFindTurn(turn: FindTurn) {
@@ -603,7 +603,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   function newChat() {
-    // Bumps first (D57/Task U8) — invalidates any in-flight rehydration fetch before the state it
+    // Bumps first — invalidates any in-flight rehydration fetch before the state it
     // would otherwise stomp is even cleared, so there's no window where a late resolve could race
     // back in ahead of this clear.
     sessionGenerationRef.current += 1
@@ -614,7 +614,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   async function openConversation(id: string) {
-    // Same staleness guard as the mount-time rehydrate (D57/Task U8): bump before the fetch so a
+    // Same staleness guard as the mount-time rehydrate: bump before the fetch so a
     // pending rehydrate (or an earlier, still in-flight `openConversation` call) can't land after
     // and overwrite the conversation the user just explicitly picked; capture-and-check the
     // generation after awaiting so THIS call also backs off if something newer has since won.
@@ -630,7 +630,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   async function send() {
     const text = input.trim()
     if (!text || busy) return
-    // Bumps before the optimistic append (D57/Task U8) — a rehydrate that's still in flight when
+    // Bumps before the optimistic append — a rehydrate that's still in flight when
     // the user sends must never be allowed to land afterward and wipe the turn this starts.
     sessionGenerationRef.current += 1
     setInput('')
@@ -723,9 +723,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           }))
         }
         // Any OTHER/unrecognized event type is silently ignored rather than thrown on — new
-        // event types must never be able to strand a turn mid-stream (BUG-1/D48).
+        // event types must never be able to strand a turn mid-stream.
       })
-      // BUG-1/D48 safety net: the backend now guarantees a "done" frame always closes the
+      // Safety net: the backend now guarantees a "done" frame always closes the
       // stream, but this is a second, independent line of defense — if the stream closes for
       // ANY reason without "done" ever having been observed (a dropped connection, a proxy that
       // truncates the response, a future regression), force the turn out of "thinking" instead
@@ -795,7 +795,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               return (
                 <div className="chat-turn chat-assistant" key={turn.id}>
                   {turn.streaming && !turn.text && (
-                    // The inline answer-loading mark (D57 follow-up) — stands in at the exact
+                    // The inline answer-loading mark — stands in at the exact
                     // spot the answer text will land for as long as this turn is streaming with
                     // no `answer_delta` yet, whether that's the pre-tool-call "thinking" gap or
                     // while tool calls are actively running (the timeline below keeps rendering

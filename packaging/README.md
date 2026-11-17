@@ -1,16 +1,15 @@
 # Packaging — three PyInstaller targets
 
 Three specs freeze two different packages for three different consumers — they are **not**
-interchangeable, so pick the row that matches what you're building. The first two freeze `agent/`
-(DECISIONS.md D54); the third (D62/D63, added by the `feat/desktop-standalone` WP's engine track —
-CROSS-BOUNDARY touch on this dir, flagged in `docs/channel/from-quentin.md` update 30) freezes
-`sift` itself — the opposite of the first two's "never import the engine/ML stack" rule:
+interchangeable, so pick the row that matches what you're building. The first two freeze `agent/`;
+the third freezes `sift` itself — the opposite of the first two's "never import the engine/ML
+stack" rule:
 
 | Target | Spec | Shape | Consumer |
 |--------|------|-------|----------|
 | Desktop GUI download | `sift-agent.spec` | onedir, `console=False`, own Tkinter window, no stdout | a human double-clicking a download (this file, below) |
 | Headless CLI sidecar | `sift-agent-cli.spec` | **onefile**, **`console=True`** | Tauri desktop shell (`bundle.externalBin`) — see "Second target" below — or any script/systemd unit |
-| **The FastAPI engine** | `sift-engine.spec` | **onedir**, `console=True` | the desktop launcher's local mode (downloads + supervises it, D62) and the standalone "API only" server bundle (D63) — see "Target 3" below |
+| **The FastAPI engine** | `sift-engine.spec` | **onedir**, `console=True` | the desktop launcher's local mode (downloads + supervises it) and the standalone "API only" server bundle — see "Target 3" below |
 
 ## Install (end users)
 `scripts/install.sh` (Linux + macOS, POSIX sh) and `scripts/install-windows.ps1` are the
@@ -80,7 +79,7 @@ PyInstaller can't cross-compile, and there's no local Windows environment — so
 
 ## Target 2: the headless CLI sidecar (`sift-agent-cli.spec`)
 
-`agent/cli.py` (`--json` NDJSON events + SIGTERM handling, D54) frozen as a single-file, console
+`agent/cli.py` (`--json` NDJSON events + SIGTERM handling) frozen as a single-file, console
 binary — the shape a supervising process (Tauri's `plugin-shell` sidecar) needs: a real,
 line-readable stdout, one file, no window. It is **not** a replacement for Target 1 — the Tkinter
 build has no stdout worth reading and isn't supervisable; this build has no window and isn't
@@ -103,7 +102,7 @@ convention.
 ./dist/sift-agent-cli --json --dry-run /some/scratch/dir --server http://x --token y   # valid NDJSON
 ```
 A `--watch` run should also stop cleanly (exit 0) on SIGTERM, not just Ctrl-C — that's the whole
-point of D54's SIGTERM handler; a Tauri `kill()` never sends SIGINT.
+point of its SIGTERM handler; a Tauri `kill()` never sends SIGINT.
 
 ### Tauri target-triple naming (`bundle.externalBin`)
 Tauri expects each platform's sidecar binary named `<name>-<target-triple>[.exe]` — e.g.
@@ -113,7 +112,7 @@ sift-agent-cli-aarch64-apple-darwin
 sift-agent-cli-x86_64-pc-windows-msvc.exe
 ```
 so after building on each OS, rename the raw `dist/sift-agent-cli` output before dropping it into
-`desktop/src-tauri/binaries/` (see the `desktop/` WP's CI, `build-desktop.yml`):
+`desktop/src-tauri/binaries/` (see the desktop app's CI, `build-desktop.yml`):
 `mv dist/sift-agent-cli dist/sift-agent-cli-$(rustc --print host-tuple)` (append `.exe` on
 Windows). `rustc --print host-tuple` is the simplest way to get the exact triple Tauri expects
 for the machine currently building.
@@ -122,14 +121,14 @@ for the machine currently building.
 
 `sift-engine.spec` freezes the FastAPI app (`src/sift/api/main.py`'s `app` object) plus its full
 runtime dependency stack — store (libsql), parsing (markitdown), chunking (tokenizers/tiktoken),
-inference (httpx) — into an **onedir** bundle. Onedir, not onefile (D62): a onefile build
+inference (httpx) — into an **onedir** bundle. Onedir, not onefile: a onefile build
 self-extracts to a temp dir on *every* boot, which is both a slow-start tax and Windows AV-scan
 bait for a process that gets started/stopped routinely — neither the desktop launcher's
 supervised local-mode engine nor a human running the server bundle wants that. This is also why,
 unlike both `sift-agent*.spec` files above, this spec **includes** (does not exclude) `sift` and
 everything it imports — the engine's whole job here is serving the app, so none of it can be
 excluded for weight the way the standalone agent's excludes work. `torch` is not a dependency
-anywhere in this tree (README's "all ML inference external over HTTP" rule, CLAUDE.md §3), so
+anywhere in this tree (all ML inference is external, over HTTP), so
 there is nothing equivalent to exclude for size either.
 
 ### Entry point (`sift_engine_entry.py`)
@@ -145,7 +144,7 @@ runtime (relevant for `--reload`/multi-worker, irrelevant here) — which doesn'
 since a PyInstaller bundle has no real on-disk package tree for that dotted import to resolve
 against, only the bytecode the bootloader already loaded once. `api_bind`/`api_port` are real
 typed `Settings` fields (promoted from compose-only host-mapping vars for exactly this entry
-point — see `src/sift/config.py` and DECISIONS.md D62), so both the container and the frozen
+point — see `src/sift/config.py`), so both the container and the frozen
 engine drive off the one config source.
 
 ### Known landmines (all handled in `sift-engine.spec`, verified empirically by actually booting
@@ -204,7 +203,7 @@ scripts/smoke-engine-bundle.sh   # boots it in a scratch, RAM-capped systemd --u
                                   # not-401 with one); always stops the unit, PASS/FAIL lines.
 ```
 
-### The server bundle (`scripts/build-server-bundle.sh`, D63)
+### The server bundle (`scripts/build-server-bundle.sh`)
 Assembles the standalone "API only" download: the frozen engine (above) + `sift-agent-cli`
 (Target 2, onefile) + quickstart scripts/config from `packaging/server-bundle/` (`README.md`,
 `run.sh`/`run.bat`, `env.example`), tarred as `dist/condense-server-<target-triple>.tar.gz`. This
@@ -215,11 +214,9 @@ quickstart and layout.
 
 ## Install — the Tauri desktop app (end users, not developers)
 
-Superseded by the unified `scripts/install.sh` (Linux/macOS) / `scripts/install-windows.ps1`
-(Windows) documented in "Install (end users)" at the top of this file — a later reconciliation
-pass replaced the original per-OS `scripts/install-ubuntu.sh`/`scripts/install-macos.sh` pair
-with that single cross-platform script; the per-OS scripts no longer exist. See that section for
-current usage, flags, and the artifact-naming convention.
+Use `scripts/install.sh` (Linux/macOS) / `scripts/install-windows.ps1` (Windows), documented in
+"Install (end users)" at the top of this file — see that section for usage, flags, and the
+artifact-naming convention.
 
 ### From a CI build (before any tagged release exists)
 `build-desktop.yml`'s `desktop` job artifacts are only uploaded to the GitHub Release on a `v*`
@@ -232,12 +229,11 @@ gh run download <run-id> --repo AetherisAI/condense --name condense-desktop-x86_
 scripts/install.sh --file <extracted .deb or .AppImage>
 ```
 (Swap the artifact name for `condense-desktop-aarch64-apple-darwin` / `condense-desktop-x86_64-pc-windows-msvc`
-on the other two platforms.) **Caveat found while writing the original per-OS scripts, still
-believed true:** every `desktop` matrix job on this branch has so far failed its own
-`Bundle exists` verification step even though the Tauri bundling itself succeeds — the step's
+on the other two platforms.) **Known issue:** the `desktop` matrix jobs have so far failed their
+own `Bundle exists` verification step even though the Tauri bundling itself succeeds — the step's
 glob (`bundle/deb/**/*.deb`) requires an extra directory level that `tauri-bundler`'s actual
 output (`bundle/deb/Condense_0.4.0_amd64.deb`, no nested subdirectory) doesn't have, so the job
 is marked red and no `condense-desktop-*` artifact is ever uploaded. Confirmed by reading the raw
 job logs: the `.deb`/`.AppImage` are built and listed by `tauri-bundler` right before the broken
-check step fails. Worth a follow-up fix to `.github/workflows/build-desktop.yml`'s `bundle_glob`/
-verification step — out of scope here since this WP is install-only, not a CI fix.
+check step fails. The fix belongs in `.github/workflows/build-desktop.yml`'s `bundle_glob`/
+verification step.

@@ -1,7 +1,7 @@
-# PyInstaller spec — the frozen Sift **engine** (FastAPI API, D62): the "server-only" artifact
-# CI publishes standalone (D63) and the desktop launcher downloads + supervises in local mode.
+# PyInstaller spec — the frozen Sift **engine** (FastAPI API): the "server-only" artifact
+# CI publishes standalone and the desktop launcher downloads + supervises in local mode.
 #
-# Onedir (not onefile, D62): PyInstaller's onefile self-extracts to a temp dir on every single
+# Onedir (not onefile): PyInstaller's onefile self-extracts to a temp dir on every single
 # boot, which is both a slow-start tax and AV-scan bait on Windows — neither is acceptable for a
 # process a user (or the launcher) starts and stops routinely. This is the OPPOSITE shape from
 # `sift-agent-cli.spec` (onefile — that one is a Tauri sidecar that only ever starts once per
@@ -11,9 +11,9 @@
 # runtime deps: the engine's whole job is serving the FastAPI app, so `sift`, the store/parsing/
 # chunking/inference adapter stacks, and their transitive deps (libsql, tokenizers, markitdown,
 # tiktoken, pandas/numpy/onnxruntime pulled in by markitdown's converters, magika, cryptography,
-# httpx, uvicorn) all need to freeze in. torch is NOT a dependency anywhere in this tree (README's
-# "all ML inference external over HTTP" rule — see CLAUDE.md §3) so there is nothing to exclude
-# for weight the way the agent specs do.
+# httpx, uvicorn) all need to freeze in. torch is NOT a dependency anywhere in this tree (all ML
+# inference is external, over HTTP) so there is nothing to exclude for weight the way the agent
+# specs do.
 
 import os
 
@@ -25,7 +25,7 @@ entry = os.path.join(SPECPATH, "sift_engine_entry.py")
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 hidden = [
-    # --- tiktoken plugin discovery (D62 landmine #1) ---------------------------------------
+    # --- tiktoken plugin discovery ---------------------------------------
     # tiktoken's `registry.py` finds encodings by `pkgutil.iter_modules()`-walking the
     # `tiktoken_ext` namespace package's `__path__` at *runtime* looking for real directory
     # entries — a namespace package has no `__init__.py` of its own, so PyInstaller's default
@@ -35,13 +35,13 @@ hidden = [
     # walk finds zero plugins) even though `import tiktoken` alone succeeds.
     "tiktoken_ext",
     "tiktoken_ext.openai_public",
-    # --- markitdown converters (D62 landmine #2) --------------------------------------------
+    # --- markitdown converters --------------------------------------------
     # All built-in converters are directly imported by `markitdown/_markitdown.py`, so normal
     # static analysis already follows them — `collect_submodules` here is belt-and-braces for
     # any converter that gates its own sub-imports behind a try/except (docx/pptx/xlsx do, for
     # their optional-dependency error messages) which can otherwise confuse modulegraph.
     *collect_submodules("markitdown"),
-    # --- huggingface_hub, reached from tokenizers' Rust extension (D62 landmine #6) ---------
+    # --- huggingface_hub, reached from tokenizers' Rust extension ---------
     # Empirically confirmed the hard way: booting the frozen binary raised `ModuleNotFoundError:
     # No module named 'huggingface_hub'` from `tokenizers.Tokenizer.from_pretrained` (used by
     # `sift.adapters.chunking.token._BgeM3Tokenizer` for the system-default bge-m3 tokenizer) —
@@ -55,7 +55,7 @@ hidden = [
     # so its submodules need `collect_submodules` too, not just the top-level hidden import.
     "huggingface_hub",
     *collect_submodules("huggingface_hub"),
-    # --- python-multipart (explicitly called out in the brief) ------------------------------
+    # --- python-multipart ------------------------------------------------
     # starlette's multipart form parser does `import python_multipart as multipart` at module
     # level inside a try/except fallback chain — real static imports, so PyInstaller normally
     # finds them unaided; named here defensively since a missing multipart parser is a silent
@@ -65,7 +65,7 @@ hidden = [
 ]
 
 binaries = [
-    # --- libsql / tokenizers native libraries (D62 landmines #3/#4) -------------------------
+    # --- libsql / tokenizers native libraries ----------------------------
     # Both ship a single self-contained compiled extension module (`libsql.cpython-*.so`,
     # `tokenizers.abi3.so`) that normal import-following already bundles — `collect_dynamic_libs`
     # is belt-and-braces in case either links a *second*, not-directly-imported shared object
@@ -77,7 +77,7 @@ binaries = [
 ]
 
 datas = [
-    # --- magika's bundled ONNX model + config (D62 landmine #5) -----------------------------
+    # --- magika's bundled ONNX model + config -----------------------------
     # markitdown uses `magika` for content-type sniffing; magika ships its classifier as a
     # non-Python data file (`models/standard_v3_3/model.onnx` + config/metadata JSON) that
     # PyInstaller's default source-following analysis does NOT collect (only .py/.pyc + directly

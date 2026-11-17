@@ -1,97 +1,62 @@
-# CLAUDE.md — Condense (Dev B operating manual)
+# CLAUDE.md
 
-> Loaded every session. This is the durable context: what we're building, the rules we obey, how we work, and where the live plan lives. If you're starting fresh, read this top to bottom, then `docs/Quentin/ROADMAP.md` and `docs/Quentin/active/human.md`.
+Guidance for working in this repository. User-facing docs are in `README.md`, `docs/api-schema.md`
+and `docs/evaluation.md`.
 
-## 1. What this is
-**Condense** (codename *Sift*) — a self-contained "LM Studio for documents": point an agent at a folder → every file is parsed, chunked, embedded into a **Turso/libSQL** vector store → a search bar returns the **single best result** (two-stage: retrieve wide → rerank → top-1) with a recap + source path. Full plan: [`docs/SPEC.md`](./docs/SPEC.md). Strict **ports & adapters**, **config-driven**, all ML inference external over HTTP (no torch in the app).
+## What this is
+Condense indexes a folder of documents into a libSQL vector store and serves search (Find), a
+cited question-answering agent (Ask) and a folder-sync agent, through a FastAPI engine
+(`src/sift/`), a React UI (`web/`) and a Tauri desktop app (`desktop/`). The Python package is
+still named `sift` (the project's original codename).
 
-## 2. Our role — Dev B ("the surface")
-Quentin builds **retrieve + rank + recap + serve + UI**. Arthur builds **the engine** (ingest + storage). We code against **ports** and test with **fakes** — never blocked on Arthur. (See `DECISIONS.md` D3.)
+## Architecture rules
+- **Ports and adapters.** Every seam is a protocol in `src/sift/core/ports.py`; implementations
+  live in `src/sift/adapters/`. Pipelines (`src/sift/pipelines/`) depend on ports only.
+- **Dependency direction.** `adapters/` → `core`; `pipelines/` → `core` (never an adapter);
+  `api/` → pipelines + `factory`; `core/` imports nothing from the project.
+  `tests/contract/test_layering.py` enforces this.
+- **One composition root.** `src/sift/factory.py` builds every adapter from `Settings`
+  (`src/sift/config.py`). No `os.environ` reads elsewhere, no hardcoded endpoints or models.
+- **Config parity.** Every `Settings` field must appear in `.env.example` and in the `api`
+  service's `environment:` block in `docker-compose.yml`;
+  `tests/contract/test_config_env_parity.py` fails otherwise.
+- **Inference over HTTP.** Embeddings, reranking and the LLM are external services (Ollama,
+  llama.cpp `llama-server`, TEI, OpenAI-compatible APIs). The engine never imports torch.
+- **One store.** Vectors, metadata and dedup live in one libSQL database using its native vector
+  search; no separate vector DB.
+- **Model pin.** Ingest and search check `EMBED_MODEL` against the model pinned in the store and
+  refuse on mismatch.
+- **Tenant.** `tenant` is threaded through every layer and resolved in one place
+  (`src/sift/api/deps.py`, from the bearer token). It is `"default"` today.
+- **Auth.** Every endpoint except health checks needs a bearer token; compose binds to
+  `127.0.0.1` by default.
 
-**We own:** `adapters/embedding/`, `adapters/rerank/`, `adapters/llm/`, `pipelines/search.py`, `api/`, `config.py`, `factory.py`, `eval/` (the `sift-eval` harness), `web/`, and the `web`+`tei` parts of `docker-compose.yml`.
-**Arthur owns:** `adapters/store/libsql.py`, `adapters/parsing/`, `adapters/chunking/`, `pipelines/ingest.py`, `agent/`.
-**Co-owned (joint sign-off):** `core/` (types + ports), API schemas, `factory.py` integration.
-
-## 3. Architecture rules — non-negotiable (README §0, §13)
-- **P1 Ports & adapters** — every seam is a port (interface); every implementation an adapter behind it. Components talk only through ports.
-- **P2 Config-driven** — no hardcoded values, no scattered `os.environ`. One typed `Settings` is the single source of truth; `factory.py` is the only composition root.
-- **Dependency rule** — imports point *inward*: `adapters/`→`core`; `pipelines/`→`core` ports only (never import an adapter); `api/`→pipelines+factory; `core/`→nothing.
-- **Turso/libSQL native vectors** — vectors + metadata + dedup in one libSQL DB using its built-in vector search. No external vector DB. (`DECISIONS.md` D2.)
-- **Model-pin guard** — every ingest/search checks configured `EMBED_MODEL` against the stored pin and refuses on mismatch.
-- **`tenant` threads through every layer** even while single-tenant (PoC hardcodes `"default"`); resolved in ONE place (`api/deps.py` auth→tenant).
-- **Auth from day 1, localhost-only** for the PoC — the upload endpoint must not face the internet.
-- **One multi-arch image** (amd64+arm64), no device detection.
-
-## 4. How we work — git & commits (README §11)
-- `main` always deployable & protected: PR + 1 review (the other person) + green CI.
-- One short-lived **`feat/<slice>`** branch per work package. Merge daily; no branch lives > a day or two.
-- **Commit at every meaningful change** — new file, passing test, decision logged, doc update. Small, frequent, revertable.
-- **Docs ship with code** — the `human.md`/`machine.md`/`DECISIONS.md` updates go in the *same commit* as the code they describe.
-- PR → review → **squash-merge → delete branch**. Tag `v0.<n>.0` on deployable milestones.
-- Contract changes (`core/` or API schema) get their own small PR both review.
-- Commit trailer: `Co-Authored-By: <the driving model's name> <noreply@anthropic.com>` — implementation agents attribute to whichever Claude model actually drove that session (e.g. `Claude Sonnet 5`), not a fixed name; keep it accurate to the model that did the work.
-- **Fetch `origin` regularly** to stay aligned with Arthur; reconcile any `core/` drift immediately.
-- **Autonomous run:** one `feat/<slice>` branch per WP, pushed to origin regularly; Dev-B-owned files auto-merge to `main` when green (D12); the shared seam (`core/`, `api/schemas.py`, `factory.py`) stays provisional until reconciled with Arthur's push. A ~45-min cron re-syncs with his engine branch (D15).
-
-## 5. How we plan — superpowers, then implement
-1. **Brainstorm** the slice (superpowers:brainstorming) → short design.
-2. **writing-plans** → bite-sized TDD tasks into `docs/Quentin/active/machine.md`.
-3. **Implement** task-by-task, ideally **subagent-driven** (superpowers:subagent-driven-development), TDD, commit per task.
-4. **At every important fork, log a decision** in `docs/Quentin/DECISIONS.md` (Decision · Why · Alternatives · Basis). Take the best guess from the architecture + plan and move on — don't block.
-
-## 6. Documentation rules — ENFORCED
-- **Human doc always beside machine doc.** Never write/update one without the other. A commit that adds a machine plan without its human digest is incomplete.
-- **`human.md` ≤ 500 words, decision-first** — what/why, key decisions, risks, status. For deciding fast without reading the full plan.
-- **`machine.md`** — full design + plan (checkbox tasks) + implementation log.
-- **`docs/Quentin/active/` holds the CURRENT work package only.** On merge: bump version, move `active/*` → `docs/Quentin/archive/v0.<n>.0-<slice>/`, reset `active/` from `docs/Quentin/templates/`.
-- **`docs/Quentin/DECISIONS.md`** — global, append-only, **never archived**.
-- **`docs/Quentin/ROADMAP.md`** — the master plan across all work packages (living, not archived).
-
-## 7. Tech stack (verified Jun 2026)
-Python 3.12 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `httpx` / `openai` client at custom base_url for embed+chat · plain `httpx` for TEI `/rerank` · libSQL client · `markitdown` (Arthur) · React + Vite 7 (TS) · ruff + pyright + pytest · Docker (`python:3.12-slim`, multi-arch via buildx).
-
-## 8. Config / env keys — core keys only; canonical list below
+## Layout
 ```
-STORE_BACKEND=libsql        TURSO_DATABASE_URL=        TURSO_AUTH_TOKEN=
-EMBED_BASE_URL=             EMBED_MODEL=bge-m3         EMBED_API_KEY=
-RERANK_STRATEGY=crossencoder RERANK_BASE_URL=http://reranker:8080 RERANK_MODEL=bge-reranker-v2-m3
-TOOLS_SEARCH_RERANK=false   (rerank Find & Ask too; D88)
-RETRIEVE_K=30               FINAL_K=1
-LLM_BASE_URL=               LLM_MODEL=                LLM_API_KEY=
-CHUNK_SIZE=512              CHUNK_OVERLAP=64          CHUNK_TOKENIZER=auto
-INGEST_TOKEN=               AUTH_TOKENS=
-```
-This is an orientation subset, not the full contract — `Settings` (`config.py`) has grown well past
-these (recap/OCR/answer/toolbox/CORS knobs, etc.). The **canonical, mechanically-enforced list is
-`.env.example`**: a contract test (`tests/contract/test_config_env_parity.py`) fails CI if `Settings`,
-`.env.example`, and `docker-compose.yml`'s `api` environment block ever drift apart. See also
-`docs/api-schema.md` for the full endpoint + config picture.
-
-## 9. Dev B component map (the lego we build)
-```
-core/              types.py · ports.py · errors.py · hashing.py   (co-owned)
-adapters/
-  embedding/       openai_compat.py · fake.py
-  rerank/          null.py · llm_judge.py · crossencoder_http.py(opt)
-  llm/             openai_compat.py · null.py · fake.py
-  conversation/    fake.py · libsql.py                (Arthur's SQL, our seam — D40)
-  ocr/             mistral.py · fallback_parser.py     (D26)
-pipelines/         search.py · answer.py · documents.py · tools.py
-api/               main.py · routes.py · deps.py · v1.py · tokens.py · schemas.py
-                   (auth→tenant chokepoint in deps.py; /v1 toolbox+answer+conversations;
-                    /v1/tokens master-gated mint/list/revoke, D69)
-config.py · factory.py
-eval/              sift-eval harness — separate dev-tool app, own EvalSettings (D73–D75):
-                   golden · matching · metrics · collect · judge/ragas_judge · noise ·
-                   report · runner · validate · bootstrap · cli   (docs/evaluation.md)
-web/               Vite+React chat-first workbench (Ask|Find, System drawer incl. AccessTokens.tsx)
-docker-compose.yml (api · web · reranker · tei profile)
+src/sift/core/        types, ports, errors, hashing
+src/sift/adapters/    embedding, rerank, llm, store (libSQL), parsing, chunking, ocr, conversation
+src/sift/pipelines/   search, ingest, answer (Ask agent), tools (Find/Ask search), documents
+src/sift/api/         FastAPI app, routes, /v1 toolbox and answer, auth, schemas
+src/sift/eval/        sift-eval harness (own EvalSettings; product code never imports it)
+agent/                folder-watching ingestion agent (CLI + GUI)
+web/                  Vite + React UI
+desktop/              Tauri 2 app: provisions and supervises the engine and llama.cpp sidecars
+packaging/            PyInstaller specs for the engine and agent bundles
+evals/                golden-set example; evals/ci/ holds the CI retrieval benchmark
 ```
 
-## 10. Pointers & shared source of truth
-Our planning lives under **`docs/Quentin/`**; Arthur's under **`docs/Arthur/`** — both on `main`, side by side, so we can see the two halves stay aligned (D14).
-- Full product/architecture plan: `docs/SPEC.md` (§-referenced throughout).
-- Master roadmap + work-package order: `docs/Quentin/ROADMAP.md`.
-- Current work package: `docs/Quentin/active/human.md` (fast) → `docs/Quentin/active/machine.md` (full).
-- Decisions & rationale: `docs/Quentin/DECISIONS.md`.
-- Templates for new work packages: `docs/Quentin/templates/`.
+## Commands
+```bash
+pytest -q                                  # Python tests (offline, uses fakes)
+ruff check . && ruff format --check .      # lint + format
+pyright                                    # type check
+cd web && npm run build && npm run lint    # UI type check, build, oxlint
+cd desktop/src-tauri && cargo test         # desktop unit tests
+```
+
+## Conventions
+- Write the test first; keep tests offline (fakes in `src/sift/adapters/*/fake.py`, httpx
+  `MockTransport` for HTTP adapters).
+- Changes to `core/` types or ports, or to API schemas, affect every adapter and client: keep
+  them small and separate.
+- Comments explain why the code is the way it is, not the history of how it got there.

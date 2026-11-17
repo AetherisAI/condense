@@ -7,8 +7,8 @@ untouched and the OCR endpoint is never called; only empty/failed parses are re-
 :class:`~sift.adapters.ocr.mistral.MistralOcr` and returned as a single-page Document.
 
 **A deliberate :class:`~sift.core.errors.SiftError` (e.g. the xlsx used-range guard's
-``ParseError``, DECISIONS.md D34) is a considered refusal to attempt an unsafe parse, not "no
-text found" — it always re-raises unchanged, never triggers OCR** (see DECISIONS.md D36). Only
+``ParseError``) is a considered refusal to attempt an unsafe parse, not "no
+text found" — it always re-raises unchanged, never triggers OCR**. Only
 parser-internal/unexpected exceptions (corrupt/unsupported bytes) fall through to OCR.
 
 Wired in ``factory.py`` around ``MarkitdownParser`` when OCR is configured, so the ingest
@@ -37,7 +37,7 @@ class OcrFallbackParser:
         except SiftError:
             # A deliberate domain-level rejection (e.g. the xlsx used-range guard's ParseError)
             # is not "found no text" — it's a considered refusal to attempt an unsafe parse at
-            # all. Re-raise unchanged: no OCR attempt, no network call (D36).
+            # all. Re-raise unchanged: no OCR attempt, no network call.
             raise
         except Exception:
             # The primary parser choked on the bytes (corrupt/unsupported) — fall through to OCR

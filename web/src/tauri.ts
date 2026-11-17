@@ -1,7 +1,7 @@
 /**
- * Typed wrappers for the Tauri command contract pinned in `docs/Quentin/active/machine.md`
- * (D60/T2 — the seam both the Rust and React tracks build against; names/shapes here must never
- * drift from that doc without updating it too). Every export delegates to the real
+ * Typed wrappers for the Tauri command contract registered in `desktop/src-tauri/src/lib.rs`
+ * (the seam between the Rust shell and the React UI; names/shapes here must never drift from the
+ * Rust commands without updating both). Every export delegates to the real
  * `@tauri-apps/api` bridge when `isRealTauri`, else to a deterministic in-memory mock — the
  * `forceTauri` dev/QA seam (`platform.ts`) lets the whole wizard + desktop settings surface be
  * exercised in an ordinary browser tab against these mocks, with no Tauri build involved.
@@ -24,13 +24,13 @@ export type AppConfig = {
   mode: AppMode
   engine_port: number
   embedder_port: number
-  /** The bge-reranker-v2-m3 llama-server sidecar (D89); Rust defaults it to 8803 for older configs. */
+  /** The bge-reranker-v2-m3 llama-server sidecar; Rust defaults it to 8803 for older configs. */
   reranker_port: number
   ingest_token: string
   llm: { base_url: string; model: string; api_key: string }
   manifest_url: string | null
   agent: { paths: string[]; delete_removed: boolean }
-  /** "Rerank Find & Ask" (D88): passed to the engine as TOOLS_SEARCH_RERANK at start. */
+  /** "Rerank Find & Ask": passed to the engine as TOOLS_SEARCH_RERANK at start. */
   tools_search_rerank: boolean
 }
 
@@ -59,7 +59,7 @@ export type BackendStateString = string
 
 export type BackendComponentStatus = { state: BackendStateString; port: number; pid?: number }
 
-/** The supervised local-mode processes (`backend.rs`). The reranker is optional (D89): an install
+/** The supervised local-mode processes (`backend.rs`). The reranker is optional: an install
  * still downloading its model runs without it, and Find keeps the vector ranking meanwhile. */
 export type BackendComponent = 'engine' | 'embedder' | 'reranker'
 
@@ -83,7 +83,7 @@ export type AgentStatus = { running: boolean; user_stopped: boolean; restarts: n
 
 /** Mirrors the Rust `AgentConfig` (desktop/src-tauri/src/agent.rs) — `server`/`token` are optional
  * there (the Rust side falls back to local-mode values when absent), but every caller in this
- * codebase passes them explicitly per-mode (T6) so the sidecar is never accidentally pointed at
+ * codebase passes them explicitly per-mode so the sidecar is never accidentally pointed at
  * the wrong backend. */
 export type AgentConfig = {
   paths: string[]
@@ -109,7 +109,7 @@ export type AgentEventPayload = { line: string }
 
 export type AgentTerminatedEvent = { code: number | null; will_restart: boolean }
 
-/** One parsed NDJSON line from the agent CLI's `--json` mode (`agent/cli.py`, D54) — the exact
+/** One parsed NDJSON line from the agent CLI's `--json` mode (`agent/cli.py`) — the exact
  * shapes `emit()` prints there. `dry_run` is real but never emitted in `--watch` mode (which is
  * all the desktop supervisor ever runs), so it's omitted from this union on purpose. */
 export type AgentLine =
@@ -248,7 +248,7 @@ export async function appConfigSet(config: AppConfig): Promise<AppConfig> {
 
 export async function provisioningStatus(): Promise<ProvisioningStatus> {
   if (isRealTauri) return invoke<ProvisioningStatus>('provisioning_status')
-  // QA seam (D67): `localStorage.setItem('mockManifestFail', '1')` makes this mock reject the way
+  // QA seam: `localStorage.setItem('mockManifestFail', '1')` makes this mock reject the way
   // the real command does when the manifest is unreachable. The mock never failing is exactly why
   // the first-run spinner hang (an unhandled provisioning_status rejection) survived browser QA —
   // this makes that whole class of bug reproducible in an ordinary Chrome tab.
@@ -386,7 +386,7 @@ async function mockAgentRun(cfg: AgentConfig): Promise<void> {
   })
   await sleep(900)
   if (!mockAgentStatus.running) return
-  // One failure entry on purpose (D60/T2 spec) — exercises the failures-list UI without a real backend.
+  // One failure entry on purpose — exercises the failures-list UI without a real backend.
   mockEmit<AgentEventPayload>('agent-event', {
     line: JSON.stringify({
       event: 'sync',

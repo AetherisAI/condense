@@ -1,10 +1,10 @@
-"""Unit tests for :mod:`sift.pipelines.tools` — the ToolRegistry (WP v0.2.0 T2, D38).
+"""Unit tests for :mod:`sift.pipelines.tools` — the ToolRegistry.
 
 Drives ``build_tool_registry`` through ``FakeEmbedder``/``FakeVectorStore`` (offline, no
 network) — the same fakes every other pipeline test uses. Covers both renders
 (``to_openai_functions``/``to_json_schema_manifest``) and each tool's executor end-to-end:
 ``search`` (incl. ``k`` default/cap, metadata/since/until filters and the opt-in
-``TOOLS_SEARCH_RERANK`` cross-encoder pass, D88), ``list_documents``
+``TOOLS_SEARCH_RERANK`` cross-encoder pass), ``list_documents``
 (pagination + total + metadata filter), and ``get_document_chunks`` (ordering).
 """
 
@@ -125,7 +125,7 @@ def test_get_document_chunks_description_warns_against_whole_corpus_iteration(
     assert "corpus" in description
 
 
-# --- D44: tool descriptions must steer time/recency questions to modified_at, never a filename -
+# --- tool descriptions must steer time/recency questions to modified_at, never a filename -
 
 
 def test_search_description_says_modified_at_and_metadata_over_filename_dates(
@@ -183,7 +183,7 @@ def _docs(n: int) -> list[Chunk]:
 async def test_search_does_not_rerank_by_default(
     embedder: FakeEmbedder, store: FakeVectorStore
 ) -> None:
-    # TOOLS_SEARCH_RERANK defaults off: Find and Ask keep the plain vector ranking (D88).
+    # TOOLS_SEARCH_RERANK defaults off: Find and Ask keep the plain vector ranking.
     settings = Settings(ingest_token="t", embed_dim=DIM, embed_model=MODEL, tools_search_k=2)
     assert settings.tools_search_rerank is False
     reranker = _ReversingReranker()
@@ -326,7 +326,7 @@ async def test_search_executor_metadata_filter(
 async def test_search_executor_hit_includes_modified_at_and_metadata(
     registry: ToolRegistry, store: FakeVectorStore, embedder: FakeEmbedder
 ) -> None:
-    """D44: a `search` hit must carry the source file's `modified_at` plus its `metadata` — the
+    """A `search` hit must carry the source file's `modified_at` plus its `metadata` — the
     temporal + tagging signals a tool consumer needs (never guessed from a filename)."""
     await _seed(
         store,
@@ -409,7 +409,7 @@ async def test_list_documents_executor_paginates_and_reports_total(
 async def test_list_documents_executor_item_includes_modified_at(
     registry: ToolRegistry, store: FakeVectorStore, embedder: FakeEmbedder
 ) -> None:
-    """D44: each `list_documents` item must carry the source file's true `modified_at` — the
+    """Each `list_documents` item must carry the source file's true `modified_at` — the
     temporal signal an "when was this written/modified" question must be answered from."""
     await _seed(
         store,
@@ -458,7 +458,7 @@ async def test_list_documents_executor_metadata_filter(
 
 
 class _SpyStore(FakeVectorStore):
-    """A :class:`FakeVectorStore` that records every ``ensure_ready`` call (BUG #1 regression).
+    """A :class:`FakeVectorStore` that records every ``ensure_ready`` call (regression guard).
 
     ``list_documents``/``get_document_chunks`` must call ``ensure_ready`` themselves — exactly
     like ``search`` already does — so the FIRST call on a fresh process against a not-yet-
@@ -616,7 +616,7 @@ async def test_get_document_chunks_executor_returns_ordered_chunks(
 async def test_get_document_chunks_executor_includes_modified_at_and_metadata(
     registry: ToolRegistry, store: FakeVectorStore, embedder: FakeEmbedder
 ) -> None:
-    """D44: each chunk returned by `get_document_chunks` must carry `modified_at` + `metadata`."""
+    """Each chunk returned by `get_document_chunks` must carry `modified_at` + `metadata`."""
     await _seed(
         store,
         embedder,
@@ -657,7 +657,7 @@ async def test_get_document_chunks_executor_degrades_when_store_unsupported() ->
     assert await registry.call("get_document_chunks", {"source_hash": "h1"}, TENANT) == []
 
 
-# --- D44: temporal fields round-trip through a REAL libSQL store, not just the fake -----------
+# --- temporal fields round-trip through a REAL libSQL store, not just the fake -----------
 #
 # The fake carries `modified_at`/`metadata` straight through in-memory, which can't catch a
 # column dropped from a SELECT or missing from a JOIN. These mirror the fake-store executor

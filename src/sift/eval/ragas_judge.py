@@ -1,10 +1,10 @@
-"""RAGAS 0.4 collections metrics behind the :class:`~sift.eval.judge.Judge` protocol (D74).
+"""RAGAS 0.4 collections metrics behind the :class:`~sift.eval.judge.Judge` protocol.
 
 ``ragas``, ``openai`` and ``anthropic`` are imported lazily, inside :class:`RagasJudge` only —
 they come from the optional ``[eval]`` extra, so the base install, CI, and the frozen engine
 bundle never load them. Any OpenAI-compatible endpoint works for both the judge LLM and the
 embeddings ``AnswerRelevancy``/``AnswerCorrectness`` need: each gets its own ``AsyncOpenAI``
-client at a custom ``base_url``. Claude judges use the native Anthropic SDK instead (D82).
+client at a custom ``base_url``. Claude judges use the native Anthropic SDK instead.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def _metric_kwargs(metric: str, sample: JudgeSample) -> dict[str, Any]:
 
 
 class _ReferenceRecall:
-    """Share of the reference's claims the response states: true recall (D84).
+    """Share of the reference's claims the response states: true recall.
 
     RAGAS's ``FactualCorrectness(mode="recall")`` isn't that. Its numerator counts the
     *response's* claims the reference supports, so a correct answer to a terse reference
@@ -74,7 +74,7 @@ class _ReferenceRecall:
 
 
 class _AnchoredNoiseSensitivity:
-    """RAGAS ``NoiseSensitivity(mode="relevant")``, the reference read as an answer (D85).
+    """RAGAS ``NoiseSensitivity(mode="relevant")``, the reference read as an answer.
 
     The score is the share of the response's statements that a *relevant* passage (one
     supporting a reference statement) backs but the reference doesn't. RAGAS writes those
@@ -143,8 +143,8 @@ class RagasJudge:
             )
         # Local OpenAI-compatible servers (Ollama, llama.cpp) take any key; the client insists
         # on a non-empty one. The SDK's default 2 retries (~1.5 s) can't outlast a hosted judge's
-        # per-minute rate-limit window; 10 retries back off for ~1 min (D79). RAGAS's default
-        # 1024 output tokens truncates the claim lists of long answers (D80). `Any`:
+        # per-minute rate-limit window; 10 retries back off for ~1 min. RAGAS's default
+        # 1024 output tokens truncates the claim lists of long answers. `Any`:
         # `llm_factory` is typed as the abstract base; `model_args` lives on what it returns.
         llm: Any
         if provider == "anthropic":
@@ -164,7 +164,7 @@ class RagasJudge:
                 ),
                 max_tokens=_JUDGE_MAX_TOKENS,
             )
-            # Current Claude models reject `temperature` and `top_p` outright (D82).
+            # Current Claude models reject `temperature` and `top_p` outright.
             llm.model_args.pop("temperature", None)
             llm.model_args.pop("top_p", None)
         else:
@@ -190,14 +190,14 @@ class RagasJudge:
             "answer_correctness": lambda: collections.AnswerCorrectness(
                 llm=llm, embeddings=embeddings
             ),
-            # Share of the reference's claims the answer covers; extra details don't count
-            # (D77). RAGAS's own recall mode doesn't compute that (D84).
+            # Share of the reference's claims the answer covers; extra details don't count.
+            # RAGAS's own recall mode doesn't compute that.
             "answer_recall": lambda: _ReferenceRecall(
                 collections.FactualCorrectness(llm=llm, mode="recall")
             ),
             "context_utilization": lambda: collections.ContextUtilization(llm=llm),
             # Wrong claims a relevant passage led to; correctness is judged against the
-            # question + reference, not the bare reference (D85).
+            # question + reference, not the bare reference.
             "noise_sensitivity": lambda: _AnchoredNoiseSensitivity(
                 collections.NoiseSensitivity(llm=llm, mode="relevant")
             ),

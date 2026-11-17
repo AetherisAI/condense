@@ -1,5 +1,5 @@
 /**
- * The composer's own grounding toggle (D46/D57 Task U2) — a small, component-free module (kept
+ * The composer's own grounding toggle — a small, component-free module (kept
  * separate from `Composer.tsx` so that file only ever exports components, which is what keeps
  * React Fast Refresh working; see `react/only-export-components`).
  *

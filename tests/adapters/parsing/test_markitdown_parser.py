@@ -27,7 +27,7 @@ SAMPLE_BYTES = SAMPLE_TEXT.encode("utf-8")
 
 def _xlsx_with_stray_far_cell() -> bytes:
     """A tiny ``.xlsx`` whose real content is one cell, but whose *declared* used-range
-    balloons to over a million rows — the exact shape found in DECISIONS.md D34's incident
+    balloons to over a million rows — the exact shape found in a real incident
     (a stray far cell, e.g. from a dropdown/paste artifact, that was later blanked but left
     openpyxl's own dimension bookkeeping — and hence the real-world file's — inflated).
     """
@@ -54,8 +54,8 @@ def _small_xlsx() -> bytes:
 
 def _xlsx_with_empty_cells() -> bytes:
     """Empty cells sitting next to real values in the same row — the exact shape that produces
-    literal ``"NaN"`` filler text via pandas' ``DataFrame.to_html()`` default ``na_rep="NaN"``
-    (DECISIONS.md D50): markitdown's ``XlsxConverter`` is ``pandas.read_excel(...).to_html()``,
+    literal ``"NaN"`` filler text via pandas' ``DataFrame.to_html()`` default ``na_rep="NaN"``:
+    markitdown's ``XlsxConverter`` is ``pandas.read_excel(...).to_html()``,
     and an empty cell reads back as a missing value, rendered as the literal string ``"NaN"``.
     """
     wb = openpyxl.Workbook()
@@ -135,7 +135,7 @@ async def test_parses_non_ascii_utf8_text() -> None:
 
 
 async def test_xlsx_with_implausible_used_range_raises_parse_error() -> None:
-    """DECISIONS.md D34: a real 38KB Acme ``.xlsx`` declared a ``B1:AQ1048573`` used-range
+    """A real 38KB ``.xlsx`` declared a ``B1:AQ1048573`` used-range
     (two stray cells at row ~1,048,572) and markitdown's ``pandas.read_excel(engine="openpyxl")``
     materialized that whole range, climbing past 2GiB RSS before it was cgroup-OOM-killed. The
     guard must reject this fast, with a clear reason, instead of ever attempting that parse.
@@ -161,11 +161,11 @@ async def test_xlsx_cell_threshold_is_configurable() -> None:
         await parser.parse(_small_xlsx(), "small.xlsx")
 
 
-# ------------------------------------------------------------- xlsx NaN cell filler (D50)
+# ------------------------------------------------------------- xlsx NaN cell filler
 
 
 async def test_xlsx_empty_cells_do_not_render_as_literal_nan() -> None:
-    """DECISIONS.md D50: markitdown's xlsx converter renders every empty/missing cell as the
+    """Markitdown's xlsx converter renders every empty/missing cell as the
     literal string "NaN" (pandas' `to_html(na_rep="NaN")` default) — a dedup-diluting, unreadable
     artifact, not real content. Real values in the same row/sheet must survive untouched.
     """
@@ -202,7 +202,7 @@ async def test_non_xlsx_literal_nan_text_is_untouched() -> None:
 
 async def test_text_over_max_chars_raises_parse_error() -> None:
     """A generic post-parse ceiling applies to *every* format (defense-in-depth alongside the
-    xlsx-specific pre-parse guard above, D34/D39) — an oversized extracted `Document` must raise
+    xlsx-specific pre-parse guard above) — an oversized extracted `Document` must raise
     an explicit `ParseError`, never be silently truncated.
     """
     parser = MarkitdownParser(max_chars=10)
@@ -223,7 +223,7 @@ async def test_text_under_max_chars_is_unaffected() -> None:
 async def test_max_chars_default_matches_settings_default() -> None:
     """The constructor default (unwired) matches `Settings.parse_max_chars`'s default (2,000,000)
     so behaviour is correct out of the box even before `factory.py` threads the configured value
-    through — see DECISIONS.md D39.
+    through.
     """
     parser = MarkitdownParser()
 
@@ -237,8 +237,8 @@ async def test_slow_parse_raises_explicit_parse_error_after_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A hung/pathologically slow parse must fail that one file explicitly instead of stalling
-    the whole ingest batch — `asyncio.wait_for` around the blocking conversion, per DECISIONS.md
-    D39. A deliberately slow fake `_convert` stands in for a hanging real converter.
+    the whole ingest batch — `asyncio.wait_for` around the blocking conversion.
+    A deliberately slow fake `_convert` stands in for a hanging real converter.
     """
     import time
 

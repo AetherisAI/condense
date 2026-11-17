@@ -1,4 +1,4 @@
-"""``EvalSettings`` — the harness's own typed config (``EVAL_*`` keys, same ``.env``) (D73).
+"""``EvalSettings`` — the harness's own typed config (``EVAL_*`` keys, same ``.env``).
 
 Kept apart from the app's :class:`~sift.config.Settings` on purpose: these are not server
 runtime knobs, so they stay out of the api container's env contract (and out of
@@ -45,7 +45,7 @@ class EvalSettings(BaseSettings):
     judge_base_url: str = ""
     judge_model: str = ""
     judge_api_key: str = ""
-    # "anthropic": RAGAS drives Claude through the native SDK, with no sampling params (D82).
+    # "anthropic": RAGAS drives Claude through the native SDK, with no sampling params.
     judge_provider: Literal["openai", "anthropic"] = "openai"
     judge_concurrency: int = Field(default=4, ge=1)
     embed_base_url: str = ""
@@ -95,7 +95,7 @@ class EvalSettings(BaseSettings):
             "llm_api_key": self.judge_api_key or app.llm_api_key,
         }
         if self.judge_provider == "anthropic":
-            # The completer reuses the recap's temperature, which Claude rejects (D81, D82).
+            # The completer reuses the recap's temperature, which Claude rejects.
             update["recap_temperature"] = None
         return app.model_copy(update=update)
 

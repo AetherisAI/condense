@@ -23,7 +23,7 @@ export type IngestResponse = {
  * as the `modified_at` form field, a JSON `{upload_name: iso8601}` map built from the browser's
  * own `File.lastModified` — the same shape/purpose as the folder agent's own `modified_at` map
  * (`agent/client.py`), so a browser-uploaded copy can win version-collapse against a stale
- * indexed one exactly the way an agent-uploaded copy already does (D44).
+ * indexed one exactly the way an agent-uploaded copy already does.
  *
  * Throws on a non-OK response (or a network failure) — callers decide how to surface that per
  * file; this helper only ever makes the one request for the whole batch, mirroring the server's

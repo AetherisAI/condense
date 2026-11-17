@@ -1,10 +1,8 @@
 # API surface & schemas
 
-The real, current HTTP contract as of `main` (2026-07-08) — read `src/sift/api/{routes,v1,tokens,schemas,deps}.py`
-for ground truth; this is a human-readable map of it. Historically this doc described only the original
-Step-0 4-route surface (`/ingest`, `/ingest/manifest`, `/search`, `/healthz`) — it has since grown to the
-full `/v1` toolbox/answer/conversations/tokens surface below. Frozen shapes still change only via a joint
-contract PR (`core/`/`api/schemas.py` are co-owned).
+The HTTP contract — read `src/sift/api/{routes,v1,tokens,schemas,deps}.py` for ground truth; this is a
+human-readable map of it. A running server also serves its generated OpenAPI schema at
+`GET /openapi.json`.
 
 ## Auth model
 
@@ -34,7 +32,7 @@ Three tiers, all bearer (`Authorization: Bearer <token>`):
 | `GET /documents` | any token | One row per ingested source file. `supported=false` (not an error) if the store can't enumerate documents. | `DocumentsResponse` |
 | `DELETE /documents/{source_hash}` | any token | Drop a file's chunks by content hash. `501` if the store doesn't support document admin. | `DeleteDocumentResponse` |
 | `POST /v1/documents` | any token | JSON ingest of one inline text document — the non-multipart sibling of `POST /ingest`. `text` non-empty, ≤ `PARSE_MAX_CHARS` (`422` otherwise). | `IngestFileResult` |
-| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → `store.search`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`). With `TOOLS_SEARCH_RERANK=true` (off by default, D88) it retrieves `RETRIEVE_K`, reranks and returns the top `k`; this is what the UI's Find mode and Ask's agent call. | `ToolSearchResponse` |
+| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → `store.search`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`). With `TOOLS_SEARCH_RERANK=true` (off by default) it retrieves `RETRIEVE_K`, reranks and returns the top `k`; this is what the UI's Find mode and Ask's agent call. | `ToolSearchResponse` |
 | `GET /v1/tools/documents?limit=&offset=&metadata=` | any token | Paginated document listing, optionally narrowed by a JSON `metadata` query param. | `ToolDocumentsResponse` |
 | `GET /v1/tools/documents/{source_hash}/chunks` | any token | One document's chunks, ordered by `index`. | `ToolChunksResponse` |
 | `GET /v1/tools/schema` | any token | Machine-readable manifest of every registered tool (OpenAI-functions form + JSON-schema form), generated FROM the live `ToolRegistry` — `PATCH /settings` never appears here (never registered as a tool). | `ToolSchemaResponse` |
@@ -50,7 +48,7 @@ Every non-open route resolves a `tenant` at the auth dependency (PoC: any valid 
 passes it into the pipelines. `ModelPinMismatch` (configured `EMBED_MODEL`/`EMBED_DIM` ≠ a tenant's stored
 pin) → HTTP `409` on both ingest routes.
 
-## Token durability (`/v1/tokens`, D69)
+## Token durability (`/v1/tokens`)
 
 Minted/revoked tokens are **runtime-live only** — they mutate `Container.auth_tokens` (the same dict
 `resolve_tenant` scans) in place, so a new token authenticates immediately and a revoked one stops
@@ -59,8 +57,8 @@ own that file — a container, a managed host, a dev's shell export). Every muta
 carries `env_line`: the complete, current `AUTH_TOKENS=name:token,...` string. It's the operator's job to
 paste that into `.env` (or wherever `Settings` reads its environment from) for the change to survive a
 restart; a restart with no persisted line reverts to whatever `AUTH_TOKENS` was configured at boot. A
-libSQL-backed hashed token store (survives restarts with no manual copy-paste step) is the long-term fix,
-deferred as a follow-up.
+libSQL-backed hashed token store (surviving restarts with no manual copy-paste step) is not implemented
+yet.
 
 ## Response schemas (`api/schemas.py`, abbreviated — see the file for full docstrings)
 
@@ -89,7 +87,7 @@ class DocumentSummary(BaseModel):           # one row of GET /documents, /v1/too
     path: str
     source_hash: str
     chunks: int
-    modified_at: str | None = None          # the source file's true last-modified time (D28/D44)
+    modified_at: str | None = None          # the source file's true last-modified time
     indexed_at: str | None = None
 
 class DocumentsResponse(BaseModel):         # GET /documents
@@ -136,7 +134,7 @@ class SettingsPatch(BaseModel):             # PATCH /settings body — extra="fo
     chunk_overlap: int | None = None
     chunk_tokenizer: Literal["auto", "bge-m3", "tiktoken"] | None = None
     rerank_strategy: Literal["none", "llm", "crossencoder"] | None = None
-    tools_search_rerank: bool | None = None     # the System drawer's "Rerank Find & Ask" (D88)
+    tools_search_rerank: bool | None = None     # the System drawer's "Rerank Find & Ask"
 
 class ToolSearchRequest(BaseModel):         # POST /v1/tools/search body
     query: str
@@ -179,10 +177,10 @@ class TokenCreateResponse(BaseModel):       # POST /v1/tokens — the ONLY place
 ```
 
 The route layer maps the domain `Hit`/`Chunk` (`core/types.py`) → `Source`/`ToolSearchHit`/`ToolChunk`,
-and the ingest pipeline's `IngestOutcome` (`pipelines/ingest.py`) → `IngestFileResult`. Since PR #25
-(D72), `pipelines/search.py` itself returns a stdlib-only `core.types.SearchOutcome`/`SearchSource` pair
+and the ingest pipeline's `IngestOutcome` (`pipelines/ingest.py`) → `IngestFileResult`.
+`pipelines/search.py` itself returns a stdlib-only `core.types.SearchOutcome`/`SearchSource` pair
 (no `api.schemas` import from a pipeline — the dependency rule); `api/routes.py` maps that 1:1 onto the
-HTTP `SearchResponse`/`Source` schemas, so the wire shape is unchanged.
+HTTP `SearchResponse`/`Source` schemas.
 
 ## Config (env, read by `config.py::Settings`)
 
@@ -202,7 +200,7 @@ CHUNK_TOKENIZER=auto            CHUNK_SIZE=512            CHUNK_OVERLAP=64
 INGEST_TOKEN=                   AUTH_TOKENS=
 ```
 
-**Every shipped deployment reranks with `crossencoder` = bge-reranker-v2-m3 (D88/D89)**: `.env.example`
+**Every shipped deployment reranks with `crossencoder` = bge-reranker-v2-m3**: `.env.example`
 and compose point `RERANK_BASE_URL` at compose's `reranker` service (llama.cpp, downloads its GGUF on
 first start), and the desktop app provisions and supervises the same model as a llama-server sidecar.
 The bare `Settings` code default stays `"none"`, since an engine started with no config has no
@@ -214,11 +212,11 @@ reranker to reach. The cross-encoder adapter keeps the vector ranking while noth
 resolves to `bge-m3`'s own tokenizer when `EMBED_MODEL` names bge-m3, else falls back to the generic
 `tiktoken` tokenizer — so pointing `EMBED_MODEL` at a different embedding model no longer silently
 mis-tokenizes chunks in the wrong units. An explicit `"tiktoken"`/`"bge-m3"` always overrides the
-auto-resolution (D72).
+auto-resolution.
 
 **Hard rule:** every compose port publishes to `127.0.0.1` by default (`API_HOST`/`WEB_HOST`/`RERANKER_HOST`/`TEI_HOST`
-opt-in to LAN, D70) — the bearer token still gates every write and query either way. **Never**
+opt in to LAN) — the bearer token still gates every write and query either way. **Never**
 port-forward any of these ports to the public internet.
 
-**Chunk-size guard:** `CHUNK_SIZE ≤ min(embedder context, reranker max input ≈1024)` — see
-`docs/dev-split.md` and the Dev A plan.
+**Chunk-size guard:** keep `CHUNK_SIZE ≤ min(embedder context, reranker max input ≈1024 tokens)` so a
+chunk is never truncated at embed or rerank time.

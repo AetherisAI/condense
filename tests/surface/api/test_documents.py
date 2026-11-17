@@ -30,7 +30,7 @@ _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
 
 # Two source files with distinct hashes: cats.md (two chunks) and dogs.md (one) — "h_cats" sorts
 # before "h_dogs", so the listing order is deterministic. cats.md carries a known modified_at
-# (D44) so the API-level round-trip can be asserted; dogs.md has none (modified_at stays null).
+# so the API-level round-trip can be asserted; dogs.md has none (modified_at stays null).
 _MODIFIED_AT = "2026-02-03T04:05:06+00:00"
 _SEED: tuple[tuple[str, str, int, str | None], ...] = (
     ("cats.md", "h_cats", 0, _MODIFIED_AT),
@@ -124,7 +124,7 @@ def test_documents_lists_ingested_files_with_chunk_counts(client: TestClient) ->
 
 
 def test_documents_listing_carries_modified_at(client: TestClient) -> None:
-    """D44: `GET /documents` must surface the file's true `modified_at` (or `null` when never
+    """`GET /documents` must surface the file's true `modified_at` (or `null` when never
     provided at ingest) — the temporal signal a consumer answers "when was this written" from."""
     response = client.get("/documents", headers=_AUTH)
 

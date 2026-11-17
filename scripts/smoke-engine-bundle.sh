@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Smoke-test the frozen `dist/sift-engine/sift-engine` PyInstaller onedir bundle (D62/D63):
+# Smoke-test the frozen `dist/sift-engine/sift-engine` PyInstaller onedir bundle:
 # boots it in a memory-capped, OOM-isolated, detached systemd --user unit against a fully
 # scratch env (a throwaway file: libsql DB, a dead embedder URL so ingest/search adapters never
 # reach a real network dependency), waits for /healthz, and asserts a handful of black-box HTTP
 # behaviors any real deployment (docker, the desktop launcher's local mode) depends on.
 #
-# WHY the same cgroup posture as scripts/run-engine.sh (DECISIONS.md D29/D34): MemoryMax +
+# WHY the same cgroup posture as scripts/run-engine.sh: MemoryMax +
 # MemorySwapMax=0 + OOMScoreAdjust=1000, NO MemoryHigh (a soft-throttle band can livelock every
 # thread in the cgroup without ever crossing MemoryMax — see run-engine.sh's comment) — a runaway
-# frozen-binary boot must die fast and clean, never take this session down with it.
+# frozen-binary boot must die fast and clean, never take the rest of the machine down with it.
 #
 # Usage:
 #   scripts/smoke-engine-bundle.sh                       # build must already exist at dist/sift-engine

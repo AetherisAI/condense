@@ -46,19 +46,19 @@ class AgentConfig:
     include_exts: list[str] = field(default_factory=lambda: list(DEFAULT_INCLUDE))
     delete_removed: bool = False  # remove a doc from the index when its file leaves disk
     tenant: str = "default"
-    # Per-file size guard (A3): a file larger than this is skipped (never hashed/loaded) rather
+    # Per-file size guard: a file larger than this is skipped (never hashed/loaded) rather
     # than risk a huge scan/export ballooning the sync's memory footprint. Standalone agent, so
     # this is its own config knob — sift's Settings do not apply here.
     max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB
-    # Directory names pruned from every walk (D35) — defaults to the built-in vendored/tooling
+    # Directory names pruned from every walk — defaults to the built-in vendored/tooling
     # set (``.venv``, ``node_modules``, …); editable in the settings dialog to add project-
     # specific junk folders without losing the built-ins (the field starts pre-populated with them).
     exclude_dirs: list[str] = field(default_factory=lambda: sorted(DEFAULT_EXCLUDE_DIRS))
-    # Filename glob patterns pruned from every walk (D39) — defaults to the built-in junk-file
+    # Filename glob patterns pruned from every walk — defaults to the built-in junk-file
     # set (``MEMORY.md``, ``CLAUDE.md``, ``*.tmp``, …); editable in the settings dialog to add
     # project-specific junk filenames without losing the built-ins (same shape as exclude_dirs).
     exclude_files: list[str] = field(default_factory=lambda: sorted(DEFAULT_EXCLUDE_FILES))
-    # HTTP timeout (seconds) for every engine request. Raised from the old 300s default (D36) —
+    # HTTP timeout (seconds) for every engine request. Raised from the old 300s default —
     # one real OCR-heavy batch took 5m6s server-side and the client abandoned it while the server
     # kept working. Editable in the settings dialog for a slower/heavier backend.
     timeout: float = 600.0

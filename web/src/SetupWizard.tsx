@@ -27,7 +27,7 @@ import {
 } from './tauri'
 
 /**
- * Full-screen first-run overlay (D60/T2) — shown only while `isTauri && config.mode === null`.
+ * Full-screen first-run overlay — shown only while `isTauri && config.mode === null`.
  * Renders nothing at all once `config.mode` is already set (returning user, or right after this
  * wizard finishes): the caller (`App.tsx`) keeps this mounted whenever `isTauri`, and this
  * component's own render logic is the ONE place that decides whether the overlay is visible, so

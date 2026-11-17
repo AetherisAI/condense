@@ -1,4 +1,4 @@
-"""The search pipeline — embed → retrieve_K → rerank → FINAL_K → recap (README §13).
+"""The search pipeline — embed → retrieve_K → rerank → FINAL_K → recap.
 
 Ports only (the dependency rule: ``pipelines`` never imports an adapter). It embeds the
 query once, retrieves ``RETRIEVE_K`` nearest chunks, reranks them by true relevance, keeps
@@ -7,7 +7,7 @@ citations. An empty base short-circuits to a "No results found." recap with no s
 
 :meth:`SearchPipeline.trace` runs the same path but also keeps what ``search()`` discards — the
 raw retrieval order, the reranked list, the recap's exact context and per-stage timings — for
-the ``sift-eval`` harness (D73). ``search()`` is ``trace().outcome``, so the two never diverge.
+the ``sift-eval`` harness. ``search()`` is ``trace().outcome``, so the two never diverge.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
     """Parse an ISO-8601 ``modified_at`` into a real, comparable ``datetime``.
 
     ``None`` in, ``None`` out; a value that fails ``datetime.fromisoformat`` also yields ``None``
-    (unparseable, treated as absent evidence — never compared as a raw string, A1/A2). A naive
+    (unparseable, treated as absent evidence — never compared as a raw string). A naive
     result (no timezone) is treated as UTC so it stays comparable to an aware one.
     """
     if value is None:
@@ -102,11 +102,11 @@ def _is_newer(candidate: Hit, kept: Hit) -> bool:
 
     Compares real ``datetime``s parsed from ``modified_at`` (ISO-8601 mtime) — the signal that
     actually distinguishes v1 from v2 regardless of when each was ingested — never raw strings
-    (a corrupted value like ``"corrupted-not-a-date"`` must never out-rank a real date, A1). The
+    (a corrupted value like ``"corrupted-not-a-date"`` must never out-rank a real date). The
     rule, in order:
 
     1. If either side has a *valid* ``modified_at``, that evidence decides: a side with a valid
-       mtime beats a side without one (evidence beats no evidence, A2); if both are valid, the
+       mtime beats a side without one (evidence beats no evidence); if both are valid, the
        later timestamp wins; if both are missing/invalid, fall through.
     2. Only when **neither** side has a valid mtime do we fall back to ``indexed_at``
        (store-local: ISO on libSQL, monotonic counter on the fake), so a pre-metadata corpus
@@ -166,7 +166,7 @@ def _recap_user(query: str, passages: list[Hit]) -> str:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SearchTrace:
-    """One search, stage by stage — the eval harness's view (D73), never on the wire.
+    """One search, stage by stage — the eval harness's view, never on the wire.
 
     ``retrieved`` is the raw vector-search order (≤ ``RETRIEVE_K``, before version-collapse and
     rerank); ``ranked`` is after both; ``context`` is exactly what the recap LLM saw (empty when
@@ -274,6 +274,6 @@ class SearchPipeline:
         """Recap ``passages`` for ``query`` with the production recap prompt.
 
         Public so the eval's noise sweep can feed hand-built contexts through the exact prompt
-        ``/search`` uses (D73).
+        ``/search`` uses.
         """
         return await self._completer.complete(_RECAP_SYSTEM, _recap_user(query, list(passages)))

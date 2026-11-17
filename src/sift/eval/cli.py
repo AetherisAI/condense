@@ -85,7 +85,7 @@ def _build_parser() -> argparse.ArgumentParser:
     judge = sub.add_parser("judge", help="re-score an existing run with the current judge")
     judge.add_argument("run_dir", type=Path)
     judge.add_argument(
-        "--metrics", type=_metrics, default=[], help="only these; keep the other scores (D84)"
+        "--metrics", type=_metrics, default=[], help="only these; keep the other scores"
     )
 
     comp = sub.add_parser("compare", help="diff two runs' summaries (B relative to A)")

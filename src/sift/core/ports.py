@@ -1,4 +1,4 @@
-"""The ports — the interfaces every component codes against (README §2).
+"""The ports — the interfaces every component codes against.
 
 stdlib only. All methods are ``async def`` for one uniform rule: the real adapters do
 network/DB I/O behind async FastAPI, and the pure-CPU ones simply never ``await``. Ports
@@ -63,7 +63,7 @@ class VectorStore(Protocol):
 
         ``filters`` is additive (default ``None`` — every existing call site is unaffected):
         when given, a conforming store narrows the candidate set by it BEFORE applying ``k``
-        (WP v0.2.0 T2, D38) — never a post-hoc Python filter on an already-capped top-K.
+        — never a post-hoc Python filter on an already-capped top-K.
         """
         ...
 
@@ -76,7 +76,7 @@ class VectorStore(Protocol):
 class ToolCompleter(Protocol):
     """Chat model that can drive :class:`~sift.pipelines.tools.ToolRegistry` tool calls.
 
-    The additive port behind the ``/v1/answer`` reference agent (WP v0.2.0 T3, D40) — uniform
+    The additive port behind the ``/v1/answer`` reference agent — uniform
     across native OpenAI-style function-calling and a prompted strict-JSON fallback (a model
     with no native tool-calling support), so :mod:`sift.pipelines.answer` codes against ONE
     method regardless of which path a given implementation takes for a given call.

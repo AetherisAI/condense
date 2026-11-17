@@ -6,12 +6,12 @@ Implements the :class:`~sift.core.ports.Embedder` port by POSTing to an OpenAI-s
 length-checked against the configured ``dim`` — a server answering with the wrong width fails
 loudly here rather than corrupting a base. One ``httpx.AsyncClient`` per call (no shared state).
 
-**429 retry (DECISIONS.md D34):** TEI (D30) hands out one concurrency permit *per input string*
+**429 retry:** TEI hands out one concurrency permit *per input string*
 on ``/v1/embeddings`` — a batch with more inputs than free permits gets an instant 429 "Model is
 overloaded", which is retryable (not a real failure). A batch request is retried with a bounded,
 fixed backoff (0.5s/2s/8s) on HTTP 429 only; any other status still fails immediately.
 
-**Prefix (D86):** an optional ``prefix`` is prepended to every input text. Instruction-tuned
+**Prefix:** an optional ``prefix`` is prepended to every input text. Instruction-tuned
 embedders (Qwen3-Embedding, Nomic) want one prompt on queries and another (or none) on
 documents; ``factory.py`` builds one instance per role, so the ``Embedder`` port stays
 ``embed(texts)``. Empty by default (bge-m3 embeds both sides as-is).

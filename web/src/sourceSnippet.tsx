@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 /**
- * Shared source-card presentation helpers (D49) — used by both Search.tsx's citation card and
+ * Shared source-card presentation helpers — used by both Search.tsx's citation card and
  * Chat.tsx's `SourcesPanel` so a citation reads identically no matter which backend path produced
  * it.
  *

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Launch the Condense engine from this bundle — the quickstart path for the "API only" download
-# (D63): no Python, no Docker, no pip install. Usage: ./run.sh (from anywhere; it cd's here
+# Launch the Condense engine from this bundle — the quickstart path for the "API only" download:
+# no Python, no Docker, no pip install. Usage: ./run.sh (from anywhere; it cd's here
 # first so relative paths in .env, like the default file: DB, resolve against the bundle root
 # and not whatever directory you happened to invoke this from).
 set -euo pipefail

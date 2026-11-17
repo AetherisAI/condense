@@ -1,4 +1,4 @@
-"""Layering guardrail (CLAUDE.md §3, the dependency rule): every module under ``pipelines/``
+"""Layering guardrail (the dependency rule): every module under ``pipelines/``
 and ``adapters/`` respects the architecture's import direction — imports point INWARD only.
 ``pipelines/`` codes against ports (``sift.core``) and never reaches for ``sift.api`` (the HTTP
 surface), ``sift.adapters`` (a concrete implementation), or ``sift.factory`` (the composition
@@ -101,7 +101,7 @@ EVAL_DIR = SRC_DIR / "eval"
 
 
 def test_product_never_imports_the_eval_harness() -> None:
-    # D73: `sift.eval` is a separate dev-tool app that consumes the product — never the reverse,
+    # `sift.eval` is a separate dev-tool app that consumes the product — never the reverse,
     # so the server, the frozen engine bundle and CI never load it (or its optional RAGAS deps).
     offenders: dict[str, set[str]] = {}
     for path in sorted(SRC_DIR.rglob("*.py")):

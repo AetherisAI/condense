@@ -3,194 +3,144 @@
 
   # Condense
 
-  **Chat with your documents. Locally.**
+  Chat with your documents, locally.
 
   [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-  ![status: pre-release v0.4.0](https://img.shields.io/badge/status-pre--release_v0.4.0-orange)
 
   <br />
 
-  <img src="docs/assets/general-knowledge-chat.png" width="720" alt="Condense chat answering a question with the &quot;+ General knowledge&quot; mode on — the whole answer is marked purple with a &quot;from general knowledge — not your documents&quot; banner" />
+  <img src="docs/assets/general-knowledge-chat.png" width="720" alt="Condense answering a question with general knowledge enabled; the answer is marked purple as not coming from the documents" />
 </div>
 
-Point Condense at a folder, ask it a question, get an answer grounded in your own corpus —
-with the exact sources it used. It runs as a small desktop app or a self-hosted server; either
-way, your documents stay on your infrastructure and you bring your own LLM key.
+Condense indexes a folder of documents and lets you search them or ask questions about them.
+Answers cite the passages they came from. It runs as a desktop app or as a self-hosted server,
+your documents stay on your machine, and you bring your own LLM key.
 
-## What is Condense
-
-- **Grounded chat with cited sources**, in two honest modes: `Corpus only` never invents — it
-  abstains if your documents don't cover the question — and `+ General knowledge` may
-  supplement with the model's own knowledge, always visibly **marked purple** so you never
-  mistake one for the other.
-- **Find mode** — pure vector retrieval, a ranked results list, zero LLM calls. For when you
-  just want the passage, not a summary.
-- **A folder agent** that watches directories and keeps the index continuously up to date as
-  files are added, edited, or removed.
-- **Local-first and private** — the desktop app downloads and supervises its own backend
-  (a local `bge-m3` embedder, a `bge-reranker-v2-m3` cross-encoder and a file-based libSQL
-  database); nothing about your documents leaves your machine in local mode.
-- **Bring your own LLM key** — Mistral, OpenAI, or Anthropic, auto-detected from the key's
-  shape. No key at all still gets you Find mode.
-- **MIT licensed** and source-available, top to bottom.
+- **Ask**: an agent searches your documents and answers with citations. In *Corpus only* mode
+  it says so when the documents don't cover the question. In *+ General knowledge* mode it may
+  add what the model knows, and that part is shown in purple.
+- **Find**: plain retrieval, a ranked list of passages, no LLM involved.
+- **Folder agent**: watches directories and keeps the index in sync as files change.
+- **Local models**: bge-m3 embeddings and the bge-reranker-v2-m3 cross-encoder run on your
+  machine through llama.cpp. Only the LLM is remote (Mistral, OpenAI or Anthropic; the provider
+  is detected from the key). Find works without any key.
 
 ## Screenshots
 
 <table>
   <tr>
     <td width="50%">
-      <img src="docs/assets/wizard-choice.png" alt="First-run wizard: choose Run locally or Connect to a server" />
-      <br /><sub>First-run wizard — run locally or connect to a server</sub>
+      <img src="docs/assets/wizard-choice.png" alt="First-run wizard: run locally or connect to a server" />
+      <br /><sub>First run: local or connect to a server</sub>
     </td>
     <td width="50%">
-      <img src="docs/assets/wizard-setup.png" alt="Run-locally step showing real component sizes and an optional LLM key field" />
-      <br /><sub>Run locally — real component sizes, LLM key optional</sub>
+      <img src="docs/assets/wizard-setup.png" alt="Run-locally step listing the components to download and an optional LLM key field" />
+      <br /><sub>Components to download, LLM key optional</sub>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="docs/assets/wizard-downloads.png" alt="Live provisioning progress for the engine, embedder, and model" />
-      <br /><sub>Live provisioning — engine, embedder, and model downloading</sub>
+      <img src="docs/assets/wizard-downloads.png" alt="Download progress for the engine, embedder and model" />
+      <br /><sub>Downloading the local backend</sub>
     </td>
     <td width="50%">
-      <img src="docs/assets/workbench.png" alt="The empty-state chat workbench" />
-      <br /><sub>The workbench — drop files anywhere, or point the folder agent at a directory</sub>
+      <img src="docs/assets/workbench.png" alt="The empty chat workbench" />
+      <br /><sub>Drop files anywhere, or point the folder agent at a directory</sub>
     </td>
   </tr>
   <tr>
     <td colspan="2" align="center">
-      <img src="docs/assets/find-zephyrium.png" width="60%" alt="Find mode showing ranked retrieval results for a query, with no LLM involved" />
-      <br /><sub>Find mode — ranked retrieval, zero LLM calls</sub>
+      <img src="docs/assets/find-zephyrium.png" width="60%" alt="Find mode showing ranked passages for a query" />
+      <br /><sub>Find mode</sub>
     </td>
   </tr>
 </table>
 
 ## Install
 
-### ⚡ Quick install (recommended)
+### Desktop app
+
+Desktop installers (AppImage and .deb for Linux, .dmg for macOS, .exe/.msi for Windows) are
+attached to each release starting with v0.4.0. Once it's out:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh
 ```
-Detects Linux/macOS, grabs the right asset from the [latest release](https://github.com/AetherisAI/condense/releases/latest),
-and installs the desktop app (no sudo, nothing outside `$HOME`). Or download a specific
-platform button from [Releases](https://github.com/AetherisAI/condense/releases/latest) /
-the landing page — see per-OS detail below. Add `--server-only` to install just the headless
-`condense-server` bundle (engine + agent CLI, no UI, no Docker) instead; `--uninstall` reverses
-either. Windows: `scripts/install-windows.ps1` (same flags, PowerShell). **macOS and Windows
-installers are untested on real hardware until v0.4.0 QA** — Linux is the verified path today;
-see the per-OS notes below.
 
-### 🐧 Linux (Ubuntu 22.04+)
-- **AppImage:** download `Condense_<version>_amd64.AppImage` from
-  [Releases](https://github.com/AetherisAI/condense/releases), then:
-  ```bash
-  chmod +x Condense_<version>_amd64.AppImage
-  ./Condense_<version>_amd64.AppImage
-  # if that does nothing (missing FUSE/libfuse2):
-  ./Condense_<version>_amd64.AppImage --appimage-extract-and-run
-  ```
-- **.deb:** `sudo dpkg -i condense_<version>_amd64.deb`, or install it via your file manager.
-- **First public release is `v0.4.0`.** If the [Releases page](https://github.com/AetherisAI/condense/releases)
-  is still empty, it's landing within days — until then, build from source below.
+This installs into `$HOME` without sudo. `--server-only` installs the headless server bundle
+instead, `--uninstall` removes either. On Windows use `scripts/install-windows.ps1`. The macOS
+and Windows builds are unsigned, so expect a Gatekeeper or SmartScreen warning the first time.
+Until v0.4.0 is tagged, build from source (below).
 
-### 🍎 macOS / 🪟 Windows
-CI builds a `.dmg` (macOS) and an NSIS `.exe`/`.msi` (Windows) installer for every tagged
-release, but **neither has been verified on real hardware yet** — treat them as pre-release.
-Expect an unsigned-app warning (Gatekeeper on macOS, SmartScreen on Windows): right-click →
-**Open** (macOS), or **More info → Run anyway** (Windows). Hit a problem? Please
-[open an issue](https://github.com/AetherisAI/condense/issues) — this is exactly the feedback
-that gets these two platforms to "hardware-verified." Same Releases-page caveat as Linux above.
+On first launch, choose **Run locally** and the app downloads its backend: the engine, a
+llama.cpp build, the bge-m3 embedding model and the bge-reranker-v2-m3 reranker, about 1.4 GB.
+Or choose **Connect to a server** and give it the URL and token of an existing Condense server.
 
-### 🖥️ First run
-- **Run locally (recommended)** — the wizard downloads its own backend (the Condense engine +
-  a `llama-server` build + the `bge-m3` embedding model + the `bge-reranker-v2-m3` reranker,
-  ~1.4GB total) and starts it for you. An install from before the reranker existed fetches it in
-  the background on its next launch. Reranking Find & Ask results is a switch in System → Search
-  (off by default: it adds ~2 s per search on Apple silicon, more on CPU-only machines).
-  Paste an LLM key (optional, provider auto-detected from its shape) or skip it — Find mode
-  works with no LLM configured at all.
-- **Connect to a server** — point the app at any existing Condense API: a base URL and a bearer
-  token (e.g. your own `docker compose` deployment below). No download at all.
+Reranking is on for the `/search` API. For Find and Ask it is a switch in System → Search, off by
+default because it adds about 2 s per search on Apple silicon and more on machines without a
+GPU. On a MITRE ATT&CK benchmark it raised top-1 accuracy from 0.69 to 0.82
+(see [docs/evaluation.md](docs/evaluation.md)).
 
-### 🐳 Server / API-only (works today)
+### Server (Docker)
+
 ```bash
 git clone https://github.com/AetherisAI/condense.git && cd condense
-cp .env.example .env
-# edit .env: set INGEST_TOKEN and an LLM_* key (Mistral / OpenAI / any OpenAI-compatible endpoint)
+cp .env.example .env   # set INGEST_TOKEN and your LLM_* settings
 docker compose up
 ```
-- API at `http://localhost:8000` (interactive docs at `/docs`); web UI at `http://localhost:8080`
-  — both loopback-only by default (ports configurable via `API_PORT`/`WEB_PORT` in `.env`; see
-  "Security & privacy" below to expose either on your LAN).
-- Cross-encoder reranker by default: the `reranker` service (llama.cpp + `bge-reranker-v2-m3`)
-  downloads its model on first start (~636MB). It reranks `/search`; set `TOOLS_SEARCH_RERANK=true`
-  (or flip System → Search) to rerank Find & Ask too. On a CUDA host, `docker compose --profile tei up`
-  + `RERANK_BASE_URL=http://tei:80` serves the same model faster via TEI.
-- Coming with `v0.4.0`: a standalone `condense-server-<os>` bundle (engine + agent CLI + a run
-  script, no Docker required) — the same artifact the desktop app downloads for itself, for
-  embedding Condense as a backend elsewhere.
 
-### 🔧 Build from source
-Prereqs: **Rust ≥1.77**, **Node 22+**, **Python 3.12**. Linux desktop builds also need
-`libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
-libsoup-3.0-dev libjavascriptcoregtk-4.1-dev build-essential pkg-config libssl-dev fakeroot
-dpkg-dev` — or use the project's Docker builder image and skip the host install entirely.
+The API listens on `http://localhost:8000` (OpenAPI docs at `/docs`) and the web UI on
+`http://localhost:8080`. Embeddings come from an OpenAI-compatible endpoint you configure,
+for example Ollama serving `bge-m3` on the host. The `reranker` service downloads its model
+(about 636 MB) on first start. `TOOLS_SEARCH_RERANK=true` turns on reranking for Find and Ask.
+On a machine with a CUDA GPU, `docker compose --profile tei up` with
+`RERANK_BASE_URL=http://tei:80` serves the same reranker through Text Embeddings Inference.
+
+### From source
+
+You need Python 3.12, Node 22+ and, for the desktop app, Rust 1.77+ (plus the Tauri system
+libraries on Linux, or the Docker builder in `desktop/`).
+
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[store,parsing,chunking,inference,agent,dev]"
 cd web && npm install && npm run build && cd ..
-cd desktop && npm install && npx tauri build   # desktop/ ships with the v0.4.0 merge
+cd desktop && npm install && npx tauri build
 ```
-Full architecture + design rationale: [`docs/SPEC.md`](docs/SPEC.md). Every fork-in-the-road
-decision, with alternatives considered: [`docs/Quentin/DECISIONS.md`](docs/Quentin/DECISIONS.md).
 
-## Architecture at a glance
-Strict **ports & adapters**: a FastAPI engine composes pipelines against interfaces only
-(embedder, reranker, completer, vector store), wired once at a single composition root
-(`factory.py`) from typed config — no adapter is ever hardcoded into a pipeline. Vectors,
-metadata, and dedup all live in one **libSQL** database using its native vector search — no
-separate vector DB. Every ML call — embeddings, reranking, the LLM — happens **external, over
-HTTP**; the app itself never imports torch. The desktop shell (Tauri 2) wraps this same engine
-plus local `llama-server` sidecars (the `bge-m3` embedder and the `bge-reranker-v2-m3` reranker)
-as child processes it supervises; the server
-deployment runs the identical engine in Docker. Full spec: [`docs/SPEC.md`](docs/SPEC.md).
+## How it works
 
-## Security & privacy
-- **`docker compose up` publishes every port to `127.0.0.1` (loopback) only, by default** — the
-  API, the web UI, and the reranker are unreachable from other machines out of
-  the box, even on a host with a public IP.
-- To reach a `docker compose` deployment from another machine on your LAN (e.g. the co-dev
-  topology this repo was built for), opt in explicitly: set `API_HOST=0.0.0.0` and/or
-  `WEB_HOST=0.0.0.0` in `.env` (a specific interface IP works too) and keep the bearer token
-  set — it still gates every write and query. **Never set these to `0.0.0.0` — or otherwise
-  port-forward any of these ports — on a host reachable from the public internet.** Condense has
-  no additional network hardening (rate limiting, TLS termination, etc.); it is designed to be
-  reached over a trusted private LAN, not the open internet.
-- A single bearer token (`INGEST_TOKEN`, plus optional per-consumer `AUTH_TOKENS`) gates every
-  write and query, on or off the LAN.
-- In local desktop mode, your documents, their embeddings, and the libSQL database never leave
-  your machine.
-- The only outbound calls Condense ever makes are to the embedding/rerank/LLM providers **you
-  configure** — nothing else, nowhere else.
+The engine is a FastAPI app built from ports and adapters: pipelines talk to interfaces for the
+embedder, reranker, LLM and vector store, and `src/sift/factory.py` wires the concrete adapters
+from one typed `Settings` object. Vectors, metadata and deduplication live in a single libSQL
+database using its built-in vector search. All model inference happens over HTTP, so the engine
+itself doesn't depend on torch. The desktop app (Tauri 2) runs the same engine and supervises
+the two llama.cpp servers; the Docker setup runs the same engine in a container.
 
-## Project
 ```
-condense/
-  src/sift/    the engine — core (ports/types), adapters, pipelines, api
-  web/         React + Vite workbench UI
-  agent/       the folder-watching ingestion agent (CLI + Tkinter download)
-  desktop/     Tauri 2 desktop shell (ships with v0.4.0)
-  packaging/   PyInstaller build scripts for the agent + engine bundles
-  docs/        SPEC.md (original architecture spec), Quentin/ + Arthur/ (planning, decisions)
+src/sift/   engine: core types and ports, adapters, pipelines, API, eval harness
+web/        React + Vite UI
+agent/      folder-watching ingestion agent
+desktop/    Tauri desktop app
+packaging/  PyInstaller specs for the engine and agent bundles
+evals/      evaluation golden-set example and the CI retrieval benchmark
+docs/       API reference, evaluation guide, images
 ```
-- Full architecture spec: [`docs/SPEC.md`](docs/SPEC.md)
-- Roadmap: [`docs/Quentin/ROADMAP.md`](docs/Quentin/ROADMAP.md)
-- Decision log: [`docs/Quentin/DECISIONS.md`](docs/Quentin/DECISIONS.md)
-- Contributing: issues and PRs are welcome — there's no formal process yet.
-- License: [MIT](LICENSE).
 
----
+Reference: [API and configuration](docs/api-schema.md) ·
+[Evaluation with `sift-eval`](docs/evaluation.md) · every setting is listed in
+[`.env.example`](.env.example).
 
-<div align="center">
-  Built by <strong>Quentin Latimier</strong> & <strong>Arthur Rapp</strong> — AetherisAI
-</div>
+## Security
+
+- `docker compose up` publishes every port on `127.0.0.1` only. To reach it from your LAN, set
+  `API_HOST` / `WEB_HOST` to `0.0.0.0` or an interface address. Don't expose it to the public
+  internet: there is no TLS or rate limiting.
+- A bearer token (`INGEST_TOKEN`, plus optional named tokens in `AUTH_TOKENS`) is required for
+  every read and write.
+- In local desktop mode your documents, their embeddings and the database stay on your machine.
+  Condense only talks to the embedding, reranking and LLM endpoints you configure.
+
+## License
+
+[MIT](LICENSE). Issues and pull requests are welcome.

@@ -1,12 +1,12 @@
 // Local-mode backend supervision: embedder (llama-server serving bge-m3), then reranker (a
-// second llama-server serving bge-reranker-v2-m3, D89), then engine (the frozen FastAPI app), in
+// second llama-server serving bge-reranker-v2-m3), then engine (the frozen FastAPI app), in
 // that order — the engine's adapters dial both over HTTP, so they should already be listening.
 // Client mode has no backend to manage here at all.
 //
-// The reranker is optional: if its model isn't downloaded yet (an install from before D89 —
+// The reranker is optional: if its model isn't downloaded yet (an install that predates the reranker —
 // `provisioning::install_missing_in_background` fetches it) or its sidecar fails to start, the
 // backend still comes up, and the engine's cross-encoder adapter keeps the retrieval order while
-// nothing listens on the reranker port (D88). `ensure_reranker_running` starts the sidecar later
+// nothing listens on the reranker port. `ensure_reranker_running` starts the sidecar later
 // once the model lands, with no engine restart: the engine is always pointed at its port.
 //
 // `binary_path` (where the executable lives inside an unpacked component directory) comes
@@ -168,7 +168,7 @@ pub async fn backend_start(
     // first attempt never leaves the user stranded in a half-configured "local" mode with no
     // running backend and no wizard left to retry from. Requiring `mode == Some("local")`
     // already here made every real first run fail this guard before it could ever succeed
-    // (only caught by real end-to-end QA — T2's mocked-Tauri Chrome QA never calls into this
+    // (only caught by real end-to-end testing — a mocked-Tauri browser run never calls into this
     // command at all, so it couldn't have caught it).
     if cfg.mode.as_deref() == Some("client") {
         return Err("backend is managed only in local mode".to_string());
@@ -395,7 +395,7 @@ async fn start_reranker_if_installed(
 
 /// Start the reranker sidecar now if the backend runs in local mode without it — called once its
 /// model finishes downloading (background install or the System menu's Download button). The
-/// engine needs no restart: it already points at the reranker port (D89).
+/// engine needs no restart: it already points at the reranker port.
 pub async fn ensure_reranker_running(app: &AppHandle) {
     let cfg = app
         .state::<ConfigState>()
@@ -464,13 +464,13 @@ fn open_log(path: &Path) -> Result<std::fs::File, String> {
         .map_err(|e| format!("opening log {}: {e}", path.display()))
 }
 
-/// Belt-and-braces child reaping (T7/D65): on Linux, ask the kernel to SIGTERM this child the
+/// Belt-and-braces child reaping: on Linux, ask the kernel to SIGTERM this child the
 /// moment its parent dies — for ANY reason, including SIGKILL or a hard crash, which no
 /// in-process cleanup (`RunEvent` handler, signal handler) can ever cover. Both llama-server
 /// and the engine (uvicorn) exit cleanly on SIGTERM.
 ///
 /// Platform notes: `PR_SET_PDEATHSIG` is Linux-only — macOS (kqueue `NOTE_EXIT`) and Windows
-/// (Job objects) equivalents are a later WP; on those platforms the cleanup handlers remain the
+/// (Job objects) equivalents are not implemented yet; on those platforms the cleanup handlers remain the
 /// only mechanism, so this compiles to a no-op there. Kernel gotcha, deliberate: the signal
 /// fires on the death of the spawning *thread*, not the process — safe here because tokio's
 /// core worker threads (where `Command::spawn` runs) live until runtime shutdown, i.e. app
@@ -631,7 +631,7 @@ async fn start_reranker(
     .await
 }
 
-/// Flags verified empirically against llama.cpp b9878 (D61): OpenAI-compat /v1/embeddings,
+/// Flags verified empirically against llama.cpp b9878: OpenAI-compat /v1/embeddings,
 /// dim 1024, L2-normalized, ~342MB RSS.
 fn embedder_args(model_path: &str, port: u16) -> Vec<String> {
     [
@@ -652,9 +652,9 @@ fn embedder_args(model_path: &str, port: u16) -> Vec<String> {
     .collect()
 }
 
-/// bge-reranker-v2-m3 as a cross-encoder (D89), verified against llama.cpp b9878: `--reranking`
+/// bge-reranker-v2-m3 as a cross-encoder, verified against llama.cpp b9878: `--reranking`
 /// serves `/rerank` in TEI's `{query, texts}` → `[{index, score}]` shape (raw logits; the
-/// engine's adapter applies the sigmoid, D88). A query+passage pair must fit one micro-batch, so
+/// engine's adapter applies the sigmoid). A query+passage pair must fit one micro-batch, so
 /// `-ub`/`-b` equal the per-slot context (4096 / 4 slots = 1024 tokens): a 512-token chunk plus a
 /// query of up to ~500 tokens; a longer pair gets a 500. Measured on an M5 with Metal: ~2.7 s
 /// for 30 ~500-token passages, 864 MB footprint (`-c 8192 -ub 2048`: 3.0 s, 2.2 GB).
@@ -681,11 +681,11 @@ fn reranker_args(model_path: &str, port: u16) -> Vec<String> {
     .collect()
 }
 
-/// The engine's rerank settings (D88/D89). With a reranker in the manifest the engine always
+/// The engine's rerank settings. With a reranker in the manifest the engine always
 /// uses the cross-encoder at the sidecar's port, even while its model is still downloading: the
 /// adapter keeps the retrieval order until the sidecar answers. Without one, no reranking — the
 /// LLM judge it replaces made top-1 worse with the default Mistral Small (MITRE eval: 0.69 →
-/// 0.65), and it fails outright with no LLM key.
+/// 0.63), and it fails outright with no LLM key.
 fn rerank_env(manifest: &Manifest, reranker_port: u16) -> Vec<(&'static str, String)> {
     match &manifest.reranker {
         Some(reranker) => vec![

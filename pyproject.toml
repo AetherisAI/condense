@@ -16,11 +16,11 @@ dependencies = [
     "python-multipart>=0.0.32,<1",          # required by FastAPI for the multipart /ingest UploadFile route
 ]
 
-# Heavy/optional inference + storage deps stay out of the base install so Step-0 CI
+# Heavy/optional inference + storage deps stay out of the base install so the base CI job
 # (base + dev) installs fast and needs no Turso/Ollama/TEI. Adapters opt in per group.
 #
 # Bounds below are lower-pinned to the versions that resolved when the bounds were added and
-# upper-capped at the next major (no lockfile yet — see docs/Quentin/DECISIONS.md).
+# upper-capped at the next major (no lockfile yet).
 [project.optional-dependencies]
 dev = ["pytest>=9.1,<10", "pytest-asyncio>=1.4,<2", "ruff>=0.15,<1", "pyright>=1.1.411,<2"]
 store = ["libsql>=0.1.11,<1"]            # the current SDK; libsql-client/-experimental are deprecated
@@ -31,9 +31,9 @@ inference = ["httpx>=0.28,<1"]
 # The desktop app's UI is stdlib Tkinter (no pip dep; on Ubuntu install the `python3-tk` package).
 agent = ["httpx>=0.28,<1", "watchdog>=6,<7", "platformdirs>=4.10,<5"]
 packaging = ["pyinstaller>=6.21,<7"]  # build the desktop agent into self-contained downloads (see packaging/)
-# `sift-eval`'s LLM-judged metrics (D74). RAGAS 0.4.3 imports `langchain_community.chat_models.
+# `sift-eval`'s LLM-judged metrics. RAGAS 0.4.3 imports `langchain_community.chat_models.
 # vertexai`, which langchain-community 0.4.x removed — hence the pin until RAGAS catches up.
-# `anthropic`: Claude judges go through the native SDK (D82).
+# `anthropic`: Claude judges go through the native SDK.
 eval = ["ragas>=0.4.3,<0.5", "langchain-community>=0.3.31,<0.4", "anthropic>=2.7,<3"]
 
 [project.scripts]
@@ -53,8 +53,8 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.format]
-# Newer ruff also formats Python code blocks inside Markdown. Doc snippets (archived plans,
-# channel notes) are illustrative, not code we ship, so the formatter stays on code files.
+# Newer ruff also formats Python code blocks inside Markdown. Doc snippets are illustrative,
+# not code we ship, so the formatter stays on code files.
 exclude = ["*.md"]
 
 [tool.pyright]
@@ -62,7 +62,7 @@ pythonVersion = "3.12"
 typeCheckingMode = "standard"
 include = ["src", "tests"]
 extraPaths = ["src"]
-venv = ".venv"          # local-DX: bare `pyright` finds the project venv (per Dev B)
+venv = ".venv"          # local-DX: bare `pyright` finds the project venv
 venvPath = "."
 
 [tool.pytest.ini_options]

@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useState } from 'react'
 import { collapseWhitespace, highlightQueryTerms, showPageBadge } from './sourceSnippet'
 
 /**
- * Find mode (D57/Task U3) — retrieval-only turns rendered client-side, NO LLM involved. Backed
+ * Find mode — retrieval-only turns rendered client-side, NO LLM involved. Backed
  * by `POST /v1/tools/search` (`pipelines.tools`'s raw retrieval primitive: embed → `store.search`,
  * same registry `/v1/answer`'s own `search` tool call renders from — never a parallel search
  * path). This file owns the `FindTurn`/`FindHit` types + their renderer; `Composer.tsx` only needs
@@ -114,7 +114,7 @@ const FindRow = memo(function FindRow({
 })
 
 /** Renders one Find turn — the query + its ranked list, or the empty-state copy when the corpus
- * has nothing for it (D57/Task U3: retrieval never hard-fails on "no match", so an empty `hits`
+ * has nothing for it (retrieval never hard-fails on "no match", so an empty `hits`
  * array is the normal shape of "nothing relevant", not an error). */
 export const FindTurnCard = memo(function FindTurnCard({ turn }: { turn: FindTurn }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})

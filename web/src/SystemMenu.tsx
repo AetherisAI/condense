@@ -85,7 +85,7 @@ const EDITABLE = new Set([
 /** Model pins / base URLs / store backend / tokens — baked into the container at startup, so
  * changing one has no effect until the engine restarts. Shown read-only + greyed with a hint,
  * never inline-editable (distinct from the smaller `EDITABLE` whitelist above). `llm_api_key`
- * living here (confirmed against `SettingsPatch`/`_SECRET_KEYS` on the backend, D57/Task U6) is
+ * living here (confirmed against `SettingsPatch`/`_SECRET_KEYS` on the backend) is
  * exactly why the Model section's key field below is local-preview-only, never PATCHed. */
 const RESTART_REQUIRED = new Set([
   'store_backend',
@@ -163,7 +163,7 @@ const EXPLANATIONS: Record<string, string> = {
   answer_history_ttl_days: 'How long an idle conversation survives before it can be pruned.',
 }
 
-/** Grouped rendering order — mirrors .env.example's section headings (CLAUDE.md §7/§9). */
+/** Grouped rendering order — mirrors .env.example's section headings. */
 const GROUPS: { label: string; keys: string[] }[] = [
   { label: 'Store', keys: ['store_backend', 'turso_database_url', 'turso_auth_token'] },
   {
@@ -230,7 +230,7 @@ function coerce(key: string, raw: string): unknown {
 }
 
 /** One downloadable build of the desktop ingestion agent (absorbed from the retired
- * `AgentMenu.tsx`, D57/Task U6 — its own topbar chip/drawer are gone, these rows now live in the
+ * `AgentMenu.tsx` — its own topbar chip/drawer are gone, these rows now live in the
  * System drawer's "Folder agent" section, styling untouched). */
 type Build = {
   os: string
@@ -281,7 +281,7 @@ const BUILDS: Build[] = [
   },
 ]
 
-/** Imperative surface exposed to the workbench shell (`App.tsx`, D57/Task U6) — the empty-corpus
+/** Imperative surface exposed to the workbench shell (`App.tsx`) — the empty-corpus
  * nudge's "Get the agent" button lives in `Chat.tsx`, outside this drawer's own tree, so it opens
  * the drawer AND scrolls to the Folder agent section through a ref, the same pattern `ChatHandle`
  * already uses for the topbar's "New chat" button. */
@@ -289,11 +289,11 @@ export type SystemMenuHandle = { scrollToAgent: () => void }
 
 /**
  * A drawer showing API health + the effective config (from the auth'd /status, secrets already
- * redacted server-side), simple-first (D57/Task U6): Connection (token/base URL/compact health),
+ * redacted server-side), simple-first: Connection (token/base URL/compact health),
  * Model (LLM summary + a local-only provider-detect preview), Folder agent (the desktop ingestion
  * agent downloads, absorbed from the retired `AgentMenu.tsx`), then the entire original raw
  * settings table demoted into a collapsed "Advanced" accordion, unchanged. Its own top-right
- * status chip trigger is gone (D57/Task U1) — `open` is controlled from the workbench topbar's
+ * status chip trigger is gone — `open` is controlled from the workbench topbar's
  * "System" button. Closes on backdrop-click/Esc.
  */
 const SystemMenu = forwardRef<
@@ -312,21 +312,21 @@ const SystemMenu = forwardRef<
   const [loading, setLoading] = useState(false)
   // Keys with a just-saved PATCH — a "Saved ✓" fades in for a beat as optimistic feedback.
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set())
-  // Model section's LLM API key preview (D57/Task U6) — LOCAL-ONLY, never sent anywhere: typed
+  // Model section's LLM API key preview — LOCAL-ONLY, never sent anywhere: typed
   // purely so `detectProvider` can render a live provider badge. `llm_api_key` is restart-only
   // (see `RESTART_REQUIRED`/backend `_SECRET_KEYS`+`SettingsPatch`, confirmed not PATCHable), so
   // there is no save path here to fake — the copy under the field says so plainly.
   const [llmKeyDraft, setLlmKeyDraft] = useState('')
   const agentSectionRef = useRef<HTMLDivElement>(null)
 
-  // ---- Desktop (Tauri-only, D60/T2): mode switch + backend supervision + component checks ----
+  // ---- Desktop (Tauri-only): mode switch + backend supervision + component checks ----
   const [desktopConfig, setDesktopConfig] = useState<AppConfig | null>(null)
   const [backend, setBackend] = useState<BackendStatus | null>(null)
   const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null)
   const [desktopError, setDesktopError] = useState<string | null>(null)
   const [modeSwitching, setModeSwitching] = useState(false)
   const [backendBusy, setBackendBusy] = useState(false)
-  // Manifest URL editor (D67) — the escape hatch the wizard's manifest-failure copy points at
+  // Manifest URL editor — the escape hatch the wizard's manifest-failure copy points at
   // ("set a manifest URL in System ▸ Desktop"). Draft holds the CONFIGURED value (empty = use the
   // baked default), not the effective URL; seeded once per drawer-open like the agent editor so a
   // config refresh (mode switch, save) never clobbers in-progress edits.
@@ -409,7 +409,7 @@ const SystemMenu = forwardRef<
 
   // Desktop section: config + backend status + provisioning, loaded once per drawer-open, kept
   // live via `backend-state` events for as long as the drawer stays open. `provisioning_status`
-  // loads SEPARATELY from config/backend (D67): it fetches a manifest and can fail (e.g. a broken
+  // loads SEPARATELY from config/backend: it fetches a manifest and can fail (e.g. a broken
   // user-set manifest URL, where the Rust embedded fallback deliberately doesn't apply) — coupling
   // them in one Promise.all left this whole section stuck on "Loading…" in exactly the state where
   // the user needs the manifest-URL field below to fix things.
@@ -637,7 +637,7 @@ const SystemMenu = forwardRef<
     setAgentBusy(true)
     setAgentError(null)
     try {
-      // Always pass server/token explicitly (T6) — local mode points the sidecar at the
+      // Always pass server/token explicitly — local mode points the sidecar at the
       // supervised engine with the app's generated ingest token; client mode points it at
       // whatever server/bearer token this drawer is currently connected with.
       const cfg: AgentConfig = { paths: agentPaths, delete_removed: agentDeleteRemoved }
@@ -698,7 +698,7 @@ const SystemMenu = forwardRef<
     }
   }
 
-  /** The Search section's switch (D88): applies live via PATCH /settings; the desktop app also
+  /** The Search section's switch: applies live via PATCH /settings; the desktop app also
    * saves it in config.json so its engine starts with it next time. */
   async function handleRerankToggle(on: boolean) {
     await patchSetting('tools_search_rerank', String(on))
@@ -741,7 +741,7 @@ const SystemMenu = forwardRef<
         </div>
 
         <div className="drawer-body">
-          {/* ---- Desktop (Tauri-only, D60/T2): mode switch + backend + component checks --- */}
+          {/* ---- Desktop (Tauri-only): mode switch + backend + component checks ---------- */}
           {isTauri && (
             <div className="sys-section">
               <h3 className="sys-heading">Desktop</h3>
@@ -1019,7 +1019,7 @@ const SystemMenu = forwardRef<
             )}
           </div>
 
-          {/* ---- Search: rerank Find & Ask (D88), off by default ---------------------------- */}
+          {/* ---- Search: rerank Find & Ask, off by default ---------------------------- */}
           <div className="sys-section">
             <h3 className="sys-heading">Search</h3>
             {data ? (
@@ -1050,8 +1050,8 @@ const SystemMenu = forwardRef<
             )}
           </div>
 
-          {/* ---- Folder agent: absorbed from the retired AgentMenu.tsx (D57/Task U6); live
-                 controls replace the download links in Tauri (D60/T2) ----------------------- */}
+          {/* ---- Folder agent: absorbed from the retired AgentMenu.tsx; live
+                 controls replace the download links in Tauri ----------------------- */}
           <div className="sys-section" ref={agentSectionRef}>
             <h3 className="sys-heading">Folder agent</h3>
 

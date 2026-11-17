@@ -5,7 +5,7 @@ of ``(filename, bytes)`` — a plain list (JSON ingest, tests) or a lazy async s
 multipart ``/ingest`` route, so peak RAM stays at roughly one file, not the sum of the batch;
 see :data:`IngestFiles`/:func:`stream_files`) — and returns one :class:`IngestOutcome` per
 input file, in input order. The pin check happens once up front so a
-:class:`~sift.core.errors.ModelPinMismatch` fails the whole batch fast (HTTP 409 in Dev B's
+:class:`~sift.core.errors.ModelPinMismatch` fails the whole batch fast (HTTP 409 in the API
 routes); any other per-file error is isolated so its siblings still index.
 """
 
@@ -39,7 +39,7 @@ async def stream_files(files: IngestFiles) -> AsyncIterator[tuple[str, bytes]]:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class IngestOutcome:
-    """The per-file result of an ingest run (mapped to the API schema by Dev B's routes)."""
+    """The per-file result of an ingest run (mapped to the API schema by the routes)."""
 
     path: str
     status: Literal["indexed", "skipped_dedup", "failed"]
@@ -50,7 +50,7 @@ class IngestOutcome:
 
 @runtime_checkable
 class SupportsIngest(Protocol):
-    """The seam Dev B's ``/ingest`` route depends on — structural, so a fake can stand in."""
+    """The seam the ``/ingest`` route depends on — structural, so a fake can stand in."""
 
     async def ingest(
         self,

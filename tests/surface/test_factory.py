@@ -98,7 +98,7 @@ def test_embedder_wired_with_configured_batch_size_and_timeouts() -> None:
 
 
 def test_query_and_document_prefixes_reach_the_right_embedders(tmp_path) -> None:
-    # D86: queries (search + the toolbox's `search` tool) get EMBED_QUERY_PREFIX, ingested
+    # Queries (search + the toolbox's `search` tool) get EMBED_QUERY_PREFIX, ingested
     # chunks get EMBED_DOCUMENT_PREFIX — asymmetric prompts for instruction-tuned embedders.
     settings = Settings(
         ingest_token="t",
@@ -179,7 +179,7 @@ def test_build_container_wires_answer_pipeline() -> None:
 
     assert isinstance(container.answer, AnswerPipeline)
     # No LLM_BASE_URL configured -> the completer wired into `search` is the SAME object as the
-    # answer loop's ToolCompleter (WP v0.2.0 T3, D40: one adapter, both ports) — never a second.
+    # answer loop's ToolCompleter (one adapter, both ports) — never a second.
     assert container.answer._completer is container.search._completer
     assert isinstance(container.answer._completer, NullCompleter)
 
@@ -199,7 +199,7 @@ def test_build_container_answer_uses_configured_tool_mode() -> None:
     completer = container.answer._completer
     assert isinstance(completer, OpenAICompatCompleter)
     assert completer._tool_mode == "prompted"
-    # Distinct budgets: the answer loop's cap must never be the recap's (WP v0.2.0 T3, D40).
+    # Distinct budgets: the answer loop's cap must never be the recap's.
     assert completer._answer_max_tokens == 256
     assert completer._max_tokens == 999
 
@@ -223,7 +223,7 @@ def test_build_container_conversation_store_is_libsql_when_turso_configured(tmp_
 
 
 def test_build_container_ephemeral_conversations_stay_in_memory_even_with_turso(tmp_path) -> None:
-    # D73: `sift-eval` drives `/v1/answer`'s pipeline in-process against the REAL store — its
+    # `sift-eval` drives `/v1/answer`'s pipeline in-process against the REAL store — its
     # throwaway conversations must never land in the user's persisted chat history.
     container = build_container(
         Settings(
@@ -245,7 +245,7 @@ def test_build_completer_is_public_and_config_driven() -> None:
 
 
 def test_build_container_exposes_conversations_same_instance_answer_uses() -> None:
-    # WP v0.2.0 T6 (D42): `GET`/`DELETE /v1/conversations*` read the SAME store `answer` writes
+    # `GET`/`DELETE /v1/conversations*` read the SAME store `answer` writes
     # to, exposed directly on `Container` (mirrors `store`/`ingest` sitting beside `search`).
     container = build_container(Settings(ingest_token="t"))
 
@@ -253,7 +253,7 @@ def test_build_container_exposes_conversations_same_instance_answer_uses() -> No
 
 
 def test_build_container_wires_title_completer_same_instance_as_recap() -> None:
-    # T6 (D42): the auto-title pass reuses the SAME `Completer` instance already wired for the
+    # The auto-title pass reuses the SAME `Completer` instance already wired for the
     # recap — never a second one — so it's budget-capped via the same recap settings.
     container = build_container(Settings(ingest_token="t"))
 
@@ -272,7 +272,7 @@ def test_resolve_chunk_tokenizer_auto_matches_bge_m3_case_insensitively_and_as_s
 
 
 def test_resolve_chunk_tokenizer_auto_falls_back_to_tiktoken_for_other_models() -> None:
-    # The audit fix: any OTHER EMBED_MODEL must no longer be silently mis-tokenized as bge-m3.
+    # The fix: any OTHER EMBED_MODEL must no longer be silently mis-tokenized as bge-m3.
     assert resolve_chunk_tokenizer("auto", "text-embedding-3-small") == "tiktoken"
 
 

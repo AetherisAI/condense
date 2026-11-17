@@ -100,7 +100,7 @@ def test_collect_normalises_to_posix(tmp_path: Path) -> None:
 
 
 def test_collect_roots_single_root_matches_collect_keys(tmp_path: Path) -> None:
-    """The core D45 contract: for exactly ONE watched root, :func:`collect_roots` must produce
+    """The core contract: for exactly ONE watched root, :func:`collect_roots` must produce
     the IDENTICAL set of upload keys as one-shot :func:`collect` — root-relative POSIX, no
     prefix. This is what lets a ``--watch`` reconcile match a corpus ingested one-shot instead of
     treating every file as new and re-uploading it (the live bug, see the ``sync()``-level repro
@@ -170,7 +170,7 @@ def test_collect_roots_orders_oldest_modified_first(tmp_path: Path) -> None:
 
 
 def test_collect_roots_skips_oversized_file_and_warns(tmp_path: Path) -> None:
-    """The per-file size guard applies to the multi-root walk too (A3)."""
+    """The per-file size guard applies to the multi-root walk too."""
     (tmp_path / "small.md").write_bytes(b"tiny")
     (tmp_path / "big.md").write_bytes(b"x" * (2 * 1024 * 1024))  # 2 MiB
 
@@ -184,7 +184,7 @@ def test_collect_roots_skips_oversized_file_and_warns(tmp_path: Path) -> None:
 
 def test_collect_roots_prunes_vendored_directories_by_default(tmp_path: Path) -> None:
     """``--watch``'s continuous walk (:func:`collect_roots`) must skip vendored/tooling trees the
-    same way the one-shot :func:`collect` does (R4/D35) — a nested ``.venv`` shouldn't resurrect
+    same way the one-shot :func:`collect` does — a nested ``.venv`` shouldn't resurrect
     junk matches just because the sync engine uses the multi-root code path.
     """
     (tmp_path / "real.md").write_bytes(b"keep me")
@@ -199,13 +199,13 @@ def test_collect_roots_prunes_vendored_directories_by_default(tmp_path: Path) ->
     assert not any("site-packages" in n for n in names)
 
 
-# ------------------------------------------------------------- live repro (D45): one-shot manifest
+# ------------------------------------------------------------- live repro: one-shot manifest
 
 
 def test_reconcile_against_one_shot_manifest_skips_all_client_side(tmp_path: Path) -> None:
-    """The exact live repro (D45): a corpus previously ingested ONE-SHOT (root-relative keys, via
+    """The exact live repro: a corpus previously ingested ONE-SHOT (root-relative keys, via
     :func:`collect`) must be recognised as fully up to date by a ``--watch`` reconcile — 50 known
-    files, 0 uploads. Before D45, :func:`collect_roots` keyed by *absolute* path while the
+    files, 0 uploads. Previously, :func:`collect_roots` keyed by *absolute* path while the
     server's remote map (built from a one-shot :func:`collect` ingest) was root-relative, so
     ``remote.get(path)`` never matched and every file looked "new" — every restart re-uploaded
     (almost) the whole corpus, caught pre-parse only by the server's own content-hash dedup.
@@ -356,7 +356,7 @@ def test_sync_delete_removed_never_touches_unmanaged_docs(tmp_path: Path) -> Non
 
 
 def test_sync_delete_removed_matches_new_relative_keys_across_two_passes(tmp_path: Path) -> None:
-    """Regression (D45): the ``managed`` set and reconcile's delete-pass keying must use the SAME
+    """Regression: the ``managed`` set and reconcile's delete-pass keying must use the SAME
     upload keys :func:`collect_roots` now produces (root-relative, not absolute) — otherwise a
     file that vanishes from disk would never be recognised as "managed and gone" and
     ``delete_removed`` would silently do nothing. The actual removal is still a hash-keyed DELETE
@@ -418,7 +418,7 @@ def test_sync_delete_removed_works_across_multiple_roots_with_prefixed_keys(tmp_
 
 def test_sync_multiple_folders_keep_same_name_distinct(tmp_path: Path) -> None:
     """Two watched folders that each contain notes.md stay two documents (basename-prefixed keys,
-    D45 — no longer absolute paths, see :func:`agent.sync._root_prefixes`).
+    no longer absolute paths, see :func:`agent.sync._root_prefixes`).
     """
     a = tmp_path / "A"
     b = tmp_path / "B"
@@ -451,15 +451,15 @@ def test_sync_add_only_when_documents_unsupported(tmp_path: Path) -> None:
     assert not any(m == "DELETE" for m, _ in calls)
 
 
-# --------------------------------------------------------------------------- partial-batch (A4)
+# --------------------------------------------------------------------------- partial-batch
 
 
 def test_sync_keeps_old_hash_when_replace_reports_per_file_failed(tmp_path: Path) -> None:
     """A per-file 'failed' status inside an otherwise-200 batch must not delete the old hash.
 
     Deleting on any non-exception ingest response (regardless of that file's own status) was the
-    latent half of A4: the replacement never actually landed, so the old (still-valid) version
-    must stay indexed.
+    latent half of the partial-batch bug: the replacement never actually landed, so the old
+    (still-valid) version must stay indexed.
     """
     (tmp_path / "a.md").write_bytes(b"v2")
     calls: list[tuple[str, str]] = []
@@ -496,7 +496,7 @@ def test_sync_keeps_old_hash_when_replace_reports_per_file_failed(tmp_path: Path
 
 def test_sync_mid_batch_failure_keeps_earlier_counts_and_safe_deletes(tmp_path: Path) -> None:
     """Batch 2 of an ingest 500s; batch 1's counts must survive and only its confirmed
-    replacements get their stale hash cleaned up (A4 / DECISIONS D32).
+    replacements get their stale hash cleaned up.
     """
     for i, name in enumerate(["a.md", "b.md", "c.md", "d.md"]):
         (tmp_path / name).write_bytes(f"new-{name}".encode())
@@ -607,13 +607,13 @@ def test_sync_retry_after_full_batch_failure_is_dedup_safe(tmp_path: Path) -> No
         client.close()
 
 
-# ------------------------------------------------------------------- truthful counters (D45)
+# ------------------------------------------------------------------- truthful counters
 
 
 def test_sync_tallies_server_side_skipped_dedup_into_summary(tmp_path: Path) -> None:
     """A server-side ``skipped_dedup`` ingest result (the engine's own content-hash dedup
     catching a file :func:`reconcile` thought was new/changed) must be tallied into
-    ``Summary.skipped`` — not silently dropped. Before D45 only the client-side
+    ``Summary.skipped`` — not silently dropped. Previously only the client-side
     ``len(actions.skip)`` was counted, so a path-keying mismatch that forced every file through
     the upload path still reported ``0 skipped``, hiding exactly the waste it should surface.
     """

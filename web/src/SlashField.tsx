@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
  * point at the mouse and brighten as the cursor nears them. Native canvas, no deps, no React
  * re-renders (mouse position lives in a ref; drawing is a rAF loop). Sits behind the content
  * with `pointer-events: none`, so it never blocks the UI. Respects prefers-reduced-motion: a calm
- * static 45° field with no cursor reaction, no rAF loop running (D57/Task U7: a `change` listener
+ * static 45° field with no cursor reaction, no rAF loop running (a `change` listener
  * on the media query flips between the two live, without needing a reload).
  */
 

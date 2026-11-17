@@ -2,7 +2,7 @@
 <!--
   Condense brand mark (codename "Sift") — standalone, static recreation of the animated
   React source at web/src/Logo.tsx. Faithful geometry/colors, no animation: this is the
-  locked design handoff's resting frame (8 input dots on the r=8 ring, feeding a purple
+  animation's resting frame (8 input dots on the r=8 ring, feeding a purple
   core, emitting one distilled dot below — "many -> one").
 
   Source of truth: web/src/Logo.tsx (viewBox 0 0 32 32, same coordinates/colors/radii).

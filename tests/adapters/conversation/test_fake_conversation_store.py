@@ -1,4 +1,4 @@
-"""Tests for :class:`~sift.adapters.conversation.fake.FakeConversationStore` (WP v0.2.0 T3, D40)."""
+"""Tests for :class:`~sift.adapters.conversation.fake.FakeConversationStore`."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ async def test_prune_expired_deletes_stale_conversations() -> None:
     assert len(await store.history(TENANT, "fresh")) == 1
 
 
-# --- conversation metadata: title/updated_at/listing/get/delete (WP v0.2.0 T6, D42) ----------
+# --- conversation metadata: title/updated_at/listing/get/delete ----------
 
 
 async def test_append_turn_creates_meta_row_with_no_title() -> None:
@@ -115,7 +115,7 @@ async def test_append_turn_persists_sources_on_that_turn_only() -> None:
 
 
 async def test_append_turn_persists_grounding_fields_on_that_turn_only() -> None:
-    """D51 — the per-turn immutable grounding fields, same pattern as ``sources`` above."""
+    """The per-turn immutable grounding fields, same pattern as ``sources`` above."""
     store = FakeConversationStore()
     segments = [{"text": "hello", "kind": "grounded"}]
 

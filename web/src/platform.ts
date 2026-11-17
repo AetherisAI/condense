@@ -1,5 +1,5 @@
 /**
- * Single source of truth for "are we running inside the Tauri desktop shell" (D60/T2). Every
+ * Single source of truth for "are we running inside the Tauri desktop shell". Every
  * desktop-only surface (`SetupWizard`, `SystemMenu`'s "Desktop" section, the folder agent's live
  * controls) gates on `isTauri` — so the ordinary browser bundle stays byte-identical when neither
  * condition holds. `tauri.ts` gates its real-vs-mock command dispatch on `isRealTauri` ALONE, so

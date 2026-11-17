@@ -101,7 +101,7 @@ def test_collapse_prefers_real_mtime_over_ingest_order() -> None:
 
 
 def test_is_newer_corrupted_string_loses_to_real_date() -> None:
-    """A1/A2 audit finding: ``_is_newer`` used to compare ``modified_at`` as raw strings, so a
+    """Regression: ``_is_newer`` used to compare ``modified_at`` as raw strings, so a
     garbage value like 'corrupted-not-a-date' could sort ahead of a real ISO date lexically. A
     corrupted value must never be treated as "newer" than a real, parseable one — in either
     direction."""
@@ -113,7 +113,7 @@ def test_is_newer_corrupted_string_loses_to_real_date() -> None:
 
 
 def test_is_newer_known_mtime_beats_unknown_regardless_of_indexed_at() -> None:
-    """A2 audit finding: when only one side has a valid ``modified_at``, the old code fell back
+    """Regression: when only one side has a valid ``modified_at``, the old code fell back
     to ``indexed_at`` — so a doc with KNOWN (if old) recency could be evicted by one with
     UNKNOWN recency purely because it was indexed later. Evidence must beat no evidence,
     regardless of indexed_at order."""

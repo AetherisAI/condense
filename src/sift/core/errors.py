@@ -9,7 +9,7 @@ class SiftError(Exception):
 
 class ParseError(SiftError):
     """A file's declared structure makes it unsafe to parse — reject it explicitly rather than
-    attempt a parse that could exhaust memory (see DECISIONS.md D34: a stray far cell inflated
+    attempt a parse that could exhaust memory (a stray far cell inflated
     one real ``.xlsx``'s declared used-range to over a million rows, and markitdown's
     ``pandas.read_excel(engine="openpyxl")`` dutifully materialized the whole declared range,
     climbing past 2GiB RSS for a 38KB file).
@@ -24,8 +24,8 @@ class ParseError(SiftError):
 class ModelPinMismatch(SiftError):
     """The configured embedding model/dim disagrees with a tenant's pinned base.
 
-    The one invariant that keeps a base coherent when the model is just a config string
-    (README §6): every ingest and search checks ``EMBED_MODEL`` against the per-tenant
+    The one invariant that keeps a base coherent when the model is just a config string:
+    every ingest and search checks ``EMBED_MODEL`` against the per-tenant
     pin and refuses on mismatch. Pipelines surface this as HTTP 409.
 
     ``expected`` is what the base is pinned to; ``actual`` is what the request configured.

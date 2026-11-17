@@ -1,4 +1,4 @@
-"""In-memory test double for the ``ConversationStore`` seam (``pipelines/answer.py``, D40).
+"""In-memory test double for the ``ConversationStore`` seam (``pipelines/answer.py``).
 
 Per-tenant dicts give tenant isolation for free, mirroring ``FakeVectorStore`` — the same
 pattern this codebase already uses for every other store-shaped fake.
@@ -30,7 +30,7 @@ class FakeConversationStore:
     a counter dict (never decremented) is the source of truth instead — mirrors
     ``LibSQLConversationStore``'s ``MAX(turn) + 1`` for the same reason.
 
-    ``_meta`` (WP v0.2.0 T6, D42) is a sibling dict, same key shape, holding the
+    ``_meta`` is a sibling dict, same key shape, holding the
     title/created_at/updated_at row every conversation gets on its first ``append_turn``.
     """
 

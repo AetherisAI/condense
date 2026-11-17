@@ -3,8 +3,7 @@
 A fixed, committed retrieval benchmark that the **Retrieval eval** workflow
 (`.github/workflows/eval-retrieval.yml`, manual trigger) runs on a plain GitHub runner. It
 ingests `corpus/` with bge-m3 on CPU, runs Find over `golden.jsonl` without a judge, reranker or
-recap, and fails if retrieval got worse than `baseline/summary.json` beyond a tolerance. Decision:
-D87 in `docs/Quentin/DECISIONS.md`.
+recap, and fails if retrieval got worse than `baseline/summary.json` beyond a tolerance.
 
 | File | What it is |
 | --- | --- |

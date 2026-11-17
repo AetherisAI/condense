@@ -1,7 +1,7 @@
 """Boundary-rule regression: ``pipelines/answer.py`` may act ONLY through ``ToolRegistry.call``
-— never a direct store/pipeline call (WP v0.2.0 T3, D40; design §0/§3).
+— never a direct store/pipeline call.
 
-Written FIRST (red, before the loop existed) per the plan: this predates the feature it
+Written FIRST (red, before the loop existed): this predates the feature it
 constrains, so a future edit that adds a direct ``sift.adapters.*`` import — or a
 ``store``/``search`` constructor parameter — to this module fails it immediately, without
 needing to inspect runtime behavior.

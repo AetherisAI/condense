@@ -7,7 +7,7 @@ type RenderState =
   | { status: 'error' }
 
 /**
- * A ```mermaid fence (D47). `mermaid` is never in the main bundle — it's pulled in via a
+ * A ```mermaid fence. `mermaid` is never in the main bundle — it's pulled in via a
  * `import('mermaid')` the FIRST time a mermaid block is actually encountered, so chat threads
  * with no diagrams never pay for it. Renders the diagram's own SVG (light theme, matching the
  * app's light-only design); on a parse error, falls back to the raw fence as a normal

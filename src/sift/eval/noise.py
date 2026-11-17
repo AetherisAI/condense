@@ -3,7 +3,7 @@
 A controlled sweep over the recap stage alone (retrieval is held fixed, so this isolates the
 generator's robustness — RAG-benchmark "noise robustness"). Per answerable item with a reference:
 
-1. **Gold passages** — one per required group of gold refs (alternatives share a group, D78):
+1. **Gold passages** — one per required group of gold refs (alternatives share a group):
    the gold document's first chunk matching the ref's page/evidence; for a path-only ref, the
    best-ranked retrieved chunk from that document. A group's first locatable ref stands for it,
    so two files that state the same answer don't both crowd into the context.

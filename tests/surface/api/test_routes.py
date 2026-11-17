@@ -160,7 +160,7 @@ def test_status_exposes_config_but_redacts_secrets(client: TestClient) -> None:
 def test_status_redacts_every_secret_key() -> None:
     """Regression test: GET /status must never leak the raw value of ANY key in
     ``_SECRET_KEYS`` — including ``ocr_api_key``, which was missing from the redaction set
-    and came back as plaintext (docs/channel audit finding).
+    and came back as plaintext (an audit finding).
 
     Builds its own container with a real value on every secret field so a missing entry in
     ``_SECRET_KEYS`` (present or future) fails loudly instead of silently passing because the
@@ -173,7 +173,7 @@ def test_status_redacts_every_secret_key() -> None:
         "ingest_token": _TOKEN,
         "ocr_api_key": "ocr-secret",
         # Per-consumer bearer credentials — redacted like any other secret so /status can't be
-        # used to harvest every consumer's plaintext token (security review, 2026-07-06).
+        # used to harvest every consumer's plaintext token (a security review finding).
         "auth_tokens": "consumer-a:tok-a,consumer-b:tok-b",
     }
     # Keep this fixture honest: if a new secret is added to _SECRET_KEYS without a value here
@@ -220,7 +220,7 @@ def test_patch_settings_applies_editable_fields(client: TestClient) -> None:
 
 
 def test_patch_settings_toggles_find_and_ask_reranking(client: TestClient) -> None:
-    # The System drawer's "Rerank Find & Ask" switch (D88): off by default, editable live.
+    # The System drawer's "Rerank Find & Ask" switch: off by default, editable live.
     before = client.get("/status", headers=_AUTH).json()["settings"]
     assert before["tools_search_rerank"] is False
 
@@ -264,9 +264,9 @@ def test_ingest_requires_auth(client: TestClient) -> None:
 
 
 def test_parse_modified_at_drops_invalid_values(caplog: pytest.LogCaptureFixture) -> None:
-    """A1 regression: the audit's exact scenario — a garbage value like 'corrupted-not-a-date'
+    """Regression for an audit finding — a garbage value like 'corrupted-not-a-date'
     used to be stored verbatim and could out-rank a real ISO date under raw string comparison
-    (see A2/`_is_newer`). It must be dropped at the boundary, not stored, with a WARNING naming
+    (see `_is_newer`). It must be dropped at the boundary, not stored, with a WARNING naming
     the offending file — the well-formed entries in the same map are unaffected.
     """
     with caplog.at_level(logging.WARNING, logger="sift.api.routes"):
@@ -302,9 +302,9 @@ class _WholeFileChunker:
 
 
 def test_ingest_wires_modified_at_into_stored_chunks() -> None:
-    """A6 regression: the multipart ``modified_at`` map sent to ``POST /ingest`` must reach the
+    """Regression: the multipart ``modified_at`` map sent to ``POST /ingest`` must reach the
     *stored* chunk's ``modified_at`` (not just survive parsing) — and a file whose value fails
-    ISO-8601 validation (A1) stores ``None`` rather than the garbage string.
+    ISO-8601 validation stores ``None`` rather than the garbage string.
     """
     settings = Settings(ingest_token=_TOKEN)
     store = FakeVectorStore()
@@ -376,7 +376,7 @@ class _CannedIngest:
 def test_ingest_logs_one_warning_per_failure_and_an_info_summary(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """E3 regression: a batch that returns HTTP 200 must never silently hide a lost file — every
+    """Regression: a batch that returns HTTP 200 must never silently hide a lost file — every
     failed outcome gets its own WARNING (path + detail) and the whole batch gets one INFO
     summary of indexed/skipped/failed counts."""
     outcomes = [
@@ -417,7 +417,7 @@ def test_ingest_logs_one_warning_per_failure_and_an_info_summary(
 
 
 async def test_healthz_stays_responsive_while_embedder_is_slow() -> None:
-    """Root-cause regression guard (E2, the TEI-OOM incident): a slow/hung embed backend must
+    """Root-cause regression guard (the TEI-OOM incident): a slow/hung embed backend must
     never block the ASGI event loop — GET /healthz must stay servable while a /search sits on a
     stuck embedder. Uses an ``asyncio.Event``-gated fake (not real network I/O, not
     ``time.sleep``) so the assertion is deterministic rather than timing-dependent: if a future

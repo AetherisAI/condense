@@ -117,7 +117,7 @@ async def test_deterministic_same_doc_twice() -> None:
     assert len(first) > 1
 
 
-# --------------------------------------------------------- degenerate-chunk floor (D50)
+# --------------------------------------------------------- degenerate-chunk floor
 
 
 def test_min_chars_below_one_raises() -> None:
@@ -126,7 +126,7 @@ def test_min_chars_below_one_raises() -> None:
 
 
 async def test_degenerate_trailing_window_is_dropped() -> None:
-    """The exact shape from the D50 incident: a fixed-size token window whose start happened to
+    """The exact shape from a real incident: a fixed-size token window whose start happened to
     land on whitespace/template filler decodes to a handful of characters ("do. /") — a
     "genuine" but useless chunk that still got embedded and surfaced. `chunk_min_chars` drops
     any window whose decoded, stripped text falls below the floor, and emitted indices stay

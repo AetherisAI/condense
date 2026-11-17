@@ -1,6 +1,6 @@
-"""The ToolRegistry — the single source of truth for tool definitions (WP v0.2.0 T2, D38).
+"""The ToolRegistry — the single source of truth for tool definitions.
 
-North star (see ``docs/Quentin/active/machine.md`` §0): the TOOLBOX is the product. Every
+North star: the TOOLBOX is the product. Every
 deterministic, LLM-free capability Condense exposes — search, list documents, read one
 document's chunks — is defined exactly once here and rendered for every consumer: the
 ``/v1/tools/*`` REST routes call an entry's ``executor`` directly; a future ``/v1/answer``
@@ -189,7 +189,7 @@ async def _search_executor(
 ) -> list[Hit]:
     """Embed → ``store.search`` — the toolbox's raw-retrieval primitive. NO recap, NO LLM.
 
-    With ``tools_search_rerank`` on (D88) it retrieves wide like ``/search`` — ``retrieve_k``
+    With ``tools_search_rerank`` on it retrieves wide like ``/search`` — ``retrieve_k``
     hits, or ``k`` if larger — passes them through the reranker and returns the top ``k``.
     """
     query = str(args["query"])
@@ -212,7 +212,7 @@ async def _list_documents_executor(
 
     Calls ``ensure_ready`` first — exactly like ``search`` — so the FIRST call on a fresh
     process against a not-yet-migrated store (e.g. a libSQL DB predating the ``metadata``
-    column) migrates instead of 500ing (BUG #1, D40 amendment).
+    column) migrates instead of 500ing.
     """
     limit = int(args.get("limit") or 100)
     offset = int(args.get("offset") or 0)
@@ -232,7 +232,7 @@ async def _get_document_chunks_executor(
 ) -> list[Chunk]:
     """One document's chunks, ordered by ``index`` — empty when the store can't do chunk access.
 
-    Calls ``ensure_ready`` first — same BUG #1 fix as ``_list_documents_executor`` above.
+    Calls ``ensure_ready`` first — same guard as ``_list_documents_executor`` above.
     """
     source_hash = str(args["source_hash"])
     await store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
@@ -249,7 +249,7 @@ def build_tool_registry(
 ) -> ToolRegistry:
     """Build the standing registry from the wired ports — called once by ``factory.py``.
 
-    ``reranker`` is used by ``search`` only when ``settings.tools_search_rerank`` is on (D88).
+    ``reranker`` is used by ``search`` only when ``settings.tools_search_rerank`` is on.
     """
     specs = [
         ToolSpec(

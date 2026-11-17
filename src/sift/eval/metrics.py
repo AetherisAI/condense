@@ -5,7 +5,7 @@ Definitions (per golden item, then averaged over the items where they're defined
 - **recall@k** — required evidence found in the top-k ÷ required evidence. "Required evidence"
   is a *group* of gold refs (:func:`~sift.eval.golden.ref_groups`): alternatives that each state
   the answer share a group, and one of them is enough; an unlabelled ref is its own group, so a
-  set without ``group`` labels scores exactly as before (D78).
+  set without ``group`` labels scores exactly as before.
 - **complete@k** — 1 if *every* group is found in the top-k, else 0: for a multi-hop question,
   did retrieval surface everything the answer needs?
 - **precision@k** — relevant passages in the top-k ÷ k (the standard ``/k`` form, so one gold

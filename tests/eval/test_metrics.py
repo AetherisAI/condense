@@ -88,7 +88,7 @@ def test_empty_ranking_scores_zero() -> None:
 
 
 def test_alternatives_in_one_group_need_only_one_hit() -> None:
-    # Two files that each state the answer: finding either one is full recall (D78).
+    # Two files that each state the answer: finding either one is full recall.
     ranking = [_p("tactic.md", "T0884 Connection Proxy"), _p("x.md")]
     refs = [
         GoldRef(path="technique.md", evidence="act as an intermediary", group="a"),

@@ -71,7 +71,7 @@ async def test_search_round_trips_metadata(
         page=1,
         source_hash="hm",
         index=0,
-        metadata={"author": "quentin", "kind": "note"},
+        metadata={"author": "alice", "kind": "note"},
     )
     untagged = Chunk(text="no tags here", source_path="n.md", page=1, source_hash="hn", index=0)
     await store.upsert(
@@ -80,7 +80,7 @@ async def test_search_round_trips_metadata(
 
     (tagged_query,) = await embedder.embed(["tagged passage"])
     (tagged_hit,) = await store.search(tagged_query, 1, TENANT)
-    assert tagged_hit.metadata == {"author": "quentin", "kind": "note"}
+    assert tagged_hit.metadata == {"author": "alice", "kind": "note"}
 
     (untagged_query,) = await embedder.embed(["no tags here"])
     (untagged_hit,) = await store.search(untagged_query, 1, TENANT)
@@ -192,7 +192,7 @@ async def test_get_chunks_unknown_hash_returns_empty(
 async def test_list_documents_includes_modified_at_and_indexed_at(
     store: FakeVectorStore, embedder: FakeEmbedder, dim: int
 ) -> None:
-    """D44: the documents-listing path must surface the file's true mtime (temporal-knowledge
+    """The documents-listing path must surface the file's true mtime (temporal-knowledge
     plumbing) — ``indexed_at`` (a store-assigned recency stamp) rides along too."""
     await store.ensure_ready(MODEL, dim, TENANT)
     chunk = Chunk(
@@ -226,7 +226,7 @@ async def test_list_documents_modified_at_is_none_when_never_provided(
 async def test_get_chunks_includes_modified_at(
     store: FakeVectorStore, embedder: FakeEmbedder, dim: int
 ) -> None:
-    """D44: each chunk carries its parent file's ``modified_at`` alongside its ``metadata``."""
+    """Each chunk carries its parent file's ``modified_at`` alongside its ``metadata``."""
     await store.ensure_ready(MODEL, dim, TENANT)
     chunk = Chunk(
         text="dated",

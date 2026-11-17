@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launch the Sift engine in a memory-capped, OOM-isolated, detached systemd --user unit.
 #
-# WHY (DECISIONS.md D29): a runaway ingest — or any engine memory spike — must NEVER trigger the
+# WHY: a runaway ingest — or any engine memory spike — must NEVER trigger the
 # *system* OOM killer. On a typical dev box VS Code is the OOM killer's first target (it sets its
 # own oom_score_adj=100, giving it an oom_score of ~700+), so a global OOM event takes down the
 # editor and any Claude Code session living in its integrated terminal. Running the engine as a
@@ -11,7 +11,7 @@
 # appears under (or dies with) the VS Code process tree, and a profiler no longer mis-attributes
 # its memory to "code".
 #
-# WHY NO MemoryHigh (DECISIONS.md D34): a prior version of this script also set a soft
+# WHY NO MemoryHigh: a prior version of this script also set a soft
 # `MemoryHigh` throttle band below `MemoryMax`. A real E2E run hit it: the engine's memory was
 # 100% anonymous (no reclaimable page cache) and the unit already had `MemorySwapMax=0`, so once
 # usage crossed `MemoryHigh` the kernel's `memory.high` throttling (`memory.events high=150789+`,
@@ -59,12 +59,12 @@ systemd-run --user \
   -p RestartSec=2 \
   --collect \
   "$REPO/.venv/bin/python" -m uvicorn sift.api.main:app --host 127.0.0.1 --port "$PORT"
-# Restart=always/RestartSec=2 (DECISIONS.md D39, revised): engines have been killed by external
+# Restart=always/RestartSec=2: engines have been killed by external
 # clean SIGTERMs (uvicorn logs "Shutting down", no systemd "Stopping <unit>" line — i.e. not a
 # `systemctl stop`, and the exit is clean so Restart=on-failure never fires). This is a recurring
 # incident, not a one-off: the unit dies with a normal exit code and just stays down. Restart=always
 # is the correct posture for a serving unit — it restarts on *any* exit, clean or not, OOM-kill
-# included (D29/D34) — and a deliberate manual stop is still `systemctl stop`, which masks Restart
+# included — and a deliberate manual stop is still `systemctl stop`, which masks Restart
 # by design, so operators retain a clean way to actually stop the engine.
 
 echo "sift-engine started — MemoryMax=$CAP (no MemoryHigh) MemorySwapMax=0 OOMScoreAdjust=1000 port=$PORT"

@@ -1,9 +1,9 @@
 name: build-desktop
 
-# Builds two things per OS for the desktop-standalone WP (docs/Quentin/DECISIONS.md D60-D64):
+# Builds two things per OS for the standalone desktop app:
 #   1. `server-bundle` — the separable "API only" download: PyInstaller engine (onedir) +
 #      sift-agent-cli, packaged with packaging/server-bundle/'s static files. This is the SAME
-#      artifact the Tauri app's first-run provisioning manifest downloads (D63) — its filename is
+#      artifact the Tauri app's first-run provisioning manifest downloads — its filename is
 #      a contract, not cosmetic.
 #   2. `desktop` — the Tauri 2 installer (deb+AppImage / dmg / nsis), with the agent CLI frozen as
 #      its externalBin sidecar.
@@ -12,9 +12,6 @@ name: build-desktop
 on:
   workflow_dispatch:
   push:
-    # TEMPORARY until merge — remove this branch trigger once feat/desktop-standalone lands on
-    # main; it exists only so the overnight WP gets CI signal before the PR does.
-    branches: [feat/desktop-standalone]
     tags: ["v*"]
 
 concurrency:
@@ -65,7 +62,7 @@ jobs:
           rm -rf "$bundle"
           mkdir -p "$bundle/engine" "$bundle/bin"
 
-          # engine/ IS the onedir directory's contents (D62/D63 layout contract).
+          # engine/ IS the onedir directory's contents (the layout the launcher and run scripts expect).
           cp -R dist/sift-engine/. "$bundle/engine/"
 
           if [ "${{ runner.os }}" = "Windows" ]; then
@@ -75,9 +72,9 @@ jobs:
             chmod +x "$bundle/bin/sift-agent-cli" "$bundle/engine/sift-engine"
           fi
 
-          # Static server-bundle files (README/run scripts/env template) — owned by the engine
-          # track (packaging/server-bundle/); both run.sh and run.bat ship unconditionally as of
-          # T1, so no existence guards are needed here.
+          # Static server-bundle files (README/run scripts/env template) from
+          # packaging/server-bundle/; both run.sh and run.bat always ship, so no existence
+          # guards are needed here.
           cp packaging/server-bundle/README.md packaging/server-bundle/env.example packaging/server-bundle/run.sh packaging/server-bundle/run.bat "$bundle/"
           [ "${{ runner.os }}" != "Windows" ] && chmod +x "$bundle/run.sh"
           true
@@ -102,7 +99,7 @@ jobs:
         with:
           name: condense-server-${{ matrix.triple }}
           # The exact filename (condense-server-<triple>.tar.gz / .zip) is a contract the Tauri
-          # app's provisioning manifest depends on (D63) — do not rename.
+          # app's provisioning manifest depends on — do not rename.
           path: condense-server-${{ matrix.triple }}.*
           if-no-files-found: error
 
@@ -184,7 +181,7 @@ jobs:
         run: npm ci
 
       # v1 is unsigned (no code-signing/notarization secrets configured yet) — installers will
-      # show OS "unknown publisher"/Gatekeeper warnings until a future WP adds signing keys.
+      # show OS "unknown publisher"/Gatekeeper warnings until signing keys are added.
       # tauri-action is given no tagName/releaseId, so it only builds; it never talks to the
       # GitHub Release API itself — the separate `release` job below (mirroring build-agent.yml)
       # owns publishing so both jobs' assets land on one release page.

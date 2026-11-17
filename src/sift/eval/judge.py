@@ -1,4 +1,4 @@
-"""The judge phase: LLM-graded answer metrics behind a small :class:`Judge` protocol (D74).
+"""The judge phase: LLM-graded answer metrics behind a small :class:`Judge` protocol.
 
 The real judge is :class:`~sift.eval.ragas_judge.RagasJudge` (RAGAS collections metrics, an
 optional extra); tests use :class:`FakeJudge`. Scores land in each
@@ -9,20 +9,20 @@ optional extra); tests use :class:`FakeJudge`. Scores land in each
 - a metric the judge failed to compute (unparseable judge output, provider error) is **None** —
   counted in the report, never a crash.
 
-**Two correctness scores (D77).** ``answer_correctness`` is RAGAS's claim F1 (+ similarity): an
+**Two correctness scores.** ``answer_correctness`` is RAGAS's claim F1 (+ similarity): an
 answer loses points both for reference facts it misses *and* for true details the reference
 doesn't list, so it moves with verbosity. ``answer_recall`` asks only whether the answer
 contains the reference's facts — with a reference that holds just what the question asks, that's
 "did it answer correctly", whatever else it adds. Unsupported extras are faithfulness's job. It
-reuses RAGAS ``FactualCorrectness``'s prompts but not its recall arithmetic (D84). Likewise,
+reuses RAGAS ``FactualCorrectness``'s prompts but not its recall arithmetic. Likewise,
 ``noise_sensitivity`` judges a claim correct against the question + reference, not the bare
-reference (D85).
+reference.
 
 Separately, :class:`AbstentionCheck` asks the judge LLM whether a response declined to answer,
 recorded as ``abstained`` (1.0/0.0) on every result: on ``answerable: false`` items that's the
 correct-abstention rate, on answerable ones the false-refusal rate.
 
-**Citations are stripped before judging (D76).** Both surfaces cite their sources inline —
+**Citations are stripped before judging.** Both surfaces cite their sources inline —
 ``(policies/shipping.md, p.1)``, ``[1]``, a trailing ``Source: [1]`` line — and RAGAS counts
 each as a claim the passages don't support: measured live, a correct one-sentence Ask answer
 scored faithfulness 0.5 with its citation and 1.0 without. :func:`strip_citations` removes those
@@ -80,7 +80,7 @@ _SOURCE_LINE = re.compile(
 
 
 def strip_citations(text: str) -> str:
-    """``text`` without inline source citations — see the module docstring (D76)."""
+    """``text`` without inline source citations — see the module docstring."""
     text = _BRACKET_CITATION.sub("", _PAREN_CITATION.sub("", text))
     lines = [line for line in text.splitlines() if not _SOURCE_LINE.match(line)]
     return re.sub(r"\s+([.,;:!?])", r"\1", "\n".join(lines)).strip()

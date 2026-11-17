@@ -1,4 +1,4 @@
-"""HTTP routes — the thin surface over the query and ingest pipelines (README §3).
+"""HTTP routes — the thin surface over the query and ingest pipelines.
 
 Every handler pulls the wired :class:`~sift.factory.Container` from :func:`get_container` and
 delegates to a pipeline; it never constructs an adapter (the dependency rule). ``/healthz`` is
@@ -82,7 +82,7 @@ async def _status_response(container: Container, tenant: str) -> StatusResponse:
 async def healthz(
     container: Annotated[Container, Depends(get_container)],
 ) -> HealthResponse:
-    """Liveness plus the configured embedding model — no auth (README §3)."""
+    """Liveness plus the configured embedding model — no auth."""
     return HealthResponse(status="ok", embed_model=container.settings.embed_model)
 
 
@@ -165,10 +165,10 @@ def _parse_modified_at(raw: str | None) -> dict[str, str] | None:
 
     A malformed or non-object *envelope* is ignored (treated as "no mtimes") rather than failing
     the whole upload — the recency hint is best-effort, never a reason to reject good documents.
-    Each individual *value* is validated as a real ISO-8601 timestamp (``datetime.fromisoformat``,
-    README/A1): a garbage value like ``"corrupted-not-a-date"`` is dropped with a WARNING naming
-    the file, rather than stored and later compared as a raw string (A1 — the old string
-    comparison let a corrupted value out-rank a real date; see ``pipelines.search._is_newer``).
+    Each individual *value* is validated as a real ISO-8601 timestamp (``datetime.fromisoformat``):
+    a garbage value like ``"corrupted-not-a-date"`` is dropped with a WARNING naming the file,
+    rather than stored and later compared as a raw string (the old string comparison let a
+    corrupted value out-rank a real date; see ``pipelines.search._is_newer``).
     """
     if not raw:
         return None
@@ -206,9 +206,9 @@ async def ingest(
 
     Files are streamed to the pipeline one at a time (read → hand off → release) rather than all
     read into a single in-memory list, so a large multi-file upload doesn't spike RAM to the sum of
-    every file — peak stays at roughly one file plus its chunks (Arthur's A12).
+    every file — peak stays at roughly one file plus its chunks.
 
-    Every outcome is logged server-side (README §F1/E3): a batch that comes back HTTP 200 must
+    Every outcome is logged server-side: a batch that comes back HTTP 200 must
     never silently hide a lost file — each failure gets its own WARNING line (path + detail),
     plus one INFO summary of the whole batch's indexed/skipped/failed counts.
     """

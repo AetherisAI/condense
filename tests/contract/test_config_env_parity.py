@@ -1,8 +1,8 @@
-"""Config-parity guard (CLAUDE.md §8, D40 amendment): every :class:`~sift.config.Settings`
+"""Config-parity guard: every :class:`~sift.config.Settings`
 field's env key must appear in BOTH ``.env.example`` and ``docker-compose.yml``'s ``api``
 service ``environment:`` block.
 
-``.env.example`` was kept current WP-by-WP, but ``docker-compose.yml`` accumulated a real gap —
+``.env.example`` was kept current, but ``docker-compose.yml`` accumulated a real gap —
 ``EMBED_BATCH_SIZE``/``EMBED_TIMEOUT_S``/.../``RECAP_*``/``OCR_*``/``VERSION_COLLAPSE_*`` etc.
 were configurable via ``.env`` but silently ignored by ``docker compose up`` (a container
 recreate would fall back to code defaults, not whatever an operator set). A grep-based test
@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # host-port knobs and the HF model-id passthrough for the optional `tei` profile service.
 # `API_BIND`/`API_PORT` used to live here too (compose-only, never read by the app itself — the
 # Dockerfile CMD hardcoded `0.0.0.0:8000`) but became real `Settings` fields for the
-# frozen-engine entry point (`packaging/sift_engine_entry.py`, D62), so they're covered by
+# frozen-engine entry point (`packaging/sift_engine_entry.py`), so they're covered by
 # `_settings_env_keys()` now instead of this allow-list.
 _NON_SETTINGS_KEYS = frozenset({"WEB_PORT", "TEI_PORT", "RERANK_HF_MODEL"})
 

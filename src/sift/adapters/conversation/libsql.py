@@ -1,4 +1,4 @@
-"""libSQL/Turso-backed ``ConversationStore`` adapter (WP v0.2.0 T3, D40; extended T6, D42).
+"""libSQL/Turso-backed ``ConversationStore`` adapter.
 
 Same async-over-sync shape as :class:`~sift.adapters.store.libsql.LibSQLStore` (one connection,
 touched only from a single-worker :class:`~concurrent.futures.ThreadPoolExecutor`) but against
@@ -11,7 +11,7 @@ row's ``turn`` (the table's own primary key). ``MAX(turn)`` never goes backwards
 correct across any number of trims, and the trim itself stays a single ``turn < ?`` delete
 rather than an ``ORDER BY``-based one.
 
-T6 (D42) adds a sibling ``conversations_meta`` table (title/created_at/updated_at, one row per
+It also keeps a sibling ``conversations_meta`` table (title/created_at/updated_at, one row per
 ``(tenant, conversation_id)``) and an additive ``sources`` column on ``conversations`` (per-turn
 compact citations, JSON-encoded, set only on a citing assistant turn) — both migrated
 ALTER-if-missing for a database created before them, mirroring ``LibSQLStore``'s own
@@ -19,7 +19,7 @@ ALTER-if-missing for a database created before them, mirroring ``LibSQLStore``'s
 ``_ensure_schema`` first, so a fresh process's very first call — read or write — never 500s
 against a not-yet-migrated file.
 
-D51 adds three more additive columns, same ALTER-if-missing pattern: ``grounding_used`` (TEXT),
+Three more additive columns follow the same ALTER-if-missing pattern: ``grounding_used`` (TEXT),
 ``from_general_knowledge`` (INTEGER 0/1), ``grounding_segments`` (TEXT, JSON) — the per-turn
 immutable grounding a reopened conversation renders from, instead of resetting every historical
 turn's marking to "unknown" on every reload (the actual root cause behind the purple
@@ -50,13 +50,13 @@ _DDL_CONVERSATIONS = (
 )
 
 # Additive migration for databases created before `sources` existed — same ALTER-if-missing
-# pattern as `LibSQLStore`'s `files.modified_at`/`chunks.metadata` (D28).
+# pattern as `LibSQLStore`'s `files.modified_at`/`chunks.metadata`.
 _CONVERSATIONS_HAS_SOURCES = (
     "SELECT 1 FROM pragma_table_info('conversations') WHERE name = 'sources'"
 )
 _ALTER_CONVERSATIONS_ADD_SOURCES = "ALTER TABLE conversations ADD COLUMN sources TEXT"
 
-# Additive migration (D51) for the per-turn immutable grounding fields — same ALTER-if-missing
+# Additive migration for the per-turn immutable grounding fields — same ALTER-if-missing
 # pattern as `sources` above.
 _CONVERSATIONS_HAS_GROUNDING_USED = (
     "SELECT 1 FROM pragma_table_info('conversations') WHERE name = 'grounding_used'"
@@ -188,7 +188,7 @@ class LibSQLConversationStore:
         from_general_knowledge: bool = False,
         grounding_segments: list[dict[str, str]] | None = None,
     ) -> None:
-        # Defense-in-depth (D40 amendment, BUG #2): fail loud and early with a clear TypeError
+        # Defense-in-depth: fail loud and early with a clear TypeError
         # rather than let a non-str `content` (e.g. an un-normalized provider content-block list
         # that slipped past the completer adapter) reach the DB bind, where libsql raises an
         # opaque ``ValueError: Unsupported parameter type`` far from the real cause.
@@ -252,7 +252,7 @@ class LibSQLConversationStore:
     def _ensure_schema(self, conn: Any) -> None:
         """Create-if-missing every table, ALTER-if-missing every additive column — run at the
         top of EVERY job (read or write) so a fresh process's first call, whichever it is,
-        never 500s against a not-yet-migrated database (mirrors the BUG #1 fix in
+        never 500s against a not-yet-migrated database (mirrors the ``ensure_ready``-first guard in
         ``pipelines/tools.py``'s executors).
 
         The reconciliation is idempotent and can never change once done, so it runs at most once
@@ -398,7 +398,7 @@ class LibSQLConversationStore:
         if not meta_row:
             if not turns:
                 return None
-            # Self-heal: a conversation with turns but no meta row predates T6 (D42) — the
+            # Self-heal: a conversation with turns but no meta row is an older one — the
             # meta table didn't exist when it was written. Backfill from the turns themselves
             # (title stays unset, exactly like any other un-titled conversation) so a GET
             # doesn't 404 on data that genuinely exists, and future `list_conversations` calls

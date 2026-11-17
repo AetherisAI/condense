@@ -51,9 +51,9 @@ function TrashIcon() {
  * demand (fetches ``GET /v1/conversations`` lazily, same pattern as ``Library.tsx``), highlights
  * whichever conversation is currently open in the Chat panel, and lets the user reopen (click a
  * row) or delete (trash icon, click-again-to-confirm — no native `confirm()` dialog) any of them.
- * Its own trigger chip is gone (D57/Task U1) — `open` is controlled from the workbench topbar,
+ * Its own trigger chip is gone — `open` is controlled from the workbench topbar,
  * which is the single button that shows/hides this drawer now. Closes on backdrop-click or
- * Escape (D57/Task U5) — see the Escape effect below for the stacking rule it uses so a single
+ * Escape — see the Escape effect below for the stacking rule it uses so a single
  * Escape press never closes two drawers at once.
  */
 export default function ChatHistory({
@@ -82,7 +82,7 @@ export default function ChatHistory({
   // Escape press closes exactly one drawer rather than the whole stack. Library mirrors System's
   // plain always-close pattern instead (see Library.tsx) since — now that it's the sole LEFT-hand,
   // last-in-DOM drawer — nothing else is ever stacked in front of it. The standalone Agent drawer
-  // that used to make this a 4-drawer problem is retired (D57/Task U6 folded it into System), so
+  // that used to make this a 4-drawer problem is retired (folded into System), so
   // this now guarantees History never double-closes with anything, Library+History resolves to
   // exactly one close, and System closes alone whenever it's the only drawer open.
   useEffect(() => {

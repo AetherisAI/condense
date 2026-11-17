@@ -1,4 +1,4 @@
-"""The composition root — the ONE place adapters are constructed (README §2, P2).
+"""The composition root — the ONE place adapters are constructed.
 
 ``factory.py`` reads the typed :class:`~sift.config.Settings` and assembles the concrete
 adapters behind the ports, then wires them into the query-time :class:`SearchPipeline`. It is
@@ -44,7 +44,7 @@ from sift.pipelines.tools import ToolRegistry, build_tool_registry
 class Container:
     """The assembled application: the wired pipeline, its store and ingest, plus the settings.
 
-    ``store`` and ``ingest`` are exposed alongside ``search`` because Dev B's ingest/manifest
+    ``store`` and ``ingest`` are exposed alongside ``search`` because the ingest/manifest
     routes need them directly: the manifest reads ``store.known_hashes`` and ``/ingest`` drives
     the ingest seam. They share the same store instance the pipeline searches.
     """
@@ -53,16 +53,16 @@ class Container:
     store: VectorStore
     ingest: SupportsIngest
     settings: Settings
-    # WP v0.2.0 T2 (D38): the toolbox's single source of truth, and the parsed per-consumer
+    # The toolbox's single source of truth, and the parsed per-consumer
     # bearer tokens (``{token: consumer name}``) ``resolve_tenant`` checks alongside
     # ``ingest_token`` — both built once here so nothing downstream parses config repeatedly.
     tools: ToolRegistry
     auth_tokens: dict[str, str]
-    # WP v0.2.0 T3 (D40): the `/v1/answer` reference agent. Wired from `tools` (never `store`/
+    # The `/v1/answer` reference agent. Wired from `tools` (never `store`/
     # `search` directly — the boundary rule `pipelines/answer.py` is tested against) plus its
     # own `ConversationStore`.
     answer: AnswerPipeline
-    # WP v0.2.0 T6 (D42): the SAME `ConversationStore` instance `answer` uses, exposed directly
+    # The SAME `ConversationStore` instance `answer` uses, exposed directly
     # for the `GET`/`DELETE /v1/conversations*` chat-session-management routes — deliberately
     # NOT `ToolRegistry` tools (`api/v1.py`), mirroring how `store`/`ingest` sit beside `search`.
     conversations: ConversationStore
@@ -71,9 +71,8 @@ class Container:
 class _StubIngest:
     """Placeholder :class:`~sift.pipelines.ingest.SupportsIngest` until the real pipeline lands.
 
-    Reports every file ``indexed`` with its real content-hash and a single chunk, so Dev B's
-    ``/ingest`` route is exercisable end-to-end before Arthur's parse/chunk wiring arrives at
-    integration time.
+    Reports every file ``indexed`` with its real content-hash and a single chunk, so the
+    ``/ingest`` route is exercisable end-to-end without the real parse/chunk wiring.
     """
 
     async def ingest(
@@ -92,11 +91,11 @@ class _StubIngest:
 def build_container(settings: Settings, *, ephemeral_conversations: bool = False) -> Container:
     """Construct every adapter from ``settings`` and return the wired :class:`Container`.
 
-    ``ephemeral_conversations`` (D73) wires the process-local ``FakeConversationStore`` even when
+    ``ephemeral_conversations`` wires the process-local ``FakeConversationStore`` even when
     a Turso store is configured — the ``sift-eval`` harness drives the answer pipeline against
     the real corpus but must never write its throwaway turns into the user's chat history.
     """
-    # One embedder per role (D86): queries and documents may need different prompt prefixes.
+    # One embedder per role: queries and documents may need different prompt prefixes.
     query_embedder = _build_embedder(settings, prefix=settings.embed_query_prefix)
     document_embedder = _build_embedder(settings, prefix=settings.embed_document_prefix)
     store = _build_store(settings)
@@ -106,7 +105,7 @@ def build_container(settings: Settings, *, ephemeral_conversations: bool = False
     ingest = _build_ingest(settings, document_embedder, store)
     tools = build_tool_registry(query_embedder, store, settings, reranker)
     auth_tokens = parse_auth_tokens(settings.auth_tokens)
-    # Both `OpenAICompatCompleter` and `NullCompleter` implement `ToolCompleter` too (D40) — one
+    # Both `OpenAICompatCompleter` and `NullCompleter` implement `ToolCompleter` too — one
     # instance serves both the recap `Completer` port and the answer loop's `ToolCompleter` port,
     # so this is a structural cast, not a second adapter. `build_completer`'s return type stays
     # `Completer` (its existing callers — the reranker, the recap — need nothing more).
@@ -114,7 +113,7 @@ def build_container(settings: Settings, *, ephemeral_conversations: bool = False
     conversations = (
         FakeConversationStore() if ephemeral_conversations else _build_conversation_store(settings)
     )
-    # `title_completer=completer` (T6, D42): the SAME `Completer` instance already wired for
+    # `title_completer=completer`: the SAME `Completer` instance already wired for
     # the recap — no cast needed (unlike `tool_completer` above), since `build_completer`'s
     # return type is already `Completer`. Reusing it means the auto-title call is budget-capped
     # via the SAME `recap_max_tokens`/`recap_temperature` the recap uses, with no new knob.
@@ -237,7 +236,7 @@ def _build_ingest(settings: Settings, embedder: Embedder, store: VectorStore) ->
 def build_completer(settings: Settings) -> Completer:
     """The configured chat :class:`Completer` (``LLM_*``), else the offline ``NullCompleter``.
 
-    Public (D73) so ``sift-eval`` can build its judge LLM from a ``Settings`` copy carrying the
+    Public so ``sift-eval`` can build its judge LLM from a ``Settings`` copy carrying the
     judge's endpoint — same adapter, same retries/timeouts, no second composition root.
     """
     if settings.llm_base_url:
@@ -257,7 +256,7 @@ def build_completer(settings: Settings) -> Completer:
 
 def _build_conversation_store(settings: Settings) -> ConversationStore:
     """A libSQL-backed store when a Turso database is configured, else the in-memory fake —
-    the same config-driven branch `_build_store` already uses (WP v0.2.0 T3, D40)."""
+    the same config-driven branch `_build_store` already uses."""
     if settings.store_backend == "libsql" and settings.turso_database_url:
         from sift.adapters.conversation.libsql import (  # pyright: ignore[reportMissingImports]
             LibSQLConversationStore,
@@ -276,7 +275,7 @@ def _build_reranker(settings: Settings, completer: Completer) -> Reranker:
         case "crossencoder":
             if not settings.rerank_base_url:
                 raise ValueError("RERANK_STRATEGY='crossencoder' requires RERANK_BASE_URL")
-            # The /rerank endpoint (TEI or llama-server, D88) serves a single model and takes no
+            # The /rerank endpoint (TEI or llama-server) serves a single model and takes no
             # model param, so rerank_model is intentionally not forwarded here.
             return CrossEncoderReranker(
                 settings.rerank_base_url, timeout_s=settings.rerank_timeout_s

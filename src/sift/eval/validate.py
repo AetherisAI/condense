@@ -6,7 +6,7 @@ is a warning — scoring would credit any of them), and a given page or evidence
 in that document's chunks. Missing ``reference``/``relevant`` fields are warnings: the item still
 runs, it just skips the metrics that need them.
 
-Alternative groups (D78) get two extra warnings, because a loose alternative is the easy way to
+Alternative groups get two extra warnings, because a loose alternative is the easy way to
 inflate recall: an alternative with neither page nor evidence lets *any* chunk of that document
 satisfy the whole group, and a label used by a single entry is usually a typo of another label.
 """

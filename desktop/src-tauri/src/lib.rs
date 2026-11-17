@@ -1,10 +1,10 @@
 // Condense desktop shell — Tauri 2 application entry.
 //
 // `run()` is the single composition root the mobile entry point and the desktop `main.rs` both
-// call into. T5 (Rust provisioning + supervision) adds four modules, each a managed `State`:
-// `config` (AppConfig load/save), `provisioning` (manifest-driven download/verify/unpack),
-// `backend` (engine + embedder + reranker process supervision), `agent` (the ingest sidecar). See
-// `docs/Quentin/active/machine.md` for the full command contract these wire up to.
+// call into. Four modules, each a managed `State`: `config` (AppConfig load/save),
+// `provisioning` (manifest-driven download/verify/unpack), `backend` (engine + embedder +
+// reranker process supervision), `agent` (the ingest sidecar). The command contract is the
+// `generate_handler!` list below, mirrored for the UI by `web/src/tauri.ts`.
 
 mod agent;
 mod backend;
@@ -27,11 +27,11 @@ pub fn run() {
             let mode = initial_config.mode.clone();
             app.manage(config::ConfigState(std::sync::Mutex::new(initial_config)));
 
-            // SIGTERM/SIGINT → the same cleanup as a normal quit, then exit (T7/D65). tao/Tauri
+            // SIGTERM/SIGINT → the same cleanup as a normal quit, then exit. tao/Tauri
             // installs no signal handlers of its own, so without this a terminal `kill`, a
             // session-logout script, or any supervisor's stop would terminate the app with the
             // OS default action — no RunEvent, no destructors — orphaning the engine/embedder/
-            // agent children (found by T7's real lifecycle QA). `app_handle.exit(0)` fires
+            // agent children (found by end-to-end lifecycle testing). `app_handle.exit(0)` fires
             // `RunEvent::Exit`, whose handler below runs `kill_backend`/`kill_agent` again —
             // both are idempotent, so the double call is harmless (same reasoning as handling
             // both `ExitRequested` and `Exit` there). PR_SET_PDEATHSIG on the spawned children
@@ -75,7 +75,7 @@ pub fn run() {
             // does nothing and the wizard/settings Start button remains the only way in.
             // `backend_start`'s own already-starting/running guard (backend.rs) is a no-op, so
             // this can never race a subsequent explicit `backend_start` call into a double-spawn.
-            // Then any optional component the manifest lists but this install lacks (the D89
+            // Then any optional component the manifest lists but this install lacks (the
             // reranker, for an install that predates it) downloads in the background and its
             // sidecar starts when it lands — the backend never waits on it.
             if mode.as_deref() == Some("local") {

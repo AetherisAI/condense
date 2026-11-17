@@ -112,13 +112,13 @@ async def test_search_round_trips_metadata(store: LibSQLStore, embedder: FakeEmb
         page=1,
         source_hash="hm",
         index=0,
-        metadata={"author": "quentin", "kind": "note"},
+        metadata={"author": "alice", "kind": "note"},
     )
     await store.upsert([await _embedded(embedder, chunk)], TENANT)
 
     (query,) = await embedder.embed(["tagged passage"])
     (hit,) = await store.search(query, 5, TENANT)
-    assert hit.metadata == {"author": "quentin", "kind": "note"}  # survives the JSON round-trip
+    assert hit.metadata == {"author": "alice", "kind": "note"}  # survives the JSON round-trip
 
 
 async def test_search_returns_none_metadata_when_absent(
@@ -304,7 +304,7 @@ async def test_list_documents_lists_ingested_files_with_chunk_counts(
 async def test_list_documents_includes_modified_at_and_indexed_at(
     store: LibSQLStore, embedder: FakeEmbedder
 ) -> None:
-    """D44: the documents-listing path must surface the file's true mtime (temporal-knowledge
+    """The documents-listing path must surface the file's true mtime (temporal-knowledge
     plumbing) — ``indexed_at`` (when the store wrote the row) rides along too since the
     ``files`` table already carries it for free."""
     await store.ensure_ready(MODEL, DIM, TENANT)
@@ -370,7 +370,7 @@ async def test_delete_document_unknown_hash_is_noop_and_returns_zero(
     assert await store.known_hashes(TENANT) == {"hk"}  # existing doc untouched
 
 
-# --- search filters: metadata equality + since/until (WP v0.2.0 T2, D38) ------
+# --- search filters: metadata equality + since/until ------
 
 
 async def test_search_metadata_filter_narrows_via_json_extract(
@@ -481,7 +481,7 @@ async def test_get_chunks_returns_ordered_chunks_for_one_document(
 
 
 async def test_get_chunks_includes_modified_at(store: LibSQLStore, embedder: FakeEmbedder) -> None:
-    """D44: each chunk carries its parent file's ``modified_at`` — the temporal signal a tool
+    """Each chunk carries its parent file's ``modified_at`` — the temporal signal a tool
     consumer needs to answer "when was this written/modified" honestly."""
     await store.ensure_ready(MODEL, DIM, TENANT)
     chunk = Chunk(
@@ -514,7 +514,7 @@ async def test_get_chunks_before_ensure_ready_returns_empty(store: LibSQLStore) 
     assert await store.get_chunks("anything", TENANT) == []
 
 
-# --- list_documents metadata filter (SupportsDocumentAdmin, D38) -------------
+# --- list_documents metadata filter (SupportsDocumentAdmin) -------------
 
 
 async def test_list_documents_metadata_filter_narrows_via_exists_subquery(

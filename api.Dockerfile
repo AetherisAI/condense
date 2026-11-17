@@ -1,4 +1,4 @@
-# Sift API image (Dev B). Production adapters only — no dev tooling, no torch.
+# Sift API image. Production adapters only — no dev tooling, no torch.
 # Referenced by docker-compose.yml `api` service (build context = repo root).
 FROM python:3.12-slim
 
@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# curl backs docker-compose.yml's `/healthz` HEALTHCHECK (DECISIONS.md D39) — the base slim
+# curl backs docker-compose.yml's `/healthz` HEALTHCHECK — the base slim
 # image has no HTTP client at all, so a tiny, no-cache apt layer is the cheapest way to get one.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \

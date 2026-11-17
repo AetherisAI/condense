@@ -6,7 +6,7 @@
 # (e.g. `docker run --user $(id -u):$(id -g)`) so build artifacts on bind
 # mounts come out owned by the host user, not root.
 #
-# Key design decisions (documented inline so this can live in the repo as-is):
+# Key design choices (documented inline so this file is self-explanatory):
 #   1. Rust toolchain lives in /opt/rustup (RUSTUP_HOME) + /opt/cargo
 #      (CARGO_HOME), both chmod'd a+rwX so an arbitrary uid at runtime can
 #      still write to $CARGO_HOME/registry (dependency cache) and can run
@@ -26,11 +26,11 @@
 #      to write to (CARGO_HOME, npm cache via $HOME, target dir under
 #      /work) is either world-writable or bind-mounted from the host with
 #      host-user ownership already. See runbook comment at bottom.
-#   6. QA tooling (xvfb + dbus + fonts + x11 utils) added for T4/T7: webkit
+#   6. QA tooling (xvfb + dbus + fonts + x11 utils) for E2E testing: webkit
 #      renders no text at all without a font package present, and the
 #      boot-smoke screenshot needs a virtual X server + window manager-free
 #      root-window capture (`import -display :99 -window root`). CAVEAT
-#      (found during T4's boot-smoke): `xvfb-run` and `dbus-run-session`
+#      (found during boot-smoke testing): `xvfb-run` and `dbus-run-session`
 #      both HANG in this image when they are the container's own PID 1 (no
 #      init process) — their internal readiness handshakes rely on signal
 #      delivery semantics PID 1 doesn't get without an init. Don't wrap the

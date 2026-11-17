@@ -1,4 +1,4 @@
-"""Unit tests for :meth:`~sift.pipelines.search.SearchPipeline.trace` / ``recap`` (D73).
+"""Unit tests for :meth:`~sift.pipelines.search.SearchPipeline.trace` / ``recap``.
 
 ``trace()`` keeps the intermediates ``search()`` throws away — the raw vector-search order, the
 reranked list, the recap's exact context, and per-stage timings — so the eval harness can

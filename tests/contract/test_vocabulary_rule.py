@@ -1,10 +1,9 @@
-"""The "no memory vocabulary" rule, enforced mechanically (D37/D38, v0.2.0 design §0).
+"""The "no memory vocabulary" rule, enforced mechanically.
 
 Condense has **documents** and **chunks** — never "memory"/"remember"/"forget". That naming
-belongs to the future Brain service's interpretation layer, not to this codebase. D37 codified
-the rule but deferred its mechanical enforcement to "whoever lands the toolbox/schema work in
-T2" (paired with the ``PATCH /settings`` toolbox-exclusion test in ``test_tools_schema.py``) —
-this is that test.
+belongs to the future Brain service's interpretation layer, not to this codebase. This test
+enforces the rule mechanically (paired with the ``PATCH /settings`` toolbox-exclusion test in
+``test_tools_schema.py``).
 
 A bare ``\\bmemor(y|ies)\\b`` grep would false-positive on the *other*, entirely legitimate
 sense of the word this codebase also uses — computer memory/RAM (an "in-memory" test double, a
@@ -30,13 +29,11 @@ _ALLOWED_LINES: frozenset[str] = frozenset(
         '"""In-memory Embedder producing deterministic, unit-norm pseudo-embeddings."""',
         "``.xlsx`` reproduced under a ``MemoryMax=2G`` isolation scope climbed past 2GiB RSS and "
         "was",
-        "attempt a parse that could exhaust memory (see DECISIONS.md D34: a stray far cell "
-        "inflated",
-        # WP v0.2.0 T3 (D40): both new "in-memory" hits are the same RAM sense as the two above.
-        '"""In-memory test double for the ``ConversationStore`` seam (``pipelines/answer.py``, '
-        "D40).",
+        "attempt a parse that could exhaust memory (a stray far cell inflated",
+        # Both "in-memory" hits below are the same RAM sense as the two above.
+        '"""In-memory test double for the ``ConversationStore`` seam (``pipelines/answer.py``).',
         '"""A libSQL-backed store when a Turso database is configured, else the in-memory fake —',
-        # fix/ingest-memory (A12): "in-memory list" describing the old buffering /ingest route —
+        # "in-memory list" describing the old buffering /ingest route —
         # the same RAM sense as every other allowlisted line above.
         "read into a single in-memory list, so a large multi-file upload doesn't spike RAM to the "
         "sum of",
@@ -53,6 +50,5 @@ def test_no_unallowlisted_memory_vocabulary_in_src() -> None:
                 offenders.setdefault(str(path.relative_to(SRC_DIR)), []).append(stripped)
 
     assert not offenders, (
-        "'memory' vocabulary found outside the RAM/systems allowlist (see v0.2.0 design §0, "
-        f"D37/D38): {offenders}"
+        f"'memory' vocabulary found outside the RAM/systems allowlist: {offenders}"
     )

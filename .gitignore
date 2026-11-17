@@ -29,7 +29,7 @@ sift_local.db*
 # sift-eval run folders (reports may quote your documents)
 eval-runs/
 eval-ci.db*
-# Desktop shell (Tauri 2, desktop/ — T4 feat/desktop-standalone)
+# Desktop shell (Tauri 2, desktop/)
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 desktop/node_modules/

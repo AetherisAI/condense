@@ -1,4 +1,4 @@
-"""Tests for ``agent.cli --json`` NDJSON events and SIGTERM handling (DECISIONS.md D54).
+"""Tests for ``agent.cli --json`` NDJSON events and SIGTERM handling.
 
 Mirrors ``tests/agent/test_agent.py`` conventions: ``httpx.MockTransport`` stub servers, no live
 network, ``main()`` called in-process with an injected client. The SIGTERM test is the one
@@ -93,7 +93,7 @@ def test_dry_run_json_on_empty_dir_is_still_one_valid_ndjson_line(
 def test_one_shot_json_sync_event_carries_failure_path_and_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A server-rejected file surfaces as ``failures[].path``/``.error`` (closes the D52 gap)."""
+    """A server-rejected file surfaces as ``failures[].path``/``.error``."""
     (tmp_path / "good.txt").write_bytes(b"alpha")
     (tmp_path / "bad.xlsx").write_bytes(b"not really an xlsx")
 

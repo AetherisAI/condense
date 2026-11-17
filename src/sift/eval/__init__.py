@@ -1,4 +1,4 @@
-"""``sift-eval`` — the quality-evaluation harness (D73–D75).
+"""``sift-eval`` — the quality-evaluation harness.
 
 A separate dev-tool application (the same pattern as ``agent/``): it builds the real system
 under test through :func:`sift.factory.build_container` and drives the Find

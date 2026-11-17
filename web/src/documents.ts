@@ -1,13 +1,13 @@
 import { apiFetch } from './api'
 
 /** One ingested document (mirrors api.schemas.DocumentSummary). Shared by `Library.tsx` (the
- * full listing) and `Chat.tsx` (the empty-corpus nudge check, D57/Task U6) so both agree on one
+ * full listing) and `Chat.tsx` (the empty-corpus nudge check) so both agree on one
  * fetch + shape instead of two copies drifting apart. */
 export type DocumentSummary = {
   path: string
   source_hash: string
   chunks: number
-  // D44: the source file's true last-modified time (or indexed_at fallback) — additive,
+  // The source file's true last-modified time (or indexed_at fallback) — additive,
   // not yet rendered anywhere.
   modified_at?: string | null
   indexed_at?: string | null

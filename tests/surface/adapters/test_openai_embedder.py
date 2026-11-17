@@ -154,7 +154,7 @@ async def test_timeouts_are_configurable(monkeypatch: pytest.MonkeyPatch) -> Non
 async def test_429_is_retried_with_bounded_backoff_then_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TEI (D30) hands out one concurrency permit per input string and 429s a request that
+    """TEI hands out one concurrency permit per input string and 429s a request that
     exceeds its free permits — retryable, not a real failure. Two 429s then a 200 must succeed
     without the caller ever seeing an exception."""
     responses = iter(
@@ -239,7 +239,7 @@ async def test_non_429_error_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> 
 async def test_prefix_is_prepended_to_every_input_in_every_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # D86: instruction-tuned embedders (Qwen3-Embedding, Nomic) expect a role prompt on each
+    # Instruction-tuned embedders (Qwen3-Embedding, Nomic) expect a role prompt on each
     # text; the adapter adds it so the pipelines keep calling `embed(texts)` unchanged.
     seen = _patch_transport(monkeypatch, _ok)
     embedder = OpenAICompatEmbedder(

@@ -59,7 +59,7 @@ pub fn tmp_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Compile-time target triple — matches the manifest's per-target key. Only the three triples
-/// tonight's manifest actually lists are wired up (D62); an unrecognized host falls back to a
+/// the manifest actually lists are wired up; an unrecognized host falls back to a
 /// sentinel that reliably fails provisioning lookups with a clear error rather than guessing.
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 pub const TARGET_TRIPLE: &str = "x86_64-unknown-linux-gnu";

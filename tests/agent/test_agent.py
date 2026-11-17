@@ -77,7 +77,7 @@ def _seed_dir(root: Path) -> dict[str, bytes]:
 def test_collect_hashes_match_sha256(tmp_path: Path) -> None:
     """The digest is the streamed sha256 of the file, and the loader is lazy (not eager bytes).
 
-    A3: ``collect`` must not read every matched file's full bytes up front — the third tuple
+    ``collect`` must not read every matched file's full bytes up front — the third tuple
     element is a zero-arg callable that only reads the file when actually invoked.
     """
     expected = _seed_dir(tmp_path)
@@ -99,7 +99,7 @@ def test_collect_filters_by_extension(tmp_path: Path) -> None:
 
 
 def test_collect_skips_oversized_file_and_warns(tmp_path: Path) -> None:
-    """A file over the size guard is excluded entirely (never hashed/loaded) and warns (A3)."""
+    """A file over the size guard is excluded entirely (never hashed/loaded) and warns."""
     small = tmp_path / "small.txt"
     small.write_bytes(b"tiny")
     big = tmp_path / "big.txt"
@@ -171,7 +171,7 @@ def test_ingest_posts_multipart_and_parses_results() -> None:
 def test_ingest_batches_split_modified_at_and_merge_results() -> None:
     """A folder larger than batch_size goes out in several POSTs; results merge, mtimes split.
 
-    Guards the OOM fix (D29): the client must never send a whole folder as one request. Each
+    Guards the OOM fix: the client must never send a whole folder as one request. Each
     batch carries only its own files' mtimes, and the merged body keeps the server's top-level
     shape (``tenant``) while concatenating every batch's ``results``.
     """
@@ -207,7 +207,7 @@ def test_ingest_batches_split_modified_at_and_merge_results() -> None:
 
 
 def test_ingest_accepts_lazy_loaders_and_resolves_them_per_batch() -> None:
-    """A ``(name, loader)`` pair — not raw bytes — must still upload the loader's bytes (A3)."""
+    """A ``(name, loader)`` pair — not raw bytes — must still upload the loader's bytes."""
     bodies: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -246,7 +246,7 @@ def test_ingest_first_batch_failure_raises_plain_error() -> None:
 
 
 def test_ingest_mid_batch_failure_raises_partial_with_earlier_results() -> None:
-    """Batch 2 of 2 fails after batch 1 succeeded — must not lose batch 1's landed results (A4)."""
+    """Batch 2 of 2 fails after batch 1 succeeded — must not lose batch 1's landed results."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.decode("latin-1")
@@ -274,7 +274,7 @@ def test_ingest_mid_batch_failure_raises_partial_with_earlier_results() -> None:
 
 def test_ingest_mid_batch_invalid_json_raises_partial_with_earlier_results() -> None:
     """Batch 2 of 2 returns HTTP 200 but a body that isn't valid JSON — must still raise
-    ``PartialIngestError`` carrying batch 1's landed results (R3): ``r.json()`` used to run
+    ``PartialIngestError`` carrying batch 1's landed results: ``r.json()`` used to run
     outside the batch's protected section, so a 200-with-garbage-body silently discarded every
     earlier batch's accounting instead of raising.
     """
@@ -441,8 +441,8 @@ def test_ingest_sends_modified_at_form_field() -> None:
 def test_main_partial_ingest_prints_statuses_summary_and_exits_nonzero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Batch 2 of 2 fails after batch 1 already landed — ``main`` must not swallow that progress
-    (R2): every per-file status the server confirmed prints, a ``PARTIAL: …`` summary line names
+    """Batch 2 of 2 fails after batch 1 already landed — ``main`` must not swallow that progress:
+    every per-file status the server confirmed prints, a ``PARTIAL: …`` summary line names
     how many files never got attempted (including a ``skipped_dedup`` status, same convention as
     ``sync``'s ``Summary.line()``), and the process exits non-zero (never a bare traceback, never
     exit 0 as if nothing went wrong).
@@ -483,7 +483,7 @@ def test_main_partial_ingest_prints_statuses_summary_and_exits_nonzero(
 
 
 def test_collect_prunes_vendored_directories_by_default(tmp_path: Path) -> None:
-    """A ``.venv``/``node_modules``/etc. subtree never contributes matches (R4) — a real corpus
+    """A ``.venv``/``node_modules``/etc. subtree never contributes matches — a real corpus
     audit found license ``.txt``/``.md`` files under a nested ``.venv/site-packages`` inflating
     the upload set with junk that isn't the user's own content.
     """
@@ -552,7 +552,7 @@ def test_collect_exclude_dirs_is_overridable(tmp_path: Path) -> None:
 
 
 def test_collect_prunes_junk_files_by_default(tmp_path: Path) -> None:
-    """``MEMORY.md``/``CLAUDE.md``/``*.tmp`` never contribute matches (D39) — a real corpus audit
+    """``MEMORY.md``/``CLAUDE.md``/``*.tmp`` never contribute matches — a real corpus audit
     found a stray agent-internal ``MEMORY.md`` polluting an index even though its extension
     (``.md``) is otherwise included.
     """

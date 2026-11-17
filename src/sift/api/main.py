@@ -1,4 +1,4 @@
-"""The FastAPI application and its lifespan — the process entry point (README §3).
+"""The FastAPI application and its lifespan — the process entry point.
 
 A single async lifespan runs the composition root ONCE: it builds the
 :class:`~sift.factory.Container` from the cached :class:`~sift.config.Settings` and stashes it on
@@ -26,11 +26,11 @@ from sift.factory import build_container
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Build the wired container once at startup and expose it on ``app.state``.
 
-    Also runs the store's ``ensure_ready`` migration/pin check right here (BUG #1, D40
-    amendment) — belt-and-braces alongside the identical call each toolbox executor now makes
-    (``pipelines/tools.py``): the very FIRST request against a fresh process (e.g.
-    ``GET /v1/tools/documents``) must never be the one that discovers a not-yet-migrated store.
-    ``"default"`` is the PoC's single hardcoded tenant (CLAUDE.md §3).
+    Also runs the store's ``ensure_ready`` migration/pin check right here — belt-and-braces
+    alongside the identical call each toolbox executor now makes (``pipelines/tools.py``): the
+    very FIRST request against a fresh process (e.g. ``GET /v1/tools/documents``) must never be
+    the one that discovers a not-yet-migrated store. ``"default"`` is the PoC's single hardcoded
+    tenant.
     """
     settings = get_settings()
     container = build_container(settings)
@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 class _SettingsDrivenCORSMiddleware:
-    """Applies :class:`CORSMiddleware` per ``Settings.cors_origins`` (D55), resolved fresh on
+    """Applies :class:`CORSMiddleware` per ``Settings.cors_origins``, resolved fresh on
     every request rather than once at app-construction time.
 
     Deciding the allowed origins normally means reading ``Settings`` when the middleware is

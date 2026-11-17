@@ -1,5 +1,5 @@
-"""Tests for :class:`~sift.adapters.conversation.libsql.LibSQLConversationStore` (WP v0.2.0 T3,
-D40) — parity with ``FakeConversationStore`` against a real ``tmp_path`` libSQL DB.
+"""Tests for :class:`~sift.adapters.conversation.libsql.LibSQLConversationStore` — parity
+with ``FakeConversationStore`` against a real ``tmp_path`` libSQL DB.
 """
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ async def test_prune_expired_deletes_stale_conversations(db_path: str) -> None:
 async def test_append_turn_rejects_non_str_content_with_clear_type_error(
     store: LibSQLConversationStore,
 ) -> None:
-    # D40 amendment (BUG #2 defense-in-depth): a non-str `content` (e.g. an un-normalized
+    # Defense-in-depth: a non-str `content` (e.g. an un-normalized
     # provider content-block list slipping past the adapter) must fail LOUD and EARLY with a
     # clear TypeError, never as an opaque libsql "ValueError: Unsupported parameter type" from
     # deep inside the DB bind.
@@ -116,7 +116,7 @@ async def test_prune_expired_on_fresh_db_returns_zero(tmp_path) -> None:
         await impl.aclose()
 
 
-# --- conversation metadata: title/updated_at/listing/get/delete (WP v0.2.0 T6, D42) ----------
+# --- conversation metadata: title/updated_at/listing/get/delete ----------
 
 
 async def test_append_turn_creates_meta_row_with_no_title(store: LibSQLConversationStore) -> None:
@@ -142,7 +142,7 @@ async def test_append_turn_bumps_updated_at_on_every_turn(store: LibSQLConversat
 async def test_append_turn_persists_grounding_fields_on_that_turn_only(
     store: LibSQLConversationStore,
 ) -> None:
-    """D51 — the per-turn immutable grounding fields, same pattern as ``sources`` below."""
+    """The per-turn immutable grounding fields, same pattern as ``sources`` below."""
     segments = [{"text": "hello", "kind": "grounded"}]
 
     await store.append_turn(TENANT, "c1", "user", "hi", max_turns=20)
@@ -271,7 +271,7 @@ async def test_set_title_if_unset_sets_title_once(store: LibSQLConversationStore
 
 
 async def test_legacy_db_missing_sources_column_migrates_on_read(db_path: str) -> None:
-    """A ``conversations`` table predating the ``sources`` column (WP v0.2.0 T6, D42) must
+    """A ``conversations`` table predating the ``sources`` column must
     migrate (ALTER-if-missing) rather than 500 on the first read against it — same guard shape
     as the store's own ``files.modified_at``/``chunks.metadata`` migrations."""
     conn = libsql.connect(db_path)
@@ -299,7 +299,7 @@ async def test_legacy_db_missing_sources_column_migrates_on_read(db_path: str) -
 
 
 async def test_legacy_db_missing_grounding_columns_migrates_on_read(db_path: str) -> None:
-    """A ``conversations`` table predating the D51 grounding columns must migrate (ALTER-if-
+    """A ``conversations`` table predating the grounding columns must migrate (ALTER-if-
     missing) rather than 500 on the first read — same guard shape as the ``sources`` migration
     above, run one column further back (before ``sources`` even existed, the harshest case)."""
     conn = libsql.connect(db_path)

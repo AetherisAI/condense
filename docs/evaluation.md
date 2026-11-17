@@ -10,7 +10,7 @@ write. It gives you numbers to compare before and after a change (chunk size, re
 
 It runs the real pipeline in-process from the same `.env` as the server, so it sees what
 `/search` hides: the full ranked list, the exact passages the LLM read, and how long each stage
-took. Design decisions: D73 to D75 in `docs/Quentin/DECISIONS.md`.
+took.
 
 ## 1. What it measures
 
@@ -24,9 +24,9 @@ took. Design decisions: D73 to D75 in `docs/Quentin/DECISIONS.md`.
 | **answer relevancy** | does the answer address the question? (RAGAS: questions generated back from the answer, compared with the real one) | ↑ | both |
 | **faithfulness** | share of the answer's claims supported by the passages the generator actually saw | ↑ | both |
 | **answer correctness** | agreement with your `reference` answer (RAGAS: claim-level F1 plus semantic similarity). An F1, so true details the reference doesn't list also cost points | ↑ | both |
-| **answer recall** | share of the `reference`'s facts the answer states; extra details don't count against it (the reference is split into claims and each is checked against the answer, using RAGAS `FactualCorrectness`'s prompts). With references that hold only what's asked, this is the "did it answer correctly?" number. RAGAS's own recall mode isn't used: it scored correct answers 0 under a strict judge (D84) | ↑ | both |
+| **answer recall** | share of the `reference`'s facts the answer states; extra details don't count against it (the reference is split into claims and each is checked against the answer, using RAGAS `FactualCorrectness`'s prompts). With references that hold only what's asked, this is the "did it answer correctly?" number. RAGAS's own recall mode isn't used: it scored correct answers 0 under a strict judge | ↑ | both |
 | **context utilization** | were the passages given to the generator actually useful for its answer? (rank-weighted) | ↑ | both |
-| **noise sensitivity** | share of the answer's claims that a relevant retrieved passage backs but that aren't correct (RAGAS, relevant mode). "Correct" means supported by the question plus `reference`: RAGAS checked against the bare reference, which marked correct answers wrong (D85). A true detail the reference doesn't list still counts as wrong, so with minimal references this also rises with verbosity: compare runs over the same set, don't read it as an error rate | ↓ | both |
+| **noise sensitivity** | share of the answer's claims that a relevant retrieved passage backs but that aren't correct (RAGAS, relevant mode). "Correct" means supported by the question plus `reference`: RAGAS checked against the bare reference, which marked correct answers wrong. A true detail the reference doesn't list still counts as wrong, so with minimal references this also rises with verbosity: compare runs over the same set, don't read it as an error rate | ↓ | both |
 | **noise robustness** | `--noise`: answer correctness as irrelevant passages are mixed into the recap context, and the ratio correctness@max-noise ÷ correctness@clean | ↑ | Find |
 | **correct abstention** | on `answerable: false` questions: did the system say the documents don't cover it? | ↑ | both |
 | **false refusal** | on answerable questions: did it wrongly decline? | ↓ | both |
@@ -65,7 +65,7 @@ EVAL_JUDGE_API_KEY=...
 ```
 
 For a Claude judge, use the native SDK. Anthropic's OpenAI-compatible endpoint rejects the
-JSON mode and the `temperature`/`top_p` values RAGAS sends (D82):
+JSON mode and the `temperature`/`top_p` values RAGAS sends:
 
 ```bash
 EVAL_JUDGE_PROVIDER=anthropic
@@ -132,7 +132,7 @@ it is recall 0.5 and complete 0. Two rules keep alternatives honest, and `valida
   as a likely typo.
 
 Groups change recall and complete@k only. Precision, hit@k and MRR already counted any matching
-entry, and they are unchanged. A set without labels scores exactly as before.
+entry, and they are unchanged. In a set without labels, every entry is required.
 
 **What makes a good set:**
 
@@ -224,14 +224,51 @@ runs Find with `--skip-judge`, no reranker and no recap, and gates hit@1, recall
 against `evals/ci/baseline/summary.json` with `compare --fail-on`. No secrets or LLM calls. See
 `evals/ci/README.md` for running it locally and updating the baseline.
 
-## 7. Caveats
+## 7. Results on MITRE ATT&CK
+
+These numbers set the defaults. The corpus is the MITRE ATT&CK knowledge base (2,298 pages,
+7,278 chunks); the question set has 332 questions written from it, 306 of them answerable:
+base questions, keyword, scenario, paraphrase and reword variants, and German translations.
+Find surface, `--skip-judge`, `RETRIEVE_K=30`, bge-m3 embeddings, doc-level hit@1 over the 306
+answerable questions.
+
+| Reranker | hit@1 | rerank time per query |
+| --- | --- | --- |
+| none | 0.69 | |
+| LLM judge, Mistral Small | 0.63 | 0.5 s |
+| LLM judge, Claude Haiku 5.5 | 0.84 | 1.4 s |
+| bge-reranker-v2-m3, TEI, CPU (4 vCPU) | 0.82 | 45 s |
+| bge-reranker-v2-m3, llama.cpp Q8_0, Apple M5 GPU | 0.82 | 1.9 s |
+
+The cross-encoder and Haiku tie (McNemar p ≈ 0.7): the cross-encoder is better on keyword-style
+questions, Haiku on questions that need a step of inference. The cross-encoder needs no API key
+and keeps the data on the machine, so it is the default. The llama.cpp GGUF build agrees with
+TEI on all but 5 of 306 questions. On CPU only, llama.cpp takes about 11 s per query natively
+and 18 s in a 4-vCPU container, which is why reranking Find and Ask is opt-in
+(`TOOLS_SEARCH_RERANK`).
+
+Embedders, same setup without a reranker (hit@1 / hit@30, query embedding time):
+
+| Embedder | hit@1 | hit@30 | per query |
+| --- | --- | --- | --- |
+| bge-m3 (default) | 0.69 | 0.97 | 116 ms |
+| Nomic Embed Text v2 MoE | 0.69 | 0.97 | 116 ms |
+| Qwen3-Embedding-0.6B | 0.68 | 0.92 | 92 ms |
+| Qwen3-Embedding-4B (Q8_0) | 0.74 | 0.95 | 211 ms |
+| mistral-embed (hosted) | 0.66 | 0.94 | 351 ms |
+
+Qwen3-4B ranks paraphrased questions better but drops some exact-identifier lookups (technique
+IDs, tool names) out of its top 30, which a reranker can't recover, and costs about twice as much
+per query and five times as much to ingest. bge-m3 stays the default.
+
+## 8. Caveats
 
 - **Cost:** each judged question makes roughly 15–25 judge-LLM calls per surface (answer recall
   alone is about 4), plus 2 per noise ratio. Use `--skip-judge` for retrieval-only iterations, and
   `EVAL_JUDGE_CONCURRENCY` to trade speed for rate limits.
 - **Latency is measured in-process.** It excludes HTTP, auth and serialization, but it covers
   every model call. Questions run one at a time, and the first `EVAL_WARMUP` runs are discarded.
-- **Citations are stripped before judging** (D76): inline markers like `(policies/shipping.md,
+- **Citations are stripped before judging**: inline markers like `(policies/shipping.md,
   p.1)`, `[1]` and `Source: [1]` lines are removed from the copy the judge sees, because RAGAS
   otherwise counts them as unsupported claims (a correct cited answer scored faithfulness 0.5,
   and the same answer uncited scored 1.0). Reports always show the answer verbatim. Set

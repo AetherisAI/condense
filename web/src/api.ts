@@ -1,7 +1,7 @@
 /**
  * The one place that knows how to reach the engine. Browser deployments leave the base URL empty
  * (same-origin, relative paths — unchanged behavior, no CORS involved). The Tauri desktop shell
- * has no same-origin server to talk to, so it persists an absolute base URL here instead (D55).
+ * has no same-origin server to talk to, so it persists an absolute base URL here instead.
  */
 
 const STORAGE_KEY = 'apiBaseUrl'

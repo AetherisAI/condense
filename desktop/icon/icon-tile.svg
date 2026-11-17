@@ -4,7 +4,7 @@
   1:1, then `npx tauri icon` derives the platform set in desktop/src-tauri/icons/).
 
   This is a small-size-legible derivative of the brand mark (condense-mark.svg /
-  web/src/Logo.tsx), revised per design-owner review — NOT the faithful mark:
+  web/src/Logo.tsx) — NOT the faithful mark:
   - ring centered on the tile, outer diameter ~62% of tile width, stroked in the full-strength
     brand purple (#aa3bff) instead of the mark's 16%-opacity hairline (which vanished on the
     near-black tile);

@@ -5,23 +5,23 @@ import { apiFetch } from './api'
 import type { FindHit, FindTurn } from './FindTurn'
 
 /**
- * The workbench's composer (D57/Task U2+U3) — extracted out of `Chat.tsx`: the Ask/Find mode
+ * The workbench's composer — extracted out of `Chat.tsx`: the Ask/Find mode
  * segment, the grounding toggle, the input row (attach + text + Send), and in-chat ingest (attach
  * button, hidden multi-file input, and a whole-window drag-drop overlay). Chat still owns the
  * conversation thread — this component only reports intent up (`onSend`, `onGroundingChange`) and
  * drives ingest/find turns into that same thread via their own start/update callback pairs, since
  * both must render inline, in order, alongside the answer/user turns they're siblings of.
  *
- * **Grounding (D46, UI-only change):** the old Strict/Hybrid/Open 3-way pill is now a 2-state
+ * **Grounding (UI-only change):** the old Strict/Hybrid/Open 3-way pill is now a 2-state
  * `Corpus only ⇄ + General knowledge` toggle. This is a UI simplification ONLY — "hybrid" stays a
  * fully valid value on the wire (`api.schemas.AnswerRequest.grounding`) for other consumers and for
  * conversations that already recorded it; this toggle just never offers it as a choice going
  * forward, and `loadStoredGrounding` migrates anyone's remembered "hybrid" preference to "open"
  * (the bucket the API always treated it closest to for a corpus-first assistant).
  *
- * **Mode (D57/Task U3):** `Ask` is today's `/v1/answer` flow (unchanged). `Find` is retrieval-only
- * — this component itself calls `POST /v1/tools/search` (the toolbox's raw-retrieval primitive,
- * D57's product statement: Find mode IS the toolbox's search tool) and renders a `FindTurn`, no
+ * **Mode:** `Ask` is today's `/v1/answer` flow (unchanged). `Find` is retrieval-only
+ * — this component itself calls `POST /v1/tools/search` (the toolbox's raw-retrieval primitive —
+ * Find mode IS the toolbox's search tool) and renders a `FindTurn`, no
  * LLM involved. The grounding toggle only means something for Ask, so it's dimmed/disabled (never
  * hidden — layout stability) while Find is active.
  */
@@ -70,7 +70,7 @@ const GROUNDING_HINTS: Record<ComposerGroundingMode, string> = {
 /** The compact 2-way segmented toggle — same visual language/classes as the retired 3-way pill
  * (`.grounding-select`/`.grounding-btn`), so the look carries over unchanged.
  *
- * `disabled` (D57/Task U3) dims the whole control and blocks interaction without unmounting it —
+ * `disabled` dims the whole control and blocks interaction without unmounting it —
  * grounding only means something for Ask mode, but layout stability means it stays in place
  * (never hidden) while Find is active, with a `title` explaining why. */
 function GroundingToggle({
@@ -121,7 +121,7 @@ export type IngestFileEntry = {
   detail?: string | null
 }
 
-/** A client-side-only turn (never sent to `/v1/answer`, never persisted — D57/Task U2) rendered
+/** A client-side-only turn (never sent to `/v1/answer`, never persisted) rendered
  * inline in the chat stream for one in-chat upload batch. `Chat.tsx` folds this into its own
  * `Turn` union (discriminated by `role: 'ingest'`, the same discriminant the user/assistant turns
  * already use) purely so it renders in the right chronological position among them. */
@@ -210,15 +210,15 @@ export type ComposerProps = {
   /** Patches a previously-started ingest turn (by id) with its files' settled outcomes. */
   onIngestUpdate: (id: string, files: IngestFileEntry[]) => void
   /** Appends a brand-new Find turn (empty `hits`, no error yet) to the conversation stream
-   * (D57/Task U3) — mirrors `onIngestStart`'s shape. */
+   * — mirrors `onIngestStart`'s shape. */
   onFindStart: (turn: FindTurn) => void
   /** Patches a previously-started Find turn (by id) with its settled hits, or an error. */
   onFindUpdate: (id: string, hits: FindHit[], error: string | null) => void
-  /** Reports this component's own Find-in-flight flag up to `Chat.tsx` (D57/Task U4) — one of
+  /** Reports this component's own Find-in-flight flag up to `Chat.tsx` — one of
    * the three flows (ask/find/ingest) `Chat` combines into the single `isBusy` it drives the
    * living-logo indicator with. Same shape as `onIngestingChange` below. */
   onFindingChange?: (finding: boolean) => void
-  /** Reports whether ANY `/ingest` request is currently in flight (D57/Task U4) — true for the
+  /** Reports whether ANY `/ingest` request is currently in flight — true for the
    * whole span of a batch upload, false again once it settles (success or error) or there are no
    * batches left in flight. Composer never disables its own input while this is true (uploads
    * run alongside typing today, unchanged), it only broadcasts the flag upward. */
@@ -244,7 +244,7 @@ export default function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [mode, setModeState] = useState<ComposerMode>(loadStoredMode)
   const [finding, setFinding] = useState(false)
-  // Counts in-flight `/ingest` requests rather than a plain boolean (D57/Task U4) — a second
+  // Counts in-flight `/ingest` requests rather than a plain boolean — a second
   // drag-drop batch can start while the first is still uploading, and the busy indicator must
   // only clear once the LAST one settles, not the first.
   const uploadingCountRef = useRef(0)
@@ -268,7 +268,7 @@ export default function Composer({
     localStorage.setItem(MODE_STORAGE_KEY, next)
   }
 
-  /** Find mode's send path (D57/Task U3) — retrieval only, no LLM: embeds the query and reranks
+  /** Find mode's send path — retrieval only, no LLM: embeds the query and reranks
    * against the corpus via the toolbox's own search tool. Mirrors `handleFiles`' start/settle
    * shape (append an in-flight turn, then patch it once settled) so a Find turn renders inline
    * the moment it's fired, same as an ingest turn. */

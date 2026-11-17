@@ -1,5 +1,5 @@
 """Identity reranker: keeps vector-search order so the search pipeline can go green
-before the real TEI cross-encoder lands. Selected by ``RERANK_STRATEGY=none`` (README §7).
+before the real TEI cross-encoder lands. Selected by ``RERANK_STRATEGY=none``.
 """
 
 from __future__ import annotations

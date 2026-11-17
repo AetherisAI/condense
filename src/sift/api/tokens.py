@@ -1,4 +1,4 @@
-"""``/v1/tokens`` — mint/list/revoke per-consumer bearer tokens (README §3, master-gated).
+"""``/v1/tokens`` — mint/list/revoke per-consumer bearer tokens (master-gated).
 
 Every route here sits behind :func:`~sift.api.deps.require_master` — ONLY the master
 ``INGEST_TOKEN`` may manage tokens, never a per-consumer one (a consumer minting its own

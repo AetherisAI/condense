@@ -87,26 +87,26 @@ def test_defaults_populate() -> None:
     assert settings.embed_connect_timeout_s == 5.0
     assert settings.ocr_timeout_s == 60.0
     assert settings.ocr_connect_timeout_s == 5.0
-    # Generic post-parse guardrails (D39): text ceiling + per-file wall-clock timeout, applied
-    # to every format regardless of the xlsx-specific pre-parse guard (D34) above.
+    # Generic post-parse guardrails: text ceiling + per-file wall-clock timeout, applied
+    # to every format regardless of the xlsx-specific pre-parse guard above.
     assert settings.parse_max_chars == 2_000_000
     assert settings.parse_timeout_s == 60.0
-    # Toolbox `/v1/tools/*` surface (WP v0.2.0 T2, D38).
+    # Toolbox `/v1/tools/*` surface.
     assert settings.tools_search_k == 8
     assert settings.tools_search_max_k == 20
     assert settings.auth_tokens == ""
-    # `/v1/answer` reference agent (WP v0.2.0 T3, D40).
+    # `/v1/answer` reference agent.
     assert settings.answer_tool_mode == "auto"
-    # D40 amendment: 6 -> 10 (observed: a per-document deep-dive strategy exhausts 6 on ~14
+    # Raised 6 -> 10 (observed: a per-document deep-dive strategy exhausts 6 on ~14
     # people, truncating before the model can enumerate them all).
     assert settings.answer_max_tool_calls == 10
     assert settings.answer_timeout_s == 120.0
     assert settings.answer_max_tokens == 1024
     assert settings.answer_history_max_turns == 20
     assert settings.answer_history_ttl_days == 30
-    # Grounding mode (D46): defaults to the safest, corpus-only trust boundary.
+    # Grounding mode: defaults to the safest, corpus-only trust boundary.
     assert settings.answer_grounding_default == "strict"
-    # Frozen-engine entry point (packaging/sift_engine_entry.py, D62): the same bind/port the
+    # Frozen-engine entry point (packaging/sift_engine_entry.py): the same bind/port the
     # engine has always used (docker-compose's API_BIND/API_PORT host-mapping vars, previously
     # compose-only — see the now-narrowed `_NON_SETTINGS_KEYS` in test_config_env_parity.py),
     # now a real typed field so a frozen binary can call `uvicorn.run(app, host=..., port=...)`
@@ -129,7 +129,7 @@ def test_recap_temperature_defaults_and_parses(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_blank_recap_temperature_means_send_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    # D81: some chat models (Claude Haiku 5.5) reject a `temperature` field outright, so a
+    # Some chat models (Claude Haiku 5.5) reject a `temperature` field outright, so a
     # blank RECAP_TEMPERATURE= must mean "omit it from the request", not a parse error.
     monkeypatch.setenv("RECAP_TEMPERATURE", "")
     assert Settings(ingest_token="t").recap_temperature is None
@@ -145,7 +145,7 @@ def test_embed_retry_attempts_below_one_raises_validation_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A 0-attempt budget reached an AssertionError mid-request instead of failing fast at
-    # construction (see DECISIONS.md D36) — Field(ge=1) must catch it up front instead.
+    # construction — Field(ge=1) must catch it up front instead.
     monkeypatch.setenv("EMBED_RETRY_ATTEMPTS", "0")
     with pytest.raises(ValidationError):
         Settings(ingest_token="t")
@@ -163,7 +163,7 @@ def test_parse_max_chars_below_one_raises_validation_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A non-positive ceiling would reject every parse unconditionally — never an intended
-    # configuration (D39, same rationale as D36's `parse_max_xlsx_cells` guard).
+    # configuration (same rationale as the `parse_max_xlsx_cells` guard).
     monkeypatch.setenv("PARSE_MAX_CHARS", "0")
     with pytest.raises(ValidationError):
         Settings(ingest_token="t")
@@ -173,7 +173,7 @@ def test_parse_timeout_s_non_positive_raises_validation_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A zero/negative timeout would fail every parse immediately (or is meaningless to
-    # `asyncio.wait_for`) — fail fast and legibly at construction instead (D39).
+    # `asyncio.wait_for`) — fail fast and legibly at construction instead.
     monkeypatch.setenv("PARSE_TIMEOUT_S", "0")
     with pytest.raises(ValidationError):
         Settings(ingest_token="t")
@@ -206,7 +206,7 @@ def test_tools_search_max_k_below_one_raises_validation_error(
         Settings(ingest_token="t")
 
 
-# --- /v1/answer reference agent (WP v0.2.0 T3, D40) ------------------------------------
+# --- /v1/answer reference agent ------------------------------------
 
 
 def test_bogus_answer_tool_mode_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -231,7 +231,7 @@ def test_bogus_answer_grounding_default_raises(monkeypatch: pytest.MonkeyPatch) 
 def test_answer_max_tool_calls_below_one_raises_validation_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # An unbounded/zero tool-call budget defeats the whole point of the budget (D40).
+    # An unbounded/zero tool-call budget defeats the whole point of the budget.
     monkeypatch.setenv("ANSWER_MAX_TOOL_CALLS", "0")
     with pytest.raises(ValidationError):
         Settings(ingest_token="t")
@@ -261,7 +261,7 @@ def test_answer_history_ttl_days_below_one_raises_validation_error(
         Settings(ingest_token="t")
 
 
-# --- frozen-engine entry point bind/port (packaging/sift_engine_entry.py, D62) ---------
+# --- frozen-engine entry point bind/port (packaging/sift_engine_entry.py) ---------
 
 
 def test_api_port_zero_raises_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,7 +284,7 @@ def test_api_bind_and_port_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.api_port == 18801
 
 
-# --- parse_auth_tokens (WP v0.2.0 T2, D38) ---------------------------------------------
+# --- parse_auth_tokens ---------------------------------------------
 
 
 def test_parse_auth_tokens_empty_string_is_empty_dict() -> None:
@@ -316,7 +316,7 @@ def test_parse_auth_tokens_drops_malformed_entries(caplog: pytest.LogCaptureFixt
 def test_parse_auth_tokens_malformed_entry_logged_redacted_not_verbatim(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # D40 amendment: a malformed entry (no ":") could actually BE a bare secret token pasted by
+    # A malformed entry (no ":") could actually BE a bare secret token pasted by
     # mistake — logging it verbatim would leak it into logs. Only a redacted form (first 4
     # chars + length) may ever appear.
     secret = "supersecrettoken12345"

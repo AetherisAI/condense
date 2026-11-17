@@ -1,10 +1,9 @@
 @echo off
-REM Launch the Condense engine from this bundle on Windows (D63 "API only" download).
+REM Launch the Condense engine from this bundle on Windows ("API only" download).
 REM
-REM BEST-EFFORT, UNTESTED (2026-07-06): this was written to mirror run.sh's behavior but has not
-REM been run on a real Windows machine tonight (this host is Linux-only) -- the engine bundle
-REM itself is also Linux-only so far (see packaging/README.md); this script is here for when a
-REM Windows PyInstaller build exists (CI, D63) so the bundle layout is already Windows-ready.
+REM BEST-EFFORT, UNTESTED: this was written to mirror run.sh's behavior but has not yet been run
+REM on a real Windows machine. The Windows engine bundle is built by CI (build-desktop.yml); this
+REM script keeps the bundle layout Windows-ready.
 REM Known risk spots if something breaks: the naive ".env" line parser below (no quoting/escaping
 REM support -- values with "=" past the first one, or spaces, may not round-trip correctly) and
 REM whether engine\sift-engine.exe is the exact name the Windows PyInstaller build produces.

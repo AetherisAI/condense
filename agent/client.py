@@ -19,7 +19,7 @@ class PartialIngestError(RuntimeError):
 
     ``partial`` is the merged response body (same shape :meth:`SiftClient.ingest` normally
     returns) for every batch that succeeded *before* the failure — so a caller can credit that
-    progress instead of discarding it wholesale (see DECISIONS.md D32 / A4). The triggering
+    progress instead of discarding it wholesale. The triggering
     exception is available both as ``__cause__`` (via ``raise ... from exc``) and as ``.cause``.
     """
 
@@ -72,12 +72,12 @@ class SiftClient:
         folder (a) can exceed Starlette's 1000-file multipart cap and (b) makes the server hold
         every file + its chunks + vectors at once and embed for longer than the client timeout —
         so the agent abandons and retries while the server keeps working, piling up overlapping
-        ingests until OOM (see DECISIONS.md D29). Small batches commit incrementally (content-hash
+        ingests until OOM. Small batches commit incrementally (content-hash
         dedup then skips them on any retry) and keep the server's per-request memory bounded.
 
         ``data`` may be raw ``bytes`` **or** a zero-arg loader (``Callable[[], bytes]``); a loader
         is only invoked while building the batch it belongs to, so at most one batch's worth of
-        file bytes is ever resident at once (A3) — the caller (e.g. :func:`agent.sync.sync`) can
+        file bytes is ever resident at once — the caller (e.g. :func:`agent.sync.sync`) can
         hand over thousands of files' metadata without holding all their content in memory.
 
         ``modified_at`` is an optional ``{upload_name: iso8601}`` map of each file's last-modified
@@ -86,10 +86,10 @@ class SiftClient:
 
         If a batch fails **after** at least one earlier batch already landed, raises
         :class:`PartialIngestError` carrying the merged results of those earlier batches instead
-        of losing them outright (A4); a failure on the very first batch just propagates normally
+        of losing them outright; a failure on the very first batch just propagates normally
         since there is nothing yet to credit. A 200 response whose body isn't valid JSON counts as
         a failure too — decoding happens inside the same protected section as the POST itself, so
-        it can't silently discard an earlier batch's already-landed results either (D35).
+        it can't silently discard an earlier batch's already-landed results either.
         """
         merged: dict[str, Any] = {}
         for start in range(0, len(files), self._batch_size):

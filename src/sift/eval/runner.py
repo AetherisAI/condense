@@ -93,7 +93,7 @@ def _slug(label: str) -> str:
 
 
 def build_judges(app: Settings, es: EvalSettings) -> tuple[Judge, AbstentionCheck]:
-    """The RAGAS judge + the abstention check, both pointed at the judge LLM (D74)."""
+    """The RAGAS judge + the abstention check, both pointed at the judge LLM."""
     from sift.eval.ragas_judge import RagasJudge
 
     judge_app = es.judge_settings(app)
@@ -273,7 +273,7 @@ async def rejudge(
     """Re-score an existing run with the currently configured judge; rewrites its reports.
 
     ``metrics`` re-scores only those answer metrics and keeps every other score, abstention
-    included (D84), so fixing one metric doesn't pay for re-judging the rest.
+    included, so fixing one metric doesn't pay for re-judging the rest.
     """
     say = progress or (lambda _msg: None)
     run = json.loads((run_dir / "config.json").read_text())

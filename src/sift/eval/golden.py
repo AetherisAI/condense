@@ -1,4 +1,4 @@
-"""The golden question set — JSONL schema, parsing, and structural checks (D75).
+"""The golden question set — JSONL schema, parsing, and structural checks.
 
 One JSON object per line::
 
@@ -11,7 +11,7 @@ One JSON object per line::
 A ``relevant`` entry may carry a ``group`` label. Entries sharing a label are **alternatives**
 (any one of them is enough: two files that each state the answer); every entry without a label
 is its own group. Each group is one piece of evidence the answer *requires*, which is what
-recall counts (D78)::
+recall counts::
 
     "relevant": [{"path": "tactics/TA0101.md", "evidence": "T0884 Connection Proxy", "group": "a"},
                  {"path": "techniques/T0884.md", "evidence": "an intermediary", "group": "a"}]

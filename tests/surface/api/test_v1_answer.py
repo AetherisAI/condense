@@ -1,4 +1,4 @@
-"""``TestClient`` coverage for ``POST /v1/answer`` (WP v0.2.0 T3, D40) — offline, fakes only.
+"""``TestClient`` coverage for ``POST /v1/answer`` — offline, fakes only.
 
 Mirrors ``test_v1_tools.py``'s pattern: the wired ``Container`` from
 :func:`~sift.factory.build_container`, with ``container.answer`` swapped (via
@@ -134,7 +134,7 @@ def test_answer_stream_emits_events_in_order(enumeration_client: TestClient) -> 
 def test_answer_stream_over_the_wire_marks_general_knowledge_hybrid(
     enumeration_client: TestClient,
 ) -> None:
-    """BUG-2 (D48) end-to-end: over the actual HTTP SSE response, a hybrid answer that mixes
+    """End-to-end: over the actual HTTP SSE response, a hybrid answer that mixes
     grounded and `[General knowledge]`-marked content carries the structured segments a
     consumer (the Chat UI) can render distinctly — not just the boolean flag."""
     completer = FakeToolCompleter(
@@ -174,7 +174,7 @@ def test_answer_stream_over_the_wire_marks_general_knowledge_hybrid(
 def test_answer_stream_reaches_done_even_when_the_completer_raises_mid_loop(
     enumeration_client: TestClient,
 ) -> None:
-    """BUG-1 (D48) end-to-end regression: reproduced live with a genuine provider 429 mid-loop
+    """End-to-end regression: reproduced live with a genuine provider 429 mid-loop
     that crashed the SSE stream with no terminal frame, stranding the Chat UI on "thinking..."
     forever. Over the real HTTP response, an exception from the completer must still finalize
     the stream with "grounding" -> "done" (truncated) — never a dropped/hanging connection."""
@@ -241,7 +241,7 @@ def test_answer_json_format_field_round_trips(enumeration_client: TestClient) ->
     assert response.json()["format"] == "json"
 
 
-# --- grounding modes (D46) ---------------------------------------------------------------
+# --- grounding modes ---------------------------------------------------------------
 
 
 def test_answer_grounding_defaults_to_strict_when_omitted(enumeration_client: TestClient) -> None:

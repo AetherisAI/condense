@@ -3,15 +3,15 @@
 # OOM-isolated, detached systemd --user unit. The headless twin of the desktop app (agent/app.py):
 # no Tk window, just a folder watched continuously and reconciled against the engine.
 #
-# WHY the same cgroup posture as scripts/run-engine.sh (DECISIONS.md D29/D34): a runaway walk
+# WHY the same cgroup posture as scripts/run-engine.sh: a runaway walk
 # (a huge tree, a pathological symlink loop, a giant batch held in memory) must never trigger the
-# *system* OOM killer and take VS Code / this session down with it. `MemoryMax` + `MemorySwapMax=0`
+# *system* OOM killer and take VS Code / your terminal down with it. `MemoryMax` + `MemorySwapMax=0`
 # puts the agent in its own cgroup v2 — an overrun is reaped by the *cgroup* OOM killer, and
 # nothing else on the box is touched. No `MemoryHigh` band, same reasoning as run-engine.sh: a
 # soft-throttle purgatory can livelock every thread in the cgroup without ever crossing
 # `MemoryMax`, which is worse than a clean, fast OOM-kill-and-restart.
 #
-# WHY Restart=always (same D39/engine precedent): a clean external SIGTERM (not a `systemctl
+# WHY Restart=always (same as scripts/run-engine.sh): a clean external SIGTERM (not a `systemctl
 # stop`) must not leave the watcher silently dead — `Restart=always` restarts on ANY exit, clean
 # or OOM-killed, while `systemctl stop sift-agent-watch` remains the sanctioned way to actually
 # stop it (a manual stop masks Restart by design).
@@ -25,8 +25,7 @@
 # stdout/stderr unbuffered so every `print()` lands in the log the instant it's written.
 #
 # Usage:
-#   scripts/run-agent-watch.sh                              # start (or restart), Acme, :8001
-#   SIFT_TOKEN=condense-dev scripts/run-agent-watch.sh
+#   WATCH_DIR=~/Documents/notes SIFT_TOKEN=... scripts/run-agent-watch.sh   # start (or restart), :8001
 #   WATCH_DIR=/path/to/folder SERVER=http://127.0.0.1:8000 SIFT_TOKEN=... scripts/run-agent-watch.sh
 #   AGENT_MEM_MAX=2G scripts/run-agent-watch.sh
 #   systemctl --user status sift-agent-watch
@@ -37,7 +36,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-WATCH_DIR="${WATCH_DIR:-/home/quentinlatimier/Documents/Acme}"
+WATCH_DIR="${WATCH_DIR:?set WATCH_DIR to the folder to watch}"
 SERVER="${SERVER:-http://127.0.0.1:8001}"
 TOKEN="${SIFT_TOKEN:?set SIFT_TOKEN to the engine bearer token}"
 CAP="${AGENT_MEM_MAX:-1G}" # hard ceiling only: exceed it -> cgroup OOM kills the agent, fast

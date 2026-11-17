@@ -12,7 +12,7 @@ from agent.config import AgentConfig, load
 
 
 def test_default_timeout_is_600() -> None:
-    """Matches SiftClient's new default (D36): one OCR-heavy batch exceeded the old 300s."""
+    """Matches SiftClient's new default: one OCR-heavy batch exceeded the old 300s."""
     assert AgentConfig().timeout == 600.0
 
 
@@ -45,7 +45,7 @@ def test_load_reads_a_persisted_custom_timeout(
 
 
 def test_default_exclude_files_matches_the_builtin_set() -> None:
-    """(D39) Matches `agent.sync.DEFAULT_EXCLUDE_FILES` so a fresh config never re-uploads an
+    """Matches `agent.sync.DEFAULT_EXCLUDE_FILES` so a fresh config never re-uploads an
     agent's own bookkeeping files (`MEMORY.md`, `CLAUDE.md`, ...) into a watched folder's index.
     """
     from agent.sync import DEFAULT_EXCLUDE_FILES

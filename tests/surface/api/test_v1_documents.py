@@ -101,8 +101,8 @@ def test_json_ingest_rejects_empty_text(client: TestClient) -> None:
 
 
 def test_json_ingest_rejects_text_over_parse_max_chars(client: TestClient) -> None:
-    # D40 amendment: `text`'s ceiling is tied to `Settings.parse_max_chars` (the same
-    # post-parse guardrail every OTHER ingest path enforces, D39) so an oversized inline JSON
+    # `text`'s ceiling is tied to `Settings.parse_max_chars` (the same
+    # post-parse guardrail every OTHER ingest path enforces) so an oversized inline JSON
     # document 422s up front instead of being accepted here and only failing deep inside the
     # parse pipeline.
     limit = get_settings().parse_max_chars
@@ -214,4 +214,4 @@ def test_json_ingest_invalid_modified_at_is_dropped_not_stored() -> None:
         return await store.search(vector, 5, "default")
 
     (hit,) = asyncio.run(_search())
-    assert hit.modified_at is None  # garbage value dropped, never stored raw (A1)
+    assert hit.modified_at is None  # garbage value dropped, never stored raw

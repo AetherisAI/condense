@@ -1,4 +1,4 @@
-"""Typed application configuration — the single source of every value (README §2, §8).
+"""Typed application configuration — the single source of every value.
 
 One :class:`Settings`, populated from the environment (or a ``.env``), is the only place
 config lives; ``factory.py`` reads it to build the adapters and pipelines. No adapter or
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    """The typed env-config (README §8): field names map case-insensitively to env keys.
+    """The typed env-config: field names map case-insensitively to env keys.
 
     ``ingest_token`` has no default — the upload endpoint must not be unauthenticated, so a
     missing token fails fast at startup rather than silently exposing ``/ingest``.
@@ -47,9 +47,9 @@ class Settings(BaseSettings):
     # for HTTP 429 only (see ``adapters/embedding/openai_compat.py``); backoff is fixed (0.5s/2s/
     # 8s) since only the attempt budget is a plausible per-deployment tuning knob.
     # ge=1: a 0-attempt budget isn't "no retry", it's a config value the embedder's retry loop
-    # can't handle (D36 — reached an ``AssertionError`` mid-request instead of failing fast here).
+    # can't handle (it reached an ``AssertionError`` mid-request instead of failing fast here).
     embed_retry_attempts: int = Field(default=3, ge=1)
-    # Asymmetric retrieval prompts (D86), prepended to each text before embedding: the query
+    # Asymmetric retrieval prompts, prepended to each text before embedding: the query
     # prefix to search queries (``/search`` and the toolbox's ``search`` tool), the document
     # prefix to every ingested chunk. Empty for bge-m3. Changing the document prefix needs a
     # re-ingest: stored vectors keep the old one and the model pin doesn't record it.
@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     rerank_base_url: str | None = None
     rerank_model: str = "bge-reranker-v2-m3"
     # Budget for one cross-encoder /rerank call. httpx's 5 s default timed out a CPU TEI scoring
-    # RETRIEVE_K full chunks (D83); the LLM judge uses the LLM client's own timeout instead.
+    # RETRIEVE_K full chunks; the LLM judge uses the LLM client's own timeout instead.
     rerank_timeout_s: float = Field(default=120.0, gt=0)
 
     retrieve_k: int = 30
@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     recap_context_k: int = 3
     recap_max_tokens: int | None = 512
     # Blank (`RECAP_TEMPERATURE=`) → None → no `temperature` field sent: some chat models (Claude
-    # Haiku 5.5) reject the field outright (D81). Shared with the `/v1/answer` loop.
+    # Haiku 5.5) reject the field outright. Shared with the `/v1/answer` loop.
     recap_temperature: float | None = 0.3
     source_snippet_chars: int = 300
 
@@ -98,35 +98,35 @@ class Settings(BaseSettings):
     # Guard against markitdown's xlsx converter (`pandas.read_excel(engine="openpyxl")`)
     # materializing an implausible sheet: a stray far cell can inflate a sheet's *declared*
     # used-range into the millions of rows even though real content is tiny, which was measured
-    # to climb a 38KB file's parse past 2GiB RSS (DECISIONS.md D34). `MarkitdownParser` rejects a
+    # to climb a 38KB file's parse past 2GiB RSS. `MarkitdownParser` rejects a
     # sheet whose declared dimension implies more than this many cells with an explicit
     # `ParseError` before ever attempting the conversion.
     # ge=1: a non-positive cell ceiling would reject every sheet unconditionally rather than
-    # express "no limit" or any other sane behaviour — fail fast at construction instead (D36).
+    # express "no limit" or any other sane behaviour — fail fast at construction instead.
     parse_max_xlsx_cells: int = Field(default=2_000_000, ge=1)
 
     chunk_size: int = 512
     chunk_overlap: int = 64
-    # Which tokenizer `TokenChunker` sizes/windows chunks in (factory.py audit fix): `EMBED_MODEL`
+    # Which tokenizer `TokenChunker` sizes/windows chunks in: `EMBED_MODEL`
     # is itself configurable, so hardcoding `bge-m3` here silently mis-tokenized chunks against
     # whatever *other* embedding model was actually configured. `"auto"` (default) resolves to
     # `bge-m3`'s own tokenizer when `EMBED_MODEL` names bge-m3 (matching the historical hardcoded
     # behavior) and falls back to the chunker's generic `tiktoken` fallback otherwise (see
     # `factory.resolve_chunk_tokenizer`); an explicit `"tiktoken"`/`"bge-m3"` always wins.
     chunk_tokenizer: Literal["auto", "bge-m3", "tiktoken"] = "auto"
-    # Degenerate-chunk floor (DECISIONS.md D50): a fixed-size token window can decode to real-but
+    # Degenerate-chunk floor: a fixed-size token window can decode to real-but
     # -useless text when its start happens to land on whitespace/template filler (e.g. a
     # document's padding, a repeated footer) — a handful of characters that still got embedded
     # and surfaced as a search hit. `TokenChunker` drops (never merges) any window whose decoded,
     # whitespace-collapsed text is shorter than this floor.
     # ge=1: a non-positive floor would keep every window unconditionally, i.e. silently disable
-    # the guard instead of expressing "no floor" — fail fast at construction instead (D36-style).
+    # the guard instead of expressing "no floor" — fail fast at construction instead.
     chunk_min_chars: int = Field(default=24, ge=1)
 
     ingest_token: str
 
-    # Generic production-hardening guardrails (DECISIONS.md D39), independent of the
-    # xlsx-specific pre-parse guard above (D34): a post-parse extracted-text ceiling applying to
+    # Generic production-hardening guardrails, independent of the
+    # xlsx-specific pre-parse guard above: a post-parse extracted-text ceiling applying to
     # ALL formats (never silent truncation — an oversized `Document` raises an explicit
     # `ParseError` naming the file and both sizes) and a per-file wall-clock timeout wrapping the
     # parse call (`asyncio.wait_for`; a hung/pathologically slow parse fails that one file
@@ -134,24 +134,24 @@ class Settings(BaseSettings):
     parse_max_chars: int = Field(default=2_000_000, ge=1)
     parse_timeout_s: float = Field(default=60.0, gt=0)
 
-    # Toolbox `/v1/tools/*` surface (WP v0.2.0 T2, D38): default and hard cap on how many hits
+    # Toolbox `/v1/tools/*` surface: default and hard cap on how many hits
     # `POST /v1/tools/search` returns — a raw-retrieval tool has no recap to bound cost/latency,
     # so the cap (not just the default) is config-driven rather than a hardcoded constant.
     tools_search_k: int = Field(default=8, ge=1)
     tools_search_max_k: int = Field(default=20, ge=1)
-    # Rerank the toolbox `search` — what the UI's Find mode and Ask's agent both call (D88).
+    # Rerank the toolbox `search` — what the UI's Find mode and Ask's agent both call.
     # Off by default: each search then retrieves `retrieve_k`, sends them all through the
     # configured reranker (bge-reranker-v2-m3 by default) and keeps the top k, which costs
     # ~2 s on Apple-silicon Metal and ~10 s or more on CPU-only hosts per search.
     tools_search_rerank: bool = False
 
-    # Per-consumer bearer tokens, additive on top of the required `ingest_token` (D38): parsed
+    # Per-consumer bearer tokens, additive on top of the required `ingest_token`: parsed
     # from "name1:token1,name2:token2" (see `parse_auth_tokens`). Every token resolves to the
     # same `"default"` tenant today — this exists purely so `resolve_tenant` can log WHICH
-    # consumer (WorkyTalky, an MCP client, ...) made a request, ahead of real multi-tenancy.
+    # consumer (another app, an MCP client, ...) made a request, ahead of real multi-tenancy.
     auth_tokens: str = ""
 
-    # `/v1/answer` reference agent (WP v0.2.0 T3, D40): `auto` tries native OpenAI-style
+    # `/v1/answer` reference agent: `auto` tries native OpenAI-style
     # function-calling once per process and falls back to a prompted strict-JSON ReAct loop on
     # any error, sticking with whichever path worked for the rest of the process's lifetime;
     # `native`/`prompted` force one path with no fallback (debugging/tests). Hard budgets keep a
@@ -161,19 +161,19 @@ class Settings(BaseSettings):
     # `recap_max_tokens` bounds the recap. Both are graceful-degrade budgets (a best-effort
     # answer + `truncated: true`), never a raw timeout/500 — see `pipelines/answer.py`.
     answer_tool_mode: Literal["auto", "native", "prompted"] = "auto"
-    # D40 amendment: 6 -> 10. Observed on the Acme E2E acceptance pass: a per-document
+    # Raised 6 -> 10. Observed on an end-to-end acceptance run: a per-document
     # deep-dive strategy (list_documents, then get_document_chunks per candidate) exhausts a
     # budget of 6 well before 14 people are covered, truncating the answer early.
     answer_max_tool_calls: int = Field(default=10, ge=1)
     answer_timeout_s: float = Field(default=120.0, gt=0)
     answer_max_tokens: int | None = 1024
-    # Conversation state (store-level turns only — never the product vocabulary D37/D38 forbids):
+    # Conversation state (store-level turns only — no "remember"/"forget" product vocabulary):
     # `answer_history_max_turns` caps how many of a conversation's most recent turns are kept
     # (a ring buffer, trimmed on every write — never unbounded growth); `answer_history_ttl_days`
     # is how long an idle conversation survives before it becomes eligible for pruning.
     answer_history_max_turns: int = Field(default=20, ge=1)
     answer_history_ttl_days: int = Field(default=30, ge=1)
-    # Auto-title (WP v0.2.0 T6, D42): after the FIRST assistant answer in a conversation, one
+    # Auto-title: after the FIRST assistant answer in a conversation, one
     # extra small `Completer.complete()` call (the SAME completer instance already wired for
     # the recap, so it's budget-capped via `recap_max_tokens`/`recap_temperature` — no new
     # knob needed) produces a short title; stored once, never regenerated. Any failure (no
@@ -181,7 +181,7 @@ class Settings(BaseSettings):
     # to 60 chars — never blocks or fails the answer itself.
     answer_autotitle_enabled: bool = True
     # Grounding mode — the trust boundary between the corpus and the model's own training
-    # knowledge (D46). Motivating bug: `/v1/answer` always answered from the corpus, EXCEPT it
+    # knowledge. Motivating bug: `/v1/answer` always answered from the corpus, EXCEPT it
     # would silently free-generate from the model's own knowledge when a user said "ignore the
     # database" — and that answer was visually indistinguishable from a real, cited one (no
     # citations either way, same card). `"strict"` (default) — corpus-only via tools; abstain
@@ -195,7 +195,7 @@ class Settings(BaseSettings):
     # overrides this per-request; omitted/`None` falls back to this setting.
     answer_grounding_default: Literal["strict", "hybrid", "open"] = "strict"
 
-    # CORS (D55): the Tauri desktop shell's webview has no same-origin server to talk to — it
+    # CORS: the Tauri desktop shell's webview has no same-origin server to talk to — it
     # calls an absolute, user-configured base URL, which the browser enforces CORS against. The
     # web UI is always same-origin (relative paths through the Vite proxy / nginx) so it never
     # sends a cross-origin request regardless of this setting — zero behavior change there.
@@ -204,7 +204,7 @@ class Settings(BaseSettings):
     # Windows). Empty string disables CORS handling entirely.
     cors_origins: str = "tauri://localhost,http://tauri.localhost,https://tauri.localhost"
 
-    # Frozen-engine entry point (`packaging/sift_engine_entry.py`, D62): a PyInstaller-frozen
+    # Frozen-engine entry point (`packaging/sift_engine_entry.py`): a PyInstaller-frozen
     # binary can't do uvicorn's string-based app import (`"sift.api.main:app"`, as the Dockerfile
     # CMD does today) — a frozen app has no importable module path for its own `__main__`, so the
     # entry point must import the `app` object directly and call `uvicorn.run(app, host=...,
@@ -213,7 +213,7 @@ class Settings(BaseSettings):
     # which always bound `0.0.0.0:8000` via the Dockerfile's hardcoded CMD); promoting them to
     # real `Settings` fields with the SAME names/defaults keeps that convention rather than
     # inventing new ones, and lets one typed source of truth drive both the container and the
-    # desktop-launcher-supervised local engine (D62: local mode binds 127.0.0.1:8801).
+    # desktop-launcher-supervised local engine (local mode binds 127.0.0.1:8801).
     api_bind: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
 
@@ -235,7 +235,7 @@ def get_settings() -> Settings:
 
 def _redact(value: str) -> str:
     """First 4 chars + length — enough to spot which entry is malformed in a log line without
-    ever printing something that could itself be a bare secret token (D40 amendment: a
+    ever printing something that could itself be a bare secret token (a
     malformed ``auth_tokens`` entry with no ``:`` could BE one, pasted by mistake)."""
     return f"{value[:4]!r}...(len={len(value)})"
 

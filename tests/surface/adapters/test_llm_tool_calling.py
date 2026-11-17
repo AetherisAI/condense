@@ -1,5 +1,5 @@
 """Tests for :class:`~sift.adapters.llm.openai_compat.OpenAICompatCompleter`'s
-:class:`~sift.core.ports.ToolCompleter` implementation (WP v0.2.0 T3, D40).
+:class:`~sift.core.ports.ToolCompleter` implementation.
 
 No network — every ``httpx.AsyncClient`` is routed through an ``httpx.MockTransport`` (same
 pattern as ``test_llm.py``). Covers native tool-calling, the prompted strict-JSON fallback,
@@ -167,7 +167,7 @@ async def test_native_content_block_list_normalizes_to_plain_string(
 
 
 def _native_stray_tool_json_response(request: httpx.Request) -> httpx.Response:
-    """Real-Mistral shape (D42 amendment, D43): a plain string ``content`` — no ``tool_calls``
+    """Real-Mistral shape: a plain string ``content`` — no ``tool_calls``
     field populated at all — that ends with a raw tool-call-args-shaped JSON fragment, as if the
     model started to also emit a call but only ever wrote it as trailing text."""
     return httpx.Response(
@@ -204,8 +204,8 @@ async def test_native_content_with_trailing_tool_json_is_stripped(
 def _native_content_block_list_with_trailing_tool_json_response(
     request: httpx.Request,
 ) -> httpx.Response:
-    """The two real-Mistral quirks layered together: a content-block LIST (BUG #2) whose final
-    text block itself ends with a stray tool-args JSON tail (D42 amendment, D43)."""
+    """The two real-Mistral quirks layered together: a content-block LIST whose final
+    text block itself ends with a stray tool-args JSON tail."""
     return httpx.Response(
         200,
         json={
@@ -374,7 +374,7 @@ def test_parse_prompted_response_falls_back_to_raw_text_on_malformed_json() -> N
 
 
 def test_parse_prompted_response_strips_trailing_tool_call_json() -> None:
-    """D42 amendment, D43: a prompted-mode reply that ignored the ``{"final": ...}`` contract
+    """A prompted-mode reply that ignored the ``{"final": ...}`` contract
     and instead wrote its prose answer followed directly by a raw tool-args-shaped JSON
     fragment — the exact shape from the E2E bug report (`...(p.1){"query": "...", "k": 20}`).
     """

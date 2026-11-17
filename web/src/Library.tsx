@@ -56,8 +56,8 @@ function TrashIcon() {
  * per-document delete. Opens on demand and fetches ``GET /documents``; ``DELETE /documents/{hash}``
  * removes one. If the configured store doesn't support listing yet (``supported: false``) it says
  * so plainly rather than erroring — the engine gains those two methods and this lights up. Its
- * own floating FAB trigger is gone (D57/Task U1) — `open` is controlled from the workbench
- * topbar's "Library" button. Slides in from the LEFT (`.drawer-left`, D57/Task U5) — every other
+ * own floating FAB trigger is gone — `open` is controlled from the workbench
+ * topbar's "Library" button. Slides in from the LEFT (`.drawer-left`) — every other
  * drawer opens from the right; open state persists across reloads (`App.tsx`, `libraryOpen` in
  * localStorage). Closes on backdrop-click or Escape, same as System/Agent.
  */

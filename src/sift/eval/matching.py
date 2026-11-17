@@ -1,4 +1,4 @@
-"""Does a retrieved passage count as gold? (D75)
+"""Does a retrieved passage count as gold?
 
 A passage matches a :class:`~sift.eval.golden.GoldRef` when:
 

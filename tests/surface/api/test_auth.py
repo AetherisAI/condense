@@ -1,4 +1,4 @@
-"""TestClient coverage for per-consumer auth tokens (``resolve_tenant``, WP v0.2.0 T2, D38).
+"""TestClient coverage for per-consumer auth tokens (``resolve_tenant``).
 
 ``Settings.auth_tokens`` ("name:token,...") is parsed once into ``Container.auth_tokens`` and
 ``resolve_tenant`` accepts either the legacy ``ingest_token`` or any of those named tokens, all

@@ -1,6 +1,6 @@
-"""Scripted test double for the :class:`~sift.core.ports.ToolCompleter` port (WP v0.2.0 T3).
+"""Scripted test double for the :class:`~sift.core.ports.ToolCompleter` port.
 
-No network, fully deterministic — the hard rule for this WP is "no live LLM calls anywhere in
+No network, fully deterministic — the hard rule is "no live LLM calls anywhere in
 the automated suite"; every ``pipelines/answer.py`` test drives this instead of a real model.
 """
 
@@ -54,9 +54,9 @@ class FakeToolCompleter:
 
 class FakeCompleter:
     """Scripted test double for the plain :class:`~sift.core.ports.Completer` port
-    (``complete(system, user) -> str``) — used to drive the auto-title pass (WP v0.2.0 T6,
-    D42) without a live LLM. ``raises`` lets a test exercise the "any failure falls back to
-    the truncated first message" path with no real HTTP error to provoke.
+    (``complete(system, user) -> str``) — used to drive the auto-title pass without a live
+    LLM. ``raises`` lets a test exercise the "any failure falls back to the truncated first
+    message" path with no real HTTP error to provoke.
     """
 
     def __init__(self, response: str = "", *, raises: bool = False) -> None:

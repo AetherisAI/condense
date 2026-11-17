@@ -1,4 +1,4 @@
-"""``TestClient`` coverage for ``GET``/``DELETE /v1/conversations*`` (WP v0.2.0 T6, D42) —
+"""``TestClient`` coverage for ``GET``/``DELETE /v1/conversations*`` —
 plain REST chat-session management, deliberately NOT ``ToolRegistry`` tools. Mirrors
 ``test_v1_answer.py``'s pattern: the wired ``Container`` with ``container.answer`` swapped for
 one built on a scripted ``FakeToolCompleter``, injected via ``app.dependency_overrides``.
@@ -120,7 +120,7 @@ def test_get_conversation_returns_turns_incl_sources(client: TestClient) -> None
 
 
 def test_get_conversation_returns_turns_incl_persisted_grounding(client: TestClient) -> None:
-    """D51 (BUG-B): a reopened conversation must render each assistant turn's OWN recorded
+    """A reopened conversation must render each assistant turn's OWN recorded
     grounding — never nulled out on reload. The user turn never carries grounding at all."""
     answer = client.post("/v1/answer", json={"message": "hi"}, headers=_AUTH).json()
     conversation_id = answer["conversation_id"]

@@ -11,7 +11,7 @@ import { backendStateKind, backendStatus, listenEvent, type AppConfig, type Back
 import './App.css'
 
 /**
- * Top-level shell — "the workbench" (D57/Task U1): a single 100svh grid (sticky topbar / the
+ * Top-level shell — "the workbench": a single 100svh grid (sticky topbar / the
  * conversation stream, the ONLY scrollable region / a fixed composer, both inside `Chat`). Chat
  * IS the page now — the old Search|Chat tab pill and boxed chat card are gone; the old
  * `Search`/`Ingest` panels have been fully absorbed (search → `FindTurn`, ingest → `Composer`)
@@ -19,19 +19,19 @@ import './App.css'
  * token (entered in the System drawer, persisted to localStorage) plus which drawer (if any) is
  * open — lifted up here so a single topbar button per drawer replaces the old floating chips,
  * without touching the drawers' own markup/behavior. The standalone Agent drawer is retired
- * (D57/Task U6) — its downloads now live inside `SystemMenu`'s own "Folder agent" section, opened
+ * — its downloads now live inside `SystemMenu`'s own "Folder agent" section, opened
  * (and scrolled to) via `openAgentSection` below when the empty-corpus nudge's "Get the agent"
  * button is clicked.
  */
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('bearerToken') ?? '')
   const [hasTurns, setHasTurns] = useState(false)
-  // The living-logo status indicator (D57/Task U4) — combined Ask/Find/ingest in-flight flag,
+  // The living-logo status indicator — combined Ask/Find/ingest in-flight flag,
   // computed and reported up by `Chat` (`onBusyChange`); `TopBar` just renders it as a class
   // toggle, it never needs to know WHICH flow is running.
   const [isBusy, setIsBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  // Library's open state persists across reloads (D57/Task U5) — History/System stay
+  // Library's open state persists across reloads — History/System stay
   // session-only (reopened via their topbar button same as before); Library is the one drawer
   // worth keeping open across a refresh since browsing the corpus is often a standalone task.
   const [libraryOpen, setLibraryOpen] = useState(() => localStorage.getItem('libraryOpen') === 'true')
@@ -39,7 +39,7 @@ export default function App() {
   const chatRef = useRef<ChatHandle>(null)
   const systemMenuRef = useRef<SystemMenuHandle>(null)
 
-  // Tauri desktop shell only (D60/T2): the resolved AppConfig, reported by `SetupWizard` both on
+  // Tauri desktop shell only: the resolved AppConfig, reported by `SetupWizard` both on
   // initial load and whenever it changes `mode` — this is how App learns `engine_port`/
   // `ingest_token` without a second fetch. `useCallback` keeps this identity stable across
   // renders, which matters because `SetupWizard`'s own effects depend on it.
@@ -55,7 +55,7 @@ export default function App() {
     localStorage.setItem('libraryOpen', String(libraryOpen))
   }, [libraryOpen])
 
-  // Local-mode auto-wiring (D60/T2): once the desktop shell reports mode 'local' and the engine
+  // Local-mode auto-wiring: once the desktop shell reports mode 'local' and the engine
   // is actually up, point the SAME `apiBase`/`token` state the browser client edits by hand at
   // the local backend instead — the user never types either. Reacts to both an already-running
   // backend (checked once) and a later start (via `backend-state` events), so this works whether
@@ -92,7 +92,7 @@ export default function App() {
     }
   }, [tauriConfig])
 
-  // Opens the System drawer already scrolled to its "Folder agent" section (D57/Task U6) — the
+  // Opens the System drawer already scrolled to its "Folder agent" section — the
   // empty-corpus nudge's "Get the agent" button drives this; the drawer is always mounted (just
   // translated off-screen when closed), so the ref's `scrollIntoView` works whether or not it was
   // already open. `requestAnimationFrame` gives the `open` class one paint to apply first, so the
@@ -139,7 +139,7 @@ export default function App() {
       />
       <Library token={token} open={libraryOpen} onOpenChange={setLibraryOpen} />
 
-      {/* Tauri desktop shell only (D60/T2) — a full-screen first-run overlay; renders nothing at
+      {/* Tauri desktop shell only — a full-screen first-run overlay; renders nothing at
           all once `mode` is already set (browser bundle stays byte-identical, see `isTauri`). */}
       {isTauri && <SetupWizard onConfigResolved={handleTauriConfigResolved} onTokenChange={setToken} />}
     </>

@@ -100,7 +100,7 @@ def test_tools_search_returns_raw_hits_no_recap(client: TestClient) -> None:
 
 
 def test_tools_search_hit_includes_modified_at_and_metadata(client: TestClient) -> None:
-    """D44: a search hit must carry the source file's true `modified_at` plus its `metadata` —
+    """A search hit must carry the source file's true `modified_at` plus its `metadata` —
     the signals a time/recency question is answered from, never a filename-embedded date."""
     response = client.post("/v1/tools/search", json={"query": "alpha cats one"}, headers=_AUTH)
 
@@ -151,7 +151,7 @@ def test_tools_documents_paginates_and_reports_total(client: TestClient) -> None
 
 
 def test_tools_documents_item_includes_modified_at(client: TestClient) -> None:
-    """D44: `GET /v1/tools/documents` items must carry `modified_at` (or `null` when the file
+    """`GET /v1/tools/documents` items must carry `modified_at` (or `null` when the file
     was never given one at ingest)."""
     response = client.get("/v1/tools/documents", headers=_AUTH)
 
@@ -201,7 +201,7 @@ def test_tools_document_chunks_returns_ordered_chunks(client: TestClient) -> Non
 
 
 def test_tools_document_chunks_include_modified_at_and_metadata(client: TestClient) -> None:
-    """D44: each chunk returned by `GET /v1/tools/documents/{hash}/chunks` must carry
+    """Each chunk returned by `GET /v1/tools/documents/{hash}/chunks` must carry
     `modified_at` + `metadata`."""
     response = client.get("/v1/tools/documents/h_cats/chunks", headers=_AUTH)
 

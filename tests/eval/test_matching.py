@@ -1,4 +1,4 @@
-"""Gold matching (D75): path suffixes, page narrowing, and tolerant evidence quotes."""
+"""Gold matching: path suffixes, page narrowing, and tolerant evidence quotes."""
 
 from __future__ import annotations
 

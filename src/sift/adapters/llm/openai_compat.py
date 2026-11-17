@@ -5,7 +5,7 @@ OpenAI-style ``{base_url}/chat/completions`` endpoint (``base_url`` already ends
 and returning ``choices[0].message.content``. One ``httpx.AsyncClient`` per call (no shared
 state), mirroring the embeddings adapter.
 
-Also implements :class:`~sift.core.ports.ToolCompleter` (WP v0.2.0 T3, D40) —
+Also implements :class:`~sift.core.ports.ToolCompleter` —
 :meth:`complete_with_tools` drives the ``/v1/answer`` tool loop against ANY OpenAI-compatible
 model, not just one that supports native function-calling:
 
@@ -24,7 +24,7 @@ model, not just one that supports native function-calling:
   paying a doomed native attempt's latency/error on every subsequent turn.
 
 Transient HTTP failures (429 rate limits, 502/503/504 gateway errors) are retried with
-exponential backoff, honouring a numeric ``Retry-After`` (D79). A 500 is NOT retried: some
+exponential backoff, honouring a numeric ``Retry-After``. A 500 is NOT retried: some
 providers use it to reject an unsupported ``tools`` param, and "auto" must see that at once.
 """
 
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
-# D79: hosted providers rate-limit per minute (Mistral: 100 req / 100k tokens), so the backoff
+# Hosted providers rate-limit per minute (Mistral: 100 req / 100k tokens), so the backoff
 # has to outlast a full window: 2+4+8+16+32 s ≈ 1 min across the default 5 retries.
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
 _BACKOFF_BASE_S = 2.0
@@ -215,7 +215,7 @@ def _retry_delay(response: httpx.Response, attempt: int) -> float:
     return min(max(delay, 0.0), _BACKOFF_CAP_S)
 
 
-# --- content normalization (D40 amendment: BUG #2) --------------------------------------------
+# --- content normalization --------------------------------------------------------------------
 
 
 def _coerce_message_content(raw: Any) -> str:
@@ -227,7 +227,7 @@ def _coerce_message_content(raw: Any) -> str:
     content-block dicts for a multi-cited answer instead — ``{"type": "text", "text": ...}``
     interleaved with ``{"type": "reference", "reference_ids": [...]}`` — never a string. Passing
     that raw list downstream crashed the conversation store's DB bind with an opaque
-    ``ValueError: Unsupported parameter type`` far from the real cause (D40 amendment). Every
+    ``ValueError: Unsupported parameter type`` far from the real cause. Every
     ``text`` block's text is concatenated in order; a ``reference`` block carries no
     human-readable text of its own (just internal citation-target ids) so it is dropped rather
     than leaking a raw id into the answer.
@@ -247,7 +247,7 @@ def _coerce_message_content(raw: Any) -> str:
 
 def _strip_trailing_tool_json(text: str) -> str:
     """Strip one stray tool-call-args-shaped JSON object glued onto the end of otherwise-prose
-    ``text`` (D42 amendment, D43 fix).
+    ``text``.
 
     Observed on some real-Mistral turns, both native and prompted: the visible final answer
     ends with a raw fragment like ``...(p.1){"query": "...", "k": 20}`` — args that look exactly
@@ -367,11 +367,10 @@ def parse_prompted_response(text: str) -> ToolCompletion:
 
     Defensive by design — a prompted model is not a JSON API: it may wrap its JSON in a
     markdown code fence, or occasionally ignore the instruction and reply in plain prose (or
-    reply in prose with a stray tool-args-shaped JSON fragment glued onto the end — D42
-    amendment, D43). Any of that degrades to treating the reply as the final answer rather than
-    crashing the loop (with a trailing tool-args JSON tail scrubbed off first, see
-    :func:`_strip_trailing_tool_json`); only a well-formed ``{"tool": ...}``/``{"final": ...}``
-    object is treated as structured.
+    reply in prose with a stray tool-args-shaped JSON fragment glued onto the end). Any of that
+    degrades to treating the reply as the final answer rather than crashing the loop (with a
+    trailing tool-args JSON tail scrubbed off first, see :func:`_strip_trailing_tool_json`);
+    only a well-formed ``{"tool": ...}``/``{"final": ...}`` object is treated as structured.
     """
     stripped = _FENCE_RE.sub("", text.strip()).strip()
     candidate = stripped

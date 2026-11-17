@@ -1,11 +1,11 @@
 // Manifest-driven provisioning: download → sha256-verify → unpack, for the components named in
 // `desktop/provisioning/manifest.json` (schema 1): `engine`, `embedder` (the llama-server build),
-// `model` (bge-m3) and, since D89, the optional `reranker` (bge-reranker-v2-m3, served by the same
+// `model` (bge-m3) and the optional `reranker` (bge-reranker-v2-m3, served by the same
 // llama-server binary). `engine`/`embedder`/`model` gate auto-start; a missing `reranker` never
 // blocks it — `install_missing_in_background` fetches it after the backend is up.
 //
 // `manifest_url: null` in AppConfig resolves to `DEFAULT_MANIFEST_URL`; both the manifest URL
-// and each component's own `url` field may be `file://` (tonight's E2E points at locally built
+// and each component's own `url` field may be `file://` (local E2E testing points at locally built
 // artifacts) as well as `http(s)://`.
 //
 // `backend.rs` re-resolves the manifest at `backend_start` time to read `binary_path` — the
@@ -119,10 +119,10 @@ pub struct Manifest {
     pub engine: EngineManifest,
     pub embedder: EmbedderManifest,
     pub model: ModelManifest,
-    /// The cross-encoder reranker's GGUF (D89) — a model file like `model`, served by the
+    /// The cross-encoder reranker's GGUF — a model file like `model`, served by the
     /// embedder's own llama-server binary. Optional and additive, so the schema stays 1: a
     /// manifest without it still parses (the engine then runs without a reranker), and builds
-    /// from before D89 ignore the key.
+    /// that predate the reranker ignore the key.
     #[serde(default)]
     pub reranker: Option<ModelManifest>,
 }
@@ -133,7 +133,7 @@ pub fn resolve_manifest_url(cfg: &AppConfig) -> String {
         .unwrap_or_else(|| DEFAULT_MANIFEST_URL.to_string())
 }
 
-/// Fetch + parse the manifest. Supports `file://` (read straight off disk — tonight's E2E and
+/// Fetch + parse the manifest. Supports `file://` (read straight off disk — local E2E testing and
 /// any offline override) and `http(s)://` (the shipped default).
 pub async fn fetch_manifest(url: &str) -> Result<Manifest, String> {
     let body = if let Some(path) = url.strip_prefix("file://") {
@@ -280,7 +280,7 @@ fn installed_flags(app: &AppHandle, manifest: &Manifest) -> Result<InstalledFlag
 /// Whether engine, embedder, and model are all fully installed for `cfg`'s resolved manifest.
 /// Used by `lib.rs`'s `.setup()` to decide whether it's safe to auto-start the backend
 /// unattended on launch, without re-provisioning or prompting. The reranker is deliberately not
-/// part of this gate (D89): an install from before it existed must keep auto-starting, and the
+/// part of this gate: an install from before it existed must keep auto-starting, and the
 /// engine runs fine without it (the cross-encoder adapter keeps the retrieval order when nothing
 /// listens on the reranker port).
 pub async fn all_installed(app: &AppHandle, cfg: &AppConfig) -> Result<bool, String> {
@@ -295,7 +295,7 @@ pub fn reranker_installed(app: &AppHandle, manifest: &Manifest) -> Result<bool, 
     Ok(installed_flags(app, manifest)?.reranker.unwrap_or(false))
 }
 
-/// "If it isn't installed, install it" (D89): download every optional component the manifest
+/// "If it isn't installed, install it": download every optional component the manifest
 /// lists that this install lacks — today just the reranker — the same way the wizard downloads
 /// the embedder model (download → sha256 → rename into `models/`), then start its sidecar if the
 /// backend is already running. Called from `lib.rs` after auto-start, so an install that
@@ -489,7 +489,7 @@ pub async fn provision_start(
             }
             match provision_component(&app_for_task, &manifest, &id, cancel_flag.clone()).await {
                 // A reranker downloaded while the backend already runs (System menu → Download)
-                // starts serving right away; the engine is already pointed at its port (D89).
+                // starts serving right away; the engine is already pointed at its port.
                 Ok(()) if id == "reranker" => backend::ensure_reranker_running(&app_for_task).await,
                 Ok(()) => {}
                 Err(e) if e == "cancelled" => break,
@@ -516,7 +516,7 @@ pub fn provision_cancel(provision_state: State<ProvisionState>) -> Result<(), St
 // ---------------------------------------------------------------------------------------------
 
 /// Component ids with a download in flight. The wizard, the System menu's Download buttons and
-/// the background reranker install (D89) can all ask for the same component, and two downloads
+/// the background reranker install can all ask for the same component, and two downloads
 /// would share one `tmp/<id>.download.partial` file.
 fn in_flight() -> &'static Mutex<HashSet<String>> {
     static IN_FLIGHT: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -739,7 +739,7 @@ async fn download(
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<(), String> {
     if let Some(local_path) = url.strip_prefix("file://") {
-        // Local artifact (tonight's E2E uses locally built bundles) — no real "downloading" to
+        // Local artifact (local E2E testing uses locally built bundles) — no real "downloading" to
         // stream, but still emit progress so the UI has something honest to show.
         let size = tokio::fs::metadata(local_path)
             .await
@@ -900,7 +900,7 @@ mod tests {
         let manifest = parse_embedded_manifest().expect("embedded manifest parses");
         let reranker = manifest
             .reranker
-            .expect("D89: the shipped manifest lists a reranker");
+            .expect("the shipped manifest lists a reranker");
         assert_eq!(reranker.name, "bge-reranker-v2-m3");
         assert!(reranker.file.ends_with(".gguf"));
         assert!(reranker.url.starts_with("https://"));
@@ -917,7 +917,8 @@ mod tests {
             .as_object_mut()
             .expect("manifest is an object")
             .remove("reranker");
-        let manifest: Manifest = serde_json::from_value(value).expect("pre-D89 manifest parses");
+        let manifest: Manifest =
+            serde_json::from_value(value).expect("a manifest without a reranker parses");
         assert!(manifest.reranker.is_none());
         assert_eq!(manifest.model.name, "bge-m3");
     }

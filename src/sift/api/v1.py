@@ -1,8 +1,8 @@
-"""The ``/v1`` surface (WP v0.2.0 "Toolbox + Answer") — additive, beside the existing routes.
+"""The ``/v1`` surface — additive, beside the existing routes.
 
 Mounted alongside ``api.routes.router`` in ``api/main.py``; nothing on the existing
-``/search``/``/ingest``/``/documents``/``/healthz`` routes changes shape. T1 landed the
-JSON-ingest sibling of the existing multipart ``POST /ingest``; T2 adds the toolbox routes
+``/search``/``/ingest``/``/documents``/``/healthz`` routes changes shape. It holds the
+JSON-ingest sibling of the existing multipart ``POST /ingest`` and the toolbox routes
 (``/v1/tools/*``) — every one a thin renderer over the shared
 :class:`~sift.pipelines.tools.ToolRegistry` (``Container.tools``), never a parallel code path.
 """
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 def _known_grounding_mode(value: str | None) -> Literal["strict", "hybrid", "open"] | None:
     """Narrow a persisted ``ConversationTurn.grounding_used`` (plain ``str | None`` — core types
-    stay loosely typed, same as ``role: str``) into the API schema's ``Literal`` (D51) — defends
+    stay loosely typed, same as ``role: str``) into the API schema's ``Literal`` — defends
     against a `None`/legacy/corrupted row the same way a bad value anywhere else in this module
     degrades rather than 500s, instead of ever raising a pydantic validation error on a read."""
     if value == "strict":
@@ -69,7 +69,7 @@ def _known_grounding_mode(value: str | None) -> Literal["strict", "hybrid", "ope
 def _validate_modified_at(value: str | None, filename: str) -> str | None:
     """Validate a single ISO-8601 ``modified_at`` value; drop (with a WARNING) if invalid.
 
-    Mirrors ``routes._parse_modified_at``'s per-value validation (A1) for this route's single
+    Mirrors ``routes._parse_modified_at``'s per-value validation for this route's single
     ``modified_at`` string, so a corrupted value can never be stored raw and later out-rank a
     real date (see ``pipelines.search._is_newer``).
     """
@@ -95,7 +95,7 @@ async def ingest_json_document(
 
     Wraps ``body.text`` as a single-file batch through the same :class:`~sift.pipelines.
     ingest.SupportsIngest` seam, threading the optional ``metadata``/``modified_at`` the same
-    way the multipart route threads its per-filename maps (D28), just keyed to this one
+    way the multipart route threads its per-filename maps, just keyed to this one
     synthesized filename. Auth is the same bearer → tenant chokepoint (``resolve_tenant``) as
     every other route — no separate auth path for the JSON surface.
     """
@@ -227,7 +227,7 @@ async def tools_schema(
 
     Bearer-authed like every other ``/v1`` route: this reveals the shape of internal tools, so
     no unauthenticated introspection. ``PATCH /settings`` is never registered in
-    :class:`~sift.pipelines.tools.ToolRegistry` and so can never appear here (D38).
+    :class:`~sift.pipelines.tools.ToolRegistry` and so can never appear here.
     """
     registry = container.tools
     manifest: dict[str, Any] = registry.to_json_schema_manifest()
@@ -246,13 +246,13 @@ async def _sse_events(
 ) -> AsyncIterator[str]:
     """Render :meth:`AnswerPipeline.run`'s events as ``text/event-stream`` frames, in order.
 
-    D48 belt-and-suspenders: ``AnswerPipeline.run`` already guarantees it always reaches
+    Belt-and-suspenders: ``AnswerPipeline.run`` already guarantees it always reaches
     ``"done"`` internally, but this loop is wrapped too so that ANY failure strictly between
     yielding an event and this frame reaching the wire (e.g. ``json.dumps`` choking on some
     unanticipated payload) still forces a terminal ``"done"`` frame onto the stream — the Chat
     UI relies on ``"done"`` (or the stream simply closing, as a second safety net) to stop
     showing "thinking" and re-enable input; a stream that dies silently mid-flight with no
-    terminal frame is exactly BUG-1 (D48).
+    terminal frame would leave it hanging.
     """
     done_sent = False
     try:
@@ -285,7 +285,7 @@ async def answer(
     container: Annotated[Container, Depends(get_container)],
     tenant: Annotated[str, Depends(resolve_tenant)],
 ) -> AnswerResponse | StreamingResponse:
-    """The reference tool-calling agent (WP v0.2.0 T3, D40) — proves the toolbox works end to
+    """The reference tool-calling agent — proves the toolbox works end to
     end through whichever ``ToolCompleter`` is configured. Every capability it uses comes from
     :class:`~sift.pipelines.tools.ToolRegistry` (``container.answer``'s own boundary rule,
     ``tests/pipelines/test_answer_boundary.py``) — this route is a thin renderer, same as every
@@ -341,7 +341,7 @@ async def answer(
     )
 
 
-# --- GET/DELETE /v1/conversations — chat-session management (WP v0.2.0 T6, D42) -------------
+# --- GET/DELETE /v1/conversations — chat-session management -------------
 #
 # Plain REST over `Container.conversations` directly — deliberately NOT `ToolRegistry` tools:
 # these manage the CHAT SESSION (list/reopen/delete a conversation), not a corpus capability

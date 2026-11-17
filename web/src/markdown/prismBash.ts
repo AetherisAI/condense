@@ -2,7 +2,7 @@ import { Prism } from 'prism-react-renderer'
 import type { Grammar } from 'prismjs'
 
 /**
- * `prism-react-renderer`'s bundled grammar set (D47) covers yaml/json/python/typescript/tsx/
+ * `prism-react-renderer`'s bundled grammar set covers yaml/json/python/typescript/tsx/
  * sql out of the box but — surprisingly — not bash/shell. Pulling in a whole second Prism
  * instance (or the full `prismjs` package) just for one language would cost MORE than it's
  * worth: `Highlight`'s escape-hatch `prism` prop doesn't replace prism-react-renderer's own

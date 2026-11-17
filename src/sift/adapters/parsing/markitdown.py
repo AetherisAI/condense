@@ -8,11 +8,11 @@ runs in a worker thread so the ``async def parse`` port method never stalls the 
 Pinned to ``markitdown`` 0.1.x: it exposes ``convert_stream(BytesIO, stream_info=StreamInfo(
 extension=...))`` (older releases used ``convert(stream, file_extension=...)``).
 
-**xlsx used-range guard (DECISIONS.md D34):** markitdown's xlsx converter is
+**xlsx used-range guard:** markitdown's xlsx converter is
 ``pandas.read_excel(stream, sheet_name=None, engine="openpyxl")`` — it materializes every row
 and column implied by each sheet's *declared* dimension, not just its real content. A single
 stray far cell (e.g. a paste/drag-fill artifact later blanked, which is exactly what a real
-Acme corpus file had) inflates that declared range into the millions of rows; a real 38KB
+corpus file had) inflates that declared range into the millions of rows; a real 38KB
 ``.xlsx`` reproduced under a ``MemoryMax=2G`` isolation scope climbed past 2GiB RSS and was
 cgroup-OOM-killed rather than complete. ``_guard_xlsx_used_range`` does a cheap, read-only
 inspection of each worksheet XML's ``<dimension ref="...">`` (no workbook load, no pandas) and
@@ -20,7 +20,7 @@ raises :class:`~sift.core.errors.ParseError` before the conversion if any sheet'
 count exceeds ``max_xlsx_cells`` — an explicit, fast, human-readable failure instead of an
 unbounded parse attempt.
 
-**Generic guardrails (DECISIONS.md D39):** the xlsx guard above is a pre-parse fix for one
+**Generic guardrails:** the xlsx guard above is a pre-parse fix for one
 specific failure shape; two further guards apply to *every* format as defense-in-depth against
 production messiness generally: a post-parse extracted-text ceiling (``max_chars`` — a
 ``Document`` whose total text exceeds it raises :class:`ParseError` rather than ever being
@@ -28,9 +28,9 @@ silently truncated) and a per-file wall-clock timeout (``timeout_s`` — the blo
 runs under ``asyncio.wait_for``, so a hung/pathologically slow parse fails that one file
 explicitly instead of stalling the whole ingest batch).
 
-**xlsx "NaN" cell-filler cleanup (DECISIONS.md D50):** markitdown's xlsx converter is
+**xlsx "NaN" cell-filler cleanup:** markitdown's xlsx converter is
 ``pandas.read_excel(...).to_html()`` — pandas' ``to_html`` renders every empty/missing cell as
-the literal string ``"NaN"`` (its ``na_rep`` default), not a genuine value. A real Acme
+the literal string ``"NaN"`` (its ``na_rep`` default), not a genuine value. A real
 budget spreadsheet with wide merged-cell headers and many partially-filled rows came back with
 nearly 3,000 literal ``"NaN"`` occurrences — diluting embeddings and making snippets unreadable.
 ``_strip_xlsx_nan_fillers`` is a narrow, xlsx-only post-parse cleanup: it blanks a markdown-table
@@ -67,7 +67,7 @@ _XLSX_DIMENSION_RE: Final = re.compile(rb'<dimension[^>]*\bref="([^"]+)"')
 
 
 def _strip_xlsx_nan_fillers(text: str) -> str:
-    """Blank markdown-table cells whose entire (trimmed) content is exactly ``"NaN"`` (D50).
+    """Blank markdown-table cells whose entire (trimmed) content is exactly ``"NaN"``.
 
     Scoped to markdown TABLE rows only (a line that, once stripped, both starts and ends with
     ``|`` — exactly the shape markitdown's xlsx converter emits, one table per sheet) and to a
@@ -100,7 +100,7 @@ class MarkitdownParser:
         # Plugins are third-party and may touch the network/exec; keep parsing hermetic.
         self._md = MarkItDown(enable_plugins=False)
         # Config-driven via `Settings.parse_max_xlsx_cells`/`parse_max_chars`/`parse_timeout_s`
-        # (factory.py wires them) — see the module docstring / DECISIONS.md D34/D39 for why these
+        # (factory.py wires them) — see the module docstring for why these
         # guards exist. Defaults here mirror the `Settings` defaults so behaviour is correct even
         # before a caller threads the configured value through explicitly.
         self._max_xlsx_cells = max_xlsx_cells
@@ -110,11 +110,11 @@ class MarkitdownParser:
     async def parse(self, data: bytes, filename: str) -> Document:
         """Parse ``data`` (the raw bytes of ``filename``) into a one-page Document.
 
-        Two generic guards apply after the xlsx-specific pre-parse check above (D39): the
+        Two generic guards apply after the xlsx-specific pre-parse check above: the
         conversion itself runs under a ``parse_timeout_s`` wall-clock budget, and the resulting
         text is rejected outright — never silently truncated — if it exceeds ``parse_max_chars``.
         For ``.xlsx`` specifically, empty-cell "NaN" filler text is blanked before that ceiling
-        check (D50) — see :func:`_strip_xlsx_nan_fillers`.
+        check — see :func:`_strip_xlsx_nan_fillers`.
         """
         ext = os.path.splitext(filename)[1].lower()
         if ext == ".xlsx":
@@ -134,7 +134,7 @@ class MarkitdownParser:
 
         A hung or pathologically slow parse (a shape the xlsx used-range guard doesn't cover —
         e.g. a pathological pdf/docx) must fail *this one file* explicitly rather than stall the
-        whole ingest batch behind it (DECISIONS.md D39). ``asyncio.wait_for`` cancels waiting on
+        whole ingest batch behind it. ``asyncio.wait_for`` cancels waiting on
         the timeout; the worker thread it started may keep running to completion in the
         background (Python threads can't be forcibly killed), but the caller never blocks on it.
         """
@@ -150,7 +150,7 @@ class MarkitdownParser:
 
     def _guard_text_ceiling(self, text: str, filename: str) -> None:
         """Raise :class:`ParseError` if ``text`` (the full extracted content) is implausibly
-        large — a generic, format-agnostic defense-in-depth ceiling (D39) alongside the
+        large — a generic, format-agnostic defense-in-depth ceiling alongside the
         xlsx-specific pre-parse guard above. Never truncates; always an explicit failure.
         """
         if len(text) > self._max_chars:

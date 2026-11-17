@@ -1,4 +1,4 @@
-"""TDD coverage for engine-side CORS (``Settings.cors_origins``, D55).
+"""TDD coverage for engine-side CORS (``Settings.cors_origins``).
 
 The Tauri desktop shell's webview has no same-origin server to talk to — it calls an absolute,
 user-configured base URL, which the browser enforces CORS against. ``Settings.cors_origins`` is

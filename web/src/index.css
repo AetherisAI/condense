@@ -14,7 +14,7 @@
   --accent-bg: rgba(170, 59, 255, 0.08);
   --accent-border: rgba(170, 59, 255, 0.32);
 
-  /* Interactive-control purple (D57/Task U7) — the buttons/toggles/focus-ring hue, distinct from
+  /* Interactive-control purple — the buttons/toggles/focus-ring hue, distinct from
      `--accent` above (brand/emphasis: wordmark, top-match highlight, GK marking). Same hue
      family, kept as two tokens because the two roles are meant to stay independently tunable.
      Alpha variants use `color-mix(in srgb, var(--accent-ui) N%, transparent)` at each call site
@@ -65,7 +65,7 @@ body {
   background: var(--page-bg);
   /* The workbench (`App.tsx`'s `.workbench`) is the only page and fills exactly 100svh — its own
      conversation stream (`.chat-stream`) is the ONLY scrollable region, so the page itself never
-     scrolls (D57/Task U1). */
+     scrolls. */
   overflow: hidden;
 }
 

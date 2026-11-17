@@ -5,8 +5,7 @@
 # events) and a single file, renamed per Tauri's target-triple convention
 # (`sift-agent-cli-x86_64-unknown-linux-gnu` etc. — see packaging/README.md). This is the
 # "wrong shape for a sidecar" twin of `sift-agent.spec` (onedir, `console=False`, its own Tkinter
-# window, no usable stdout) — that one is untouched and stays the standalone GUI download
-# (DECISIONS.md D54).
+# window, no usable stdout) — that one is untouched and stays the standalone GUI download.
 #
 # Same exclusions as sift-agent.spec: the agent never imports `sift`, torch, or the
 # parsing/embedding stack, so the bundle stays small. watchdog picks its platform observer at

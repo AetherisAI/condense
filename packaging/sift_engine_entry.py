@@ -1,4 +1,4 @@
-"""PyInstaller entry point for the frozen Sift **engine** (the FastAPI API, D62).
+"""PyInstaller entry point for the frozen Sift **engine** (the FastAPI API).
 
 A thin wrapper so PyInstaller has a concrete script to analyze; the real app lives in
 ``sift.api.main``. Kept out of ``src/sift/`` so it never ships as part of the importable
@@ -12,9 +12,9 @@ PyInstaller onedir bundle has no real package/module tree on disk for uvicorn to
 dotted import against, only the bundled bytecode already loaded once by the bootloader. The
 object form runs the already-imported ASGI app directly and has no such requirement.
 
-``host``/``port`` come from ``Settings`` (``api_bind``/``api_port``, D62) via the same cached
+``host``/``port`` come from ``Settings`` (``api_bind``/``api_port``) via the same cached
 ``get_settings()`` accessor every adapter uses — no new config surface, no ``os.environ``
-reads here (P2).
+reads here.
 """
 
 import uvicorn

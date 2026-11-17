@@ -1,4 +1,4 @@
-# Sift web UI image (Dev B). Multi-stage: build the Vite app with Node, then
+# Sift web UI image. Multi-stage: build the Vite app with Node, then
 # serve the static bundle with nginx, which also reverse-proxies the API surface
 # to the `api` container (see nginx.conf). Build context = ./web.
 

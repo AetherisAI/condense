@@ -23,7 +23,7 @@ from watchdog.observers import Observer
 # *opens and reads* every watched file, firing exactly those events, which would re-arm the
 # debounce and re-sync forever: a self-feeding loop that pins CPU + disk and (via the server)
 # piles up ingests until OOM. Reacting only to create/modify/move/delete breaks the loop while
-# still catching every real edit, new file, rename, and deletion. See DECISIONS.md D29.
+# still catching every real edit, new file, rename, and deletion.
 _CHANGE_EVENTS = frozenset({"created", "modified", "moved", "deleted"})
 
 

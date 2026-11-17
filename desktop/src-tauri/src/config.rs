@@ -1,5 +1,5 @@
 // AppConfig — `config.json` in `app.path().app_config_dir()` (Linux:
-// `~/.config/ai.aetheris.condense/config.json`). Schema 1, per `docs/Quentin/active/machine.md`.
+// `~/.config/ai.aetheris.condense/config.json`). Schema 1.
 // `mode: null` means "first run" (SetupWizard); `manifest_url: null` resolves to the baked
 // default in `provisioning.rs`. Never log `llm.api_key` or `ingest_token`.
 
@@ -48,7 +48,7 @@ pub struct AppConfig {
     pub mode: Option<String>,
     pub engine_port: u16,
     pub embedder_port: u16,
-    /// The bge-reranker-v2-m3 llama-server sidecar (D89). `serde(default)` so a `config.json`
+    /// The bge-reranker-v2-m3 llama-server sidecar. `serde(default)` so a `config.json`
     /// written before the reranker existed still loads, and picks up 8803.
     #[serde(default = "default_reranker_port")]
     pub reranker_port: u16,
@@ -60,7 +60,7 @@ pub struct AppConfig {
     pub manifest_url: Option<String>,
     #[serde(default)]
     pub agent: AgentSettings,
-    /// The System drawer's "Rerank Find & Ask" switch (D88), passed to the engine as
+    /// The System drawer's "Rerank Find & Ask" switch, passed to the engine as
     /// `TOOLS_SEARCH_RERANK` at start so it survives restarts (the drawer's `PATCH /settings`
     /// alone is in-memory). Off by default.
     #[serde(default)]

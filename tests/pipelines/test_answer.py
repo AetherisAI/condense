@@ -1,7 +1,7 @@
 """Unit tests for :mod:`sift.pipelines.answer` — the ``/v1/answer`` tool-calling loop.
 
 Drives ``AnswerPipeline`` through a scripted ``FakeToolCompleter`` (no live LLM, ever — the
-hard rule for this WP) against a real ``ToolRegistry`` built from ``FakeEmbedder``/
+hard rule for this suite) against a real ``ToolRegistry`` built from ``FakeEmbedder``/
 ``FakeVectorStore``, and a ``FakeConversationStore``. Covers: a tool actually gets called
 (enumeration scenario), conversation history carries into a follow-up turn, the tool-call
 budget stops a runaway loop gracefully, the wall-clock timeout stops a slow model gracefully,
@@ -65,7 +65,7 @@ def _pipeline_with_conversations(
     completer: FakeToolCompleter, embedder, store, settings
 ) -> tuple[AnswerPipeline, FakeConversationStore]:
     """Same as :func:`_pipeline` but also hands back the ``FakeConversationStore`` instance —
-    for tests that need to inspect what actually got PERSISTED on a turn (D51), not just what
+    for tests that need to inspect what actually got PERSISTED on a turn, not just what
     the ``grounding`` SSE event reported for the live turn."""
     registry = build_tool_registry(embedder, store, settings)
     conversations = FakeConversationStore()
@@ -125,7 +125,7 @@ async def test_answer_unknown_tool_call_degrades_to_error_result(settings, embed
 async def test_answer_call_tool_wraps_any_executor_exception_as_tool_result_error(
     settings, embedder, store
 ) -> None:
-    # D40 amendment: `_call_tool` must catch ANY executor exception (not just the registry's
+    # `_call_tool` must catch ANY executor exception (not just the registry's
     # own `KeyError` for an unknown tool name) so a broken/misbehaving tool degrades to a
     # structured tool_result error the loop can recover from, never a raw 500.
     async def _boom(args, tenant):
@@ -189,7 +189,7 @@ async def test_system_prompt_steers_enumeration_to_list_documents_alone(
 async def test_system_prompt_requires_parenthesized_comma_separated_citations(
     settings, embedder, store
 ) -> None:
-    """D43: citations must ALWAYS render as a parenthesized ``(filename.ext, p.N)`` — a comma
+    """Citations must ALWAYS render as a parenthesized ``(filename.ext, p.N)`` — a comma
     between the filename and the page — placed after the sentence they support, never fused
     into a word or a path-run (the observed real-answer bug: ``.../Morgan.pdf,1.``). The system
     prompt is the only steering lever this pipeline has over model output, so assert it
@@ -210,7 +210,7 @@ async def test_system_prompt_requires_parenthesized_comma_separated_citations(
     assert "never" in lowered and ("fuse" in lowered or "glue" in lowered)
 
 
-# --- D44: temporal honesty — modified_at, not filename archaeology ---------------------------
+# --- temporal honesty — modified_at, not filename archaeology ---------------------------
 
 
 async def test_system_prompt_steers_temporal_questions_to_modified_at(
@@ -363,7 +363,7 @@ async def test_answer_json_mode_gives_up_after_one_failed_repair(settings, embed
     assert "failed to produce schema-conforming JSON" in answer_delta.data["text"]
 
 
-# --- sources event: compact citations pulled from `search` results (WP v0.2.0 T6, D42) ------
+# --- sources event: compact citations pulled from `search` results ------
 
 
 async def test_sources_event_emitted_before_done_from_search_hits(
@@ -417,7 +417,7 @@ async def test_sources_are_persisted_on_the_assistant_turn_only(settings, embedd
     assert turns[1].sources  # the assistant turn does
 
 
-# --- auto-title: one extra small Completer call after the first answer (WP v0.2.0 T6, D42) --
+# --- auto-title: one extra small Completer call after the first answer --
 
 
 def _pipeline_with_title(
@@ -500,7 +500,7 @@ async def test_autotitle_falls_back_to_truncated_message_when_no_title_completer
     assert detail.meta.title == "Short question"
 
 
-# --- grounding modes (D46): strict/hybrid/open trust boundary ------------------------------
+# --- grounding modes: strict/hybrid/open trust boundary ------------------------------
 
 
 async def test_grounding_defaults_to_settings_when_not_overridden(
@@ -601,7 +601,7 @@ async def test_strict_mode_never_flags_general_knowledge_even_if_model_misbehave
 async def test_strict_mode_replaces_leaked_general_knowledge_with_abstention(
     settings, embedder, store
 ) -> None:
-    """D51 (BUG-A, live-repro'd): the flag-only guarantee above is NOT enough — a real
+    """Live-repro'd: the flag-only guarantee above is NOT enough — a real
     conversation showed a history-primed completer emit the hybrid/open marker anyway while
     ``grounding="strict"`` was genuinely in effect (confirmed via the captured request body, not
     a stale-frontend-mode bug), and the raw marker text + a full general-knowledge answer reached
@@ -695,8 +695,8 @@ async def test_hybrid_mode_flags_from_general_knowledge_when_model_labels_conten
 async def test_hybrid_mode_does_not_flag_when_answer_stays_fully_grounded(
     settings, embedder, store
 ) -> None:
-    """D59 note: this scenario's completer now performs a real `search` before answering. The
-    new provenance backstop (D59, below) would otherwise reclassify a fully-unmarked answer with
+    """Note: this scenario's completer now performs a real `search` before answering. The
+    new provenance backstop (below) would otherwise reclassify a fully-unmarked answer with
     ZERO corpus evidence as general knowledge regardless of what its text claims to be — a
     genuinely grounded, unmarked answer needs genuine tool-call evidence behind it, not just the
     absence of a marker, to keep this test's "no false positive" premise intact and realistic."""
@@ -754,7 +754,7 @@ async def test_open_mode_flags_from_general_knowledge_when_model_labels_content(
 
 
 async def test_grounding_segments_split_multiple_bullets_hybrid(settings, embedder, store) -> None:
-    """D48 (BUG-2): a realistic multi-bullet mixed answer — each ``[General knowledge]``-marked
+    """A realistic multi-bullet mixed answer — each ``[General knowledge]``-marked
     bullet line must come back as its own/merged "general_knowledge" segment, distinct from the
     grounded lead-in, so the UI can render them in a visibly different style."""
     completer = FakeToolCompleter(
@@ -795,12 +795,12 @@ async def test_grounding_segments_empty_for_empty_answer(settings, embedder, sto
     assert grounding.data["from_general_knowledge"] is False
 
 
-# --- BUG-B (D51): per-turn immutable grounding is PERSISTED, not just live-only -------------
+# --- per-turn immutable grounding is PERSISTED, not just live-only -------------
 
 
 async def test_assistant_turn_persists_its_own_grounding_fields(settings, embedder, store) -> None:
     """Motivating bug: a remount (tab switch, History reopen, page reload) refetches the
-    conversation from `GET /v1/conversations/{id}` — before D51, `ConversationStore.append_turn`
+    conversation from `GET /v1/conversations/{id}` — previously, `ConversationStore.append_turn`
     never accepted/stored grounding fields at all, so that refetch always came back with no
     grounding data and the UI reset every historical turn's marking to "unknown", which is what
     actually made the purple general-knowledge marking appear to vanish. The assistant turn
@@ -831,7 +831,7 @@ async def test_assistant_turn_persists_its_own_grounding_fields(settings, embedd
 async def test_assistant_turn_persists_strict_abstention_not_leaked_content(
     settings, embedder, store
 ) -> None:
-    """The persisted turn must reflect the SAME abstention the live event/answer shows (D51) —
+    """The persisted turn must reflect the SAME abstention the live event/answer shows —
     never the raw leaked marker text, even server-side in storage."""
     completer = FakeToolCompleter(
         [ToolCompletion(content="[General knowledge] Paris is the capital of France.")]
@@ -848,9 +848,9 @@ async def test_assistant_turn_persists_strict_abstention_not_leaked_content(
     assert assistant_turn.from_general_knowledge is False
 
 
-# --- D58: mode separation across a mode switch (history-contamination + open dead-end) ------
+# --- mode separation across a mode switch (history-contamination + open dead-end) ------
 #
-# Motivating live bug (Quentin): "Sometimes I'm in general knowledge mode and the AI model says
+# Motivating live bug (user report): "Sometimes I'm in general knowledge mode and the AI model says
 # that he can't answer a general question because he can't find a document about the inquiry in
 # the Database. Only when I query twice forcing general knowledge answer does he give out
 # general knowledge." Reproduced live against the real engine: a strict-mode turn honestly
@@ -982,9 +982,9 @@ async def test_open_mode_answers_from_general_knowledge_after_empty_search_hits(
     assert done.data["truncated"] is False
 
 
-# --- D59: reliable general-knowledge marking — provenance backstop + tolerant markers --------
+# --- reliable general-knowledge marking — provenance backstop + tolerant markers --------
 #
-# Motivating live bug (Quentin, screenshot evidence, production, open mode): a pure
+# Motivating live bug (screenshot evidence, production, open mode): a pure
 # general-knowledge question ("What is a glioblastoma?") got answered with NO tool calls, and
 # the model wrote "...(General knowledge)." — parenthetical, trailing — instead of the exact
 # `[General knowledge]` block-prefix marker the prompt asks for. The OLD segmenter's exact-
@@ -993,7 +993,8 @@ async def test_open_mode_answers_from_general_knowledge_after_empty_search_hits(
 # plain visible text. Three layers close this: a deterministic provenance backstop (no corpus
 # evidence this turn ⇒ whole answer is general, regardless of markers), tolerant marker parsing
 # (recognizes bracket/parenthetical/colon-prefixed variants, at a block's start OR its end), and
-# a strict-guard extension to the same variant set (D51 only ever matched the bracket literal).
+# a strict-guard extension to the same variant set (the guard used to match only the bracket
+# literal).
 
 
 async def test_open_mode_zero_tool_calls_trailing_variant_marked_general_knowledge(
@@ -1032,7 +1033,7 @@ async def test_open_mode_zero_tool_calls_unmarked_answer_still_marked_general_kn
     settings, embedder, store
 ) -> None:
     """The provenance backstop in isolation, with NO marker of any kind in the text at all —
-    tolerant parsing alone finds nothing here (as before D59, this would report a single
+    tolerant parsing alone finds nothing here (as before the backstop, this would report a single
     "grounded" segment). Zero tool calls this turn means no corpus evidence could exist, so the
     deterministic provenance rule overrides regardless — closing the gap for a model that fails
     to self-label at all, not just one that uses an unrecognized marker phrasing."""
@@ -1144,9 +1145,9 @@ async def test_hybrid_mode_recognizes_colon_prefixed_marker_variant(
 async def test_strict_mode_replaces_leaked_general_knowledge_parenthetical_variant(
     settings, embedder, store
 ) -> None:
-    """D51's strict OUTPUT guard extended to the same tolerant variant set (D59): a
+    """The strict OUTPUT guard extended to the same tolerant variant set: a
     parenthetical variant must trigger the SAME abstention the exact bracket literal already
-    does — the pre-existing D51 tests above (bracket form, mid-sentence bracket form) are
+    does — the pre-existing strict-guard tests above (bracket form, mid-sentence bracket form) are
     unmodified and still green, this only ADDS coverage for a variant that used to leak past."""
     completer = FakeToolCompleter(
         [ToolCompletion(content="Paris is the capital of France (General knowledge).")]
@@ -1166,7 +1167,7 @@ async def test_strict_mode_replaces_leaked_general_knowledge_parenthetical_varia
     assert "paris" not in grounding.data["segments"][0]["text"].lower()
 
 
-# --- BUG-1 (D48): the SSE stream must ALWAYS reach "done", even on an unexpected failure -----
+# --- the SSE stream must ALWAYS reach "done", even on an unexpected failure -----
 
 
 async def test_completer_failure_mid_loop_still_reaches_grounding_then_done(
@@ -1196,7 +1197,7 @@ async def test_completer_failure_after_a_tool_call_still_reaches_done(
     settings, embedder, store
 ) -> None:
     """Same as above, but the failure happens on the SECOND completer call (after at least one
-    tool call already succeeded and yielded events) — the more realistic shape of Quentin's
+    tool call already succeeded and yielded events) — the more realistic shape of the live
     repro (multi-hop hybrid answers make more completer round-trips, raising the odds of hitting
     a transient failure partway through)."""
 

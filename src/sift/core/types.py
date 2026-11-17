@@ -77,7 +77,7 @@ class Hit:
 class DocumentInfo:
     """One ingested source file, aggregated from its chunks (one row per source_hash).
 
-    ``modified_at``/``indexed_at`` (D44, additive) mirror ``Hit``'s own pair — the source
+    ``modified_at``/``indexed_at`` (additive) mirror ``Hit``'s own pair — the source
     file's true last-modified time (``None`` when never provided at ingest) and when the
     store indexed it, so a tool consumer can answer "when was this written/modified" from
     real timestamps instead of guessing from a filename.
@@ -123,7 +123,7 @@ class SearchOutcome:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SearchFilters:
-    """Narrows a :meth:`~sift.core.ports.VectorStore.search` candidate set (WP v0.2.0 T2, D38).
+    """Narrows a :meth:`~sift.core.ports.VectorStore.search` candidate set.
 
     Every field is optional and additive — ``None``/empty means "no constraint on that axis".
     A conforming store applies these BEFORE its ``k`` ranking limit (a narrowed candidate set,
@@ -143,8 +143,8 @@ class SearchFilters:
 class ToolCall:
     """One tool invocation a :class:`~sift.core.ports.ToolCompleter` wants executed.
 
-    Uniform across native OpenAI-style function-calling and the prompted-JSON fallback (WP
-    v0.2.0 T3, D40) — whichever path produced it, the answer loop drives it through
+    Uniform across native OpenAI-style function-calling and the prompted-JSON fallback —
+    whichever path produced it, the answer loop drives it through
     :class:`~sift.pipelines.tools.ToolRegistry` the same way. ``id`` mirrors a native
     provider's call id when one exists (echoed back in the ``tool`` message so multi-call
     turns stay attributable); the prompted fallback, which has no such id, synthesizes one.
@@ -170,19 +170,19 @@ class ToolCompletion:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ConversationTurn:
-    """One stored turn of a ``/v1/answer`` conversation (WP v0.2.0 T3, D40).
+    """One stored turn of a ``/v1/answer`` conversation.
 
     Only ``"user"``/``"assistant"`` turns are persisted here — the intra-turn tool-call/
     tool-result exchange stays local to that one request's transcript (see
     ``pipelines/answer.py``); this is conversational continuity across separate ``/v1/answer``
     calls, never the reasoning trace. ``turn`` is a 0-based ordinal within the conversation.
-    ``sources`` (WP v0.2.0 T6, D42) is set only on an assistant turn that cited retrieved
+    ``sources`` is set only on an assistant turn that cited retrieved
     passages — the same compact ``{path, page, score, snippet}`` shape the ``sources`` SSE
     event carries, persisted so ``GET /v1/conversations/{id}`` can render a reopened
     conversation's citations without re-running the tool loop.
 
-    ``grounding_used``/``from_general_knowledge``/``grounding_segments`` (D51) are the SAME
-    trust-boundary fields the ``grounding`` SSE event carries for the live turn (D46/D48), set
+    ``grounding_used``/``from_general_knowledge``/``grounding_segments`` are the SAME
+    trust-boundary fields the ``grounding`` SSE event carries for the live turn, set
     only on an assistant turn — persisted so a reopened conversation (History, a tab switch, a
     page reload) renders THIS turn's own recorded grounding, never re-derived from whatever mode
     happens to be selected live. Motivating bug: before this field existed, a remount reset
@@ -202,7 +202,7 @@ class ConversationTurn:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ConversationMeta:
-    """One conversation's metadata row (WP v0.2.0 T6, D42) — ``GET /v1/conversations`` listing
+    """One conversation's metadata row — ``GET /v1/conversations`` listing
     shape and the header of ``GET /v1/conversations/{id}``.
 
     ``title`` is ``None`` until the auto-title pass fires after the first assistant answer

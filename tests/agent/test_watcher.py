@@ -1,10 +1,10 @@
-"""Offline regression tests for the watcher's event filter (A5 / DECISIONS D29, D32).
+"""Offline regression tests for the watcher's event filter.
 
 Pure stdlib: stub event objects carrying only the attributes ``_Handler`` reads
 (``.event_type``/``.is_directory``/``.src_path``/``.dest_path``) so the filter is exercised
 without a live ``watchdog`` ``Observer`` or a real filesystem. This is the most safety-critical
-change in the branch (it's what stops the agent's own file-hashing from re-triggering itself
-forever, see D29) and previously had zero automated coverage.
+filter in the agent (it's what stops the agent's own file-hashing from re-triggering itself
+forever) and previously had zero automated coverage.
 """
 
 from __future__ import annotations

@@ -24,7 +24,7 @@ function normalizeLanguage(raw: string): string {
 }
 
 /**
- * One fenced code block from a chat answer (D47): a language label, a copy button (same
+ * One fenced code block from a chat answer: a language label, a copy button (same
  * copy/"Copied ✓" pattern as `Search.tsx`'s machine-mode copy), syntax highlighting via
  * `prism-react-renderer`, and its OWN `overflow-x: auto` scroll box so a wide block (long log
  * lines, a `docker-compose.yml`) scrolls within itself and never widens the chat column.

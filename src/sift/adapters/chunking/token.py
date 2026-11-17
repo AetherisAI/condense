@@ -1,4 +1,4 @@
-"""Token-windowing chunker: the :class:`~sift.core.ports.Chunker` adapter (plan §2).
+"""Token-windowing chunker: the :class:`~sift.core.ports.Chunker` adapter.
 
 Slides fixed-size token windows across a document's text and decodes each window back
 to text, so every chunk is sized in the *tokenizer's* units (not characters). The
@@ -10,7 +10,7 @@ The class default is ``tiktoken`` (light, fully offline, no torch) so direct con
 and unit tests stay network-free; the *system* default (wired by config) is ``bge-m3``,
 whose tokenizer is loaded lazily only when selected.
 
-**Degenerate-chunk floor (DECISIONS.md D50):** a fixed-size token window is sized purely in
+**Degenerate-chunk floor:** a fixed-size token window is sized purely in
 tokens, so a window whose start happens to land on whitespace/template filler (e.g. a document's
 padding, a repeated footer, a mostly-blank template section) can decode to a handful of real
 characters (`"do. /"`, `"plantilla.)*"` were observed live) — a "genuine" window in the sense
@@ -31,7 +31,7 @@ from typing import Final, Protocol
 from sift.core.types import Chunk, Document
 
 # Collapses any run of whitespace to a single space, purely to measure a window's "real content"
-# length for the `chunk_min_chars` floor (D50) — the emitted `Chunk.text` itself stays exactly
+# length for the `chunk_min_chars` floor — the emitted `Chunk.text` itself stays exactly
 # the tokenizer's decode+strip, unchanged from before this floor existed.
 _WHITESPACE_RE: Final = re.compile(r"\s+")
 
@@ -84,7 +84,7 @@ class TokenChunker:
     stepping by ``step = chunk_size - chunk_overlap`` so adjacent windows share
     ``chunk_overlap`` tokens. Each window is decoded back to text and stripped; empty windows
     and windows whose whitespace-collapsed text is shorter than ``chunk_min_chars`` are both
-    dropped (D50 — see the module docstring). ``index`` is a document-global 0-based ordinal
+    dropped (see the module docstring). ``index`` is a document-global 0-based ordinal
     over the emitted chunks (never the window's token-stream position), and ``page`` is the
     page that the window's *start* token falls in (always the sole page's number under
     markitdown's single-page parsing). Pure-CPU and deterministic — the ``async def`` never
@@ -143,7 +143,7 @@ class TokenChunker:
             text = self._tokenizer.decode(window).strip()
             if not text:
                 continue
-            # D50: a window can decode to real-but-useless text (whitespace/template filler the
+            # A window can decode to real-but-useless text (whitespace/template filler the
             # window's start happened to land on) — measure the whitespace-COLLAPSED length so a
             # window that's mostly whitespace between a couple of stray characters is caught too,
             # while `text` itself (what gets embedded/stored) stays the plain decode+strip.

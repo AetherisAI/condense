@@ -1,4 +1,4 @@
-"""Lock the §8 API contract shapes (pydantic round-trips)."""
+"""Lock the API contract shapes (pydantic round-trips)."""
 
 from __future__ import annotations
 
@@ -43,9 +43,9 @@ def test_search_response_roundtrip() -> None:
 
 
 def test_source_carries_metadata_when_set() -> None:
-    source = Source(path="a.md", page=1, score=0.5, metadata={"author": "quentin", "kind": "note"})
+    source = Source(path="a.md", page=1, score=0.5, metadata={"author": "alice", "kind": "note"})
     dumped = source.model_dump()
-    assert dumped["metadata"] == {"author": "quentin", "kind": "note"}
+    assert dumped["metadata"] == {"author": "alice", "kind": "note"}
     assert Source.model_validate(dumped) == source
 
 
@@ -63,7 +63,7 @@ def test_ingest_response_roundtrip() -> None:
 
 
 def test_document_summary_roundtrip_includes_temporal_fields() -> None:
-    """D44: `modified_at`/`indexed_at` are additive on the shared listing shape used by both
+    """`modified_at`/`indexed_at` are additive on the shared listing shape used by both
     `GET /documents` and `GET /v1/tools/documents`."""
     doc = DocumentSummary(
         path="a.md",
@@ -90,7 +90,7 @@ def test_document_summary_temporal_fields_default_to_none() -> None:
 
 
 def test_answer_request_grounding_field_roundtrips_and_defaults_to_none() -> None:
-    """D46: `grounding` is optional on the wire — `None` means "use Settings.answer_grounding_
+    """`grounding` is optional on the wire — `None` means "use Settings.answer_grounding_
     default"; a caller may pin one of the three modes explicitly."""
     bare = AnswerRequest(message="hi")
     assert bare.grounding is None
@@ -102,7 +102,7 @@ def test_answer_request_grounding_field_roundtrips_and_defaults_to_none() -> Non
 
 
 def test_answer_response_grounding_fields_roundtrip() -> None:
-    """D46: `grounding_used`/`from_general_knowledge` are the SAME fields the `grounding` SSE
+    """`grounding_used`/`from_general_knowledge` are the SAME fields the `grounding` SSE
     event carries, surfaced on the non-streaming response too."""
     resp = AnswerResponse(
         answer="Paris.",

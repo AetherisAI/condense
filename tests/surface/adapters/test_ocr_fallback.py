@@ -70,7 +70,7 @@ async def test_fallback_to_ocr_when_pages_empty() -> None:
 
 
 async def test_reraises_siftError_unchanged_without_touching_ocr() -> None:
-    # A deliberate domain-level rejection (e.g. the xlsx used-range guard's ParseError, D34) is
+    # A deliberate domain-level rejection (e.g. the xlsx used-range guard's ParseError) is
     # not "the primary parser found no text" — it's a considered refusal to attempt an unsafe
     # parse at all. It must propagate unchanged (same instance, same message) and never trigger
     # OCR: no fallback text, no network call, no confusing OCR-side error replacing the real one.

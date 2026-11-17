@@ -137,7 +137,7 @@ async def test_crossencoder_scores_are_probabilities_for_large_logits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # llama-server ignores raw_scores and returns logits like 7.8 / -11: the adapter squashes
-    # them itself so every backend yields TEI's default 0..1 scale (D88).
+    # them itself so every backend yields TEI's default 0..1 scale.
     def _extreme(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200, json=[{"index": 0, "score": 800.0}, {"index": 1, "score": -800.0}]
@@ -155,7 +155,7 @@ async def test_crossencoder_unreachable_keeps_retrieval_order(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     # Nothing listening (the desktop's reranker sidecar not downloaded yet, or crashed): Find
-    # keeps working on the vector ranking instead of failing the request (D88).
+    # keeps working on the vector ranking instead of failing the request.
     def _refused(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
@@ -191,7 +191,7 @@ async def test_crossencoder_empty_candidates_skips_request(
 
 
 async def test_crossencoder_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    # httpx's 5 s default timed out a CPU TEI scoring 30 full chunks (D83).
+    # httpx's 5 s default timed out a CPU TEI scoring 30 full chunks.
     seen = _patch_transport(monkeypatch, _ranked)
     reranker = CrossEncoderReranker(base_url="http://tei", timeout_s=90.0)
 

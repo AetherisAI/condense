@@ -1,13 +1,13 @@
 import Logo from './Logo'
 
 /**
- * The workbench's sticky top bar (D57/Task U1): the small animated Condense mark + wordmark on
+ * The workbench's sticky top bar: the small animated Condense mark + wordmark on
  * the left (the brand once the empty-state hero has collapsed — see `Chat.tsx`'s `.hero`), and a
  * right-hand cluster of buttons that open the EXISTING drawers/components unchanged — this file
  * only owns the triggers, never the drawer contents (`SystemMenu`/`Library`/`ChatHistory` keep
  * their own markup, just rendered elsewhere with their `open` state lifted here so a single
  * button per drawer can live in one place instead of four floating chips). The standalone "Agent"
- * button/drawer is retired (D57/Task U6) — its downloads now live inside the System drawer's
+ * button/drawer is retired — its downloads now live inside the System drawer's
  * "Folder agent" section.
  */
 export default function TopBar({
@@ -22,7 +22,7 @@ export default function TopBar({
   onSystemClick,
 }: {
   hasTurns: boolean
-  // The living-logo status indicator (D57/Task U4) — true while ANY request is in flight (Ask
+  // The living-logo status indicator — true while ANY request is in flight (Ask
   // send/stream, Find query, ingest upload), lifted from `Chat`'s combined `isBusy`. Toggles
   // `.mark-busy` on the wrapping element rather than on `Logo` itself, so the mark's own locked
   // markup/animation (`Logo.tsx`) never has to change — only the CSS reached via descendant

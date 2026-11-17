@@ -1,6 +1,6 @@
-"""The ``/v1/answer`` reference agent — the tool-calling loop (WP v0.2.0 T3, D40).
+"""The ``/v1/answer`` reference agent — the tool-calling loop.
 
-North star (design §0): the TOOLBOX is the product; `/v1/answer` is merely the reference
+North star: the TOOLBOX is the product; `/v1/answer` is merely the reference
 consumer proving it works end-to-end through whichever `ToolCompleter` is configured. **Boundary
 rule, enforced by `tests/pipelines/test_answer_boundary.py`:** this module may act ONLY through
 `ToolRegistry.call(...)` — no direct store/pipeline import, no `Container` reference. Ports +
@@ -13,19 +13,19 @@ loop, until a final message or a hard budget stops it (`answer_max_tool_calls`,
 never a bare error. Emits an ordered event trace (`AnswerEvent`) shared verbatim between the
 non-streaming response and the SSE stream (`api/v1.py`).
 
-**Grounding modes (D46):** every turn resolves a `"strict" | "hybrid" | "open"` mode (per-
+**Grounding modes:** every turn resolves a `"strict" | "hybrid" | "open"` mode (per-
 request override, else `Settings.answer_grounding_default`) that selects which `_GROUNDING_*`
 suffix is appended to the system prompt — the trust boundary between the corpus and the
 model's own training knowledge. A `"grounding"` event (`grounding_used`, `from_general_
 knowledge`, `segments`) is emitted just before `"done"` on every turn, in every mode.
 
-**Structured grounding segments (D48):** hybrid/open additionally split the final answer text
+**Structured grounding segments:** hybrid/open additionally split the final answer text
 into ordered `{"text", "kind": "grounded" | "general_knowledge"}` segments (see
 `_split_grounding_segments`) — a consumer-parseable distinction, not just the inline
 `[General knowledge]` marker text and the summary `from_general_knowledge` boolean. `"strict"`
 is a structural guarantee here too: always one `"grounded"` segment covering the whole answer.
 
-**Strict output guard + per-turn persistence (D51):** D46/D48's strict guarantees only covered
+**Strict output guard + per-turn persistence:** the earlier strict guarantees only covered
 the *flag* (`from_general_knowledge` hardcoded `False`) — the answer *text* itself was
 unguarded, so a history-primed or misbehaving completer could still leak real general-knowledge
 prose into a strict-mode answer verbatim. `run()` now detects the marker in strict mode and
@@ -35,26 +35,26 @@ streamed (see `_STRICT_ABSTENTION_TEXT`). Separately, each assistant turn's `gro
 append_turn`) so a reopened conversation renders its own recorded grounding instead of losing it
 on every reload — the marking is now immutable per turn, not just live-only.
 
-**Stream finalization (D48):** the loop's tool-calling body and its post-answer bookkeeping
+**Stream finalization:** the loop's tool-calling body and its post-answer bookkeeping
 (persist + auto-title) are each wrapped so that ANY unexpected failure (a provider 429/5xx, a
 network blip, a serialization bug) degrades to a graceful `truncated=True` finish rather than
 letting an exception escape `run()` uncaught — the SSE stream must always reach `"grounding"`
 then `"done"` so a consumer (the Chat UI) can rely on `"done"` to finalize instead of hanging
 forever waiting for a frame that a crashed generator will never send.
 
-**Mode separation across a mode switch (D58):** live-repro'd bug — a `"strict"` turn's honest
+**Mode separation across a mode switch:** live-repro'd bug — a `"strict"` turn's honest
 abstention ("the documents don't cover this"), replayed verbatim as plain assistant history into
 a LATER `"open"`-mode turn in the same conversation, made the completer imitate the refusal
 again (calling no tool at all) even though `grounding="open"` was genuinely in effect for that
 turn. `_render_history_messages` now tags a replayed assistant turn with the mode it was
-actually answered under (D51 persists `grounding_used` per turn) whenever that differs from the
+actually answered under (`grounding_used` is persisted per turn) whenever that differs from the
 current turn's mode, and `_MODE_TRANSITION_CUE` is appended to the system prompt telling the
 model a different-mode turn's refusal does not constrain this one — prompt-assembly only, the
 persisted history itself is never rewritten. Separately, the hybrid/open suffixes now explicitly
 override the base prompt's "say so honestly" abstention line for the no-hits/no-tool-call case —
 open mode in particular must never treat an empty or skipped search as a reason to refuse.
 
-**Reliable general-knowledge marking (D59):** live screenshot bug — a pure general-knowledge
+**Reliable general-knowledge marking:** live screenshot bug — a pure general-knowledge
 question, answered with NO tool calls, came back as "...(General knowledge)." (parenthetical,
 trailing) instead of the documented literal `[General knowledge]` block-prefix marker; the OLD
 exact-substring segmenter found no marker at all, so the whole answer shipped as one "grounded"
@@ -69,12 +69,12 @@ that single-fully-grounded-segment shape, never a genuinely mixed marker-based s
 cannot clobber a real self-reported grounded+general answer just because this turn happened to
 call no tool. (2) `_split_grounding_segments`/`_GENERAL_KNOWLEDGE_VARIANTS`/`_marker_role` —
 tolerant, case-insensitive recognition of the bracket/parenthetical/colon-prefixed marker forms,
-each classified as leading what follows (prefix, the original D48 semantics, a one-way toggle)
+each classified as leading what follows (prefix, the original semantics, a one-way toggle)
 or trailing its own line (suffix, the screenshot's shape — retroactively labels only that line,
 then reverts). (3) the hybrid/open suffixes gained a `_GK_MARKER_FORMAT_NOTE` paragraph spelling
 out the exact required shape with a worked example — belt-and-braces prompt hardening, not
 load-bearing on its own since (1)/(2) make correctness independent of the model actually obeying
-it. D51's strict OUTPUT guard now matches the SAME tolerant variant set (was the exact bracket
+it. The strict OUTPUT guard now matches the SAME tolerant variant set (was the exact bracket
 literal only) — a variant that would have leaked real ungrounded prose past strict mode
 undetected now still triggers the abstention.
 """
@@ -105,8 +105,8 @@ EventType = Literal[
 
 GroundingMode = Literal["strict", "hybrid", "open"]
 
-# Compact citation cap/clamp for the `sources` event (WP v0.2.0 T6, D42) — a fixed, small
-# constant rather than a new `Settings` knob: the task's own contract hardcodes
+# Compact citation cap/clamp for the `sources` event — a fixed, small
+# constant rather than a new `Settings` knob: the `sources` contract hardcodes
 # "snippet<=200chars", and the frontend previously did this exact dedup/sort/cap in JS over
 # raw tool_result blobs (moved server-side so every consumer gets it for free).
 _MAX_SOURCES = 6
@@ -115,8 +115,8 @@ _SOURCE_SNIPPET_CHARS = 200
 
 @runtime_checkable
 class ConversationStore(Protocol):
-    """The seam ``pipelines/answer.py`` depends on for conversation continuity (D40; extended
-    T6, D42 for chat-session management — ``GET``/``DELETE /v1/conversations*``, plain REST,
+    """The seam ``pipelines/answer.py`` depends on for conversation continuity (also used
+    for chat-session management — ``GET``/``DELETE /v1/conversations*``, plain REST,
     deliberately NOT ``ToolRegistry`` tools, see ``api/v1.py``).
 
     Structural, mirroring ``SupportsDocumentAdmin``/``SupportsIngest`` — ``FakeConversationStore``
@@ -139,10 +139,10 @@ class ConversationStore(Protocol):
     ) -> None:
         """Persist one turn, trimming that conversation to its newest ``max_turns`` turns.
 
-        ``sources`` (T6, D42) is set only on a citing assistant turn — the same compact
+        ``sources`` is set only on a citing assistant turn — the same compact
         ``{path, page, score, snippet}`` shape the ``sources`` SSE event carries.
 
-        ``grounding_used``/``from_general_knowledge``/``grounding_segments`` (D51) are set only
+        ``grounding_used``/``from_general_knowledge``/``grounding_segments`` are set only
         on an assistant turn — the SAME trust-boundary fields the ``grounding`` SSE event
         carries for the live turn, persisted so a reopened conversation renders THIS turn's own
         recorded grounding rather than resetting it to "unknown" on every reload.
@@ -245,20 +245,20 @@ _JSON_MODE_SUFFIX = (
     " Your FINAL answer must be a single JSON object only — no prose, no markdown code fences."
 )
 
-# Grounding modes (D46) — the trust boundary between the corpus and the model's own training
+# Grounding modes — the trust boundary between the corpus and the model's own training
 # knowledge. Motivating bug: `/v1/answer` would silently free-generate from general knowledge
 # when a user said "ignore the database", and that answer looked exactly like a real, cited one
 # (no citations either way, same card) — indistinguishable to the reader. Each suffix is the
 # ONLY steering lever this pipeline has over what the model actually does (same as every other
 # system-prompt rule in this module); `_GENERAL_KNOWLEDGE_MARKER` is the literal string the
 # hybrid/open suffixes instruct the model to prefix ungrounded content with, and (together with
-# `_GENERAL_KNOWLEDGE_VARIANTS` below, D59) the signal :meth:`AnswerPipeline.run` uses to decide
+# `_GENERAL_KNOWLEDGE_VARIANTS` below) the signal :meth:`AnswerPipeline.run` uses to decide
 # `from_general_knowledge` for those two modes — in `"strict"` mode the flag is hardcoded `False`
 # regardless of the model's output (see `run`), a structural guarantee independent of whether the
 # model actually obeyed the prompt.
 _GENERAL_KNOWLEDGE_MARKER = "[general knowledge]"
 
-# Tolerant marker recognition (D59). Motivating bug (Quentin, live, open mode, screenshot
+# Tolerant marker recognition. Motivating bug (live, open mode, screenshot
 # evidence): a pure general-knowledge question got answered with NO tool calls and the model
 # wrote "...(General knowledge)." — parenthetical, TRAILING — instead of the documented literal
 # `[General knowledge]` block-prefix marker. The old exact-substring check (`_GENERAL_KNOWLEDGE_
@@ -276,11 +276,11 @@ _GENERAL_KNOWLEDGE_VARIANTS = re.compile(
     re.IGNORECASE,
 )
 
-# Strict structural OUTPUT guard (D51). Motivating bug: a real conversation showed that even
+# Strict structural OUTPUT guard. Motivating bug: a real conversation showed that even
 # with `grounding="strict"` correctly sent on the request (confirmed via the captured request
 # body — this is NOT the stale-frontend-mode bug it first looked like), a history-primed model
 # went on to emit the hybrid/open marker anyway and free-generate a real general-knowledge
-# answer. The pre-D51 guarantee only covered the FLAG (`from_general_knowledge` hardcoded
+# answer. The earlier guarantee only covered the FLAG (`from_general_knowledge` hardcoded
 # `False` in strict, see `_split_grounding_segments`) — the ungrounded prose itself still
 # reached the user completely unguarded. This is the second, independent line of defense: if
 # the marker shows up anywhere in a strict-mode answer, the ANSWER ITSELF is replaced with this
@@ -303,9 +303,9 @@ _GROUNDING_STRICT_SUFFIX = (
     "retrieved from the documents."
 )
 
-# Marker-FORMAT hardening (D59, layer 3 — prompt-side reduction of the variant frequency the
+# Marker-FORMAT hardening (layer 3 — prompt-side reduction of the variant frequency the
 # tolerant segmenter/strict guard now handle structurally regardless; this is belt-and-braces,
-# not load-bearing on its own). Motivating bug (Quentin, live, screenshot evidence): the model
+# not load-bearing on its own). Motivating bug (live, screenshot evidence): the model
 # wrote "...(General knowledge)." — parenthetical, trailing — instead of the documented literal
 # block-prefix marker. Appended (not substituted) to both hybrid/open suffixes so every existing
 # substring assertion on those suffixes keeps matching unchanged.
@@ -358,15 +358,16 @@ _GROUNDING_SUFFIXES: dict[GroundingMode, str] = {
 # segment's text never starts/ends with a stray "-"/":" left over from the marker syntax.
 _GK_TRIM_CHARS = " \t\n:-–—"
 
-# History-contamination fix (mirrors D51's BUG-A, in the OTHER direction). Live-repro'd bug:
+# History-contamination fix (mirrors the history-priming bug the strict OUTPUT guard handles,
+# in the OTHER direction). Live-repro'd bug:
 # a `"strict"` turn honestly abstained ("the documents don't cover this"); the user then
 # switched the pill to `"open"` in the SAME conversation and asked a plain general-knowledge
 # question — with the correct `grounding="open"` genuinely sent (re-confirmed, not re-litigated:
-# D51 already proved per-request `grounding` is correct) the completer nonetheless refused AGAIN,
+# per-request `grounding` was already proven correct) the completer nonetheless refused AGAIN,
 # calling no tool at all, purely by imitating the previous turn's refusal shape once it was
 # replayed verbatim as plain assistant history with no indication it was answered under
-# different rules. `_render_history_messages` tags any replayed assistant turn recorded (D51
-# persists `grounding_used` per turn) under a mode OTHER than the current one; this cue is
+# different rules. `_render_history_messages` tags any replayed assistant turn recorded (with
+# `grounding_used` persisted per turn) under a mode OTHER than the current one; this cue is
 # appended to the system prompt ONLY when such a turn is actually present (never
 # unconditionally, so every existing single-turn system-prompt assertion is unaffected).
 _MODE_TRANSITION_CUE = (
@@ -385,8 +386,8 @@ _MODE_TRANSITION_CUE = (
 
 def _marker_role(text: str, match: re.Match[str]) -> Literal["prefix", "suffix"]:
     """Whether one ``_GENERAL_KNOWLEDGE_VARIANTS`` match leads what FOLLOWS it (the documented
-    ``[General knowledge]``-at-the-front convention, D46/D48 — a "prefix" marker) or trails a
-    block, retroactively labeling what PRECEDES it on the same line (D59's tolerant addition —
+    ``[General knowledge]``-at-the-front convention — a "prefix" marker) or trails a
+    block, retroactively labeling what PRECEDES it on the same line (the tolerant addition —
     the screenshot's "...(General knowledge)." at the very end of the answer, nothing following
     it — a "suffix" marker).
 
@@ -404,7 +405,7 @@ def _marker_role(text: str, match: re.Match[str]) -> Literal["prefix", "suffix"]
 def _strip_marker_variants(text: str) -> str:
     """Remove every recognized general-knowledge marker occurrence from ``text`` and collapse
     the run of whitespace a removed marker leaves behind — used by the provenance backstop
-    (D59, see :func:`_apply_provenance_backstop`) so a whole-answer override never leaves the
+    (see :func:`_apply_provenance_backstop`) so a whole-answer override never leaves the
     literal marker syntax sitting in the segment text it just relabeled."""
     stripped = _GENERAL_KNOWLEDGE_VARIANTS.sub("", text)
     stripped = re.sub(r"[ \t]{2,}", " ", stripped)
@@ -412,7 +413,7 @@ def _strip_marker_variants(text: str) -> str:
 
 
 def _split_grounding_segments(text: str, mode: GroundingMode) -> list[dict[str, str]]:
-    """Split ``final_text`` into ordered ``{"text", "kind"}`` segments (D48) — the structured
+    """Split ``final_text`` into ordered ``{"text", "kind"}`` segments — the structured
     sibling of ``from_general_knowledge``: a consumer can tell WHICH parts of the answer are
     grounded in the ingested documents vs the model's own general/training knowledge, not just
     THAT some part is.
@@ -423,16 +424,16 @@ def _split_grounding_segments(text: str, mode: GroundingMode) -> list[dict[str, 
     that emits the marker anyway is never reported as containing general knowledge).
 
     hybrid/open scan ``text`` for every case-insensitive ``_GENERAL_KNOWLEDGE_VARIANTS`` match
-    (D59 — tolerant of the bracket, parenthetical, and colon-prefixed forms, not just the exact
+    (tolerant of the bracket, parenthetical, and colon-prefixed forms, not just the exact
     literal ``[General knowledge]``) and classify each one's role (:func:`_marker_role`):
 
-    - a **prefix** match behaves exactly as before (D48) — a one-way toggle. Text before it
+    - a **prefix** match behaves exactly as before — a one-way toggle. Text before it
       keeps whatever kind was already running (``"grounded"`` initially); from the match onward
       the running kind becomes ``"general_knowledge"`` and stays that way (a later marker just
       starts a new segment, never reverts to grounded) — this is what makes inline mixing on one
       line ("Per the docs, X. [General knowledge] Also, Y.") and one-marker-per-bullet-line both
       split correctly.
-    - a **suffix** match (D59) retroactively labels only its OWN line: content from that line's
+    - a **suffix** match retroactively labels only its OWN line: content from that line's
       start up to the marker becomes ``"general_knowledge"``, anything earlier (previous lines)
       keeps whatever kind was already running, and the running kind resets to ``"grounded"``
       afterward — a trailing annotation closes off just the block it annotates rather than
@@ -485,8 +486,8 @@ def _split_grounding_segments(text: str, mode: GroundingMode) -> list[dict[str, 
 def _apply_provenance_backstop(
     segments: list[dict[str, str]], mode: GroundingMode, corpus_evidence_used: bool
 ) -> list[dict[str, str]]:
-    """D59 — deterministic, PRIMARY signal, independent of whether the model remembered to emit
-    ANY marker at all. Motivating bug (Quentin, live, open mode, screenshot evidence): a pure
+    """Deterministic, PRIMARY signal, independent of whether the model remembered to emit
+    ANY marker at all. Motivating bug (live, open mode, screenshot evidence): a pure
     general-knowledge question answered with NO tool calls came back marked only "...(General
     knowledge)." — the tolerant parsing above now recognizes that specific variant on its own,
     but a model that emits NO recognizable marker text whatsoever (any phrasing, any variant) is
@@ -514,7 +515,7 @@ def _apply_provenance_backstop(
     return [{"text": stripped, "kind": "general_knowledge"}]
 
 
-# Auto-title (T6, D42): one extra small `Completer.complete()` call after the FIRST assistant
+# Auto-title: one extra small `Completer.complete()` call after the FIRST assistant
 # answer in a conversation. Reuses whichever `Completer` already backs the recap, so it's
 # budget-capped via the SAME `recap_max_tokens`/`recap_temperature` — no new knob needed.
 _TITLE_SYSTEM_PROMPT = (
@@ -550,12 +551,12 @@ def _render_history_messages(
     never touches persistence (the turns themselves are stored unchanged, verbatim, by
     ``AnswerPipeline.run``'s own ``append_turn`` calls).
 
-    An assistant turn recorded (D51 persists ``grounding_used`` per turn) under a mode OTHER
+    An assistant turn recorded (``grounding_used`` is persisted per turn) under a mode OTHER
     than the one now in effect is prefixed with ``"(Answered under <mode> mode.)"`` so the
     model can tell, from the transcript alone, that an earlier refusal/abstention was made under
     different rules than THIS turn's — see ``_MODE_TRANSITION_CUE`` for the system-prompt
     instruction on how to treat it. A turn with no recorded mode (a user turn, or an assistant
-    turn that predates D51) is replayed exactly as before, untagged.
+    turn that predates per-turn grounding) is replayed exactly as before, untagged.
     """
     rendered: list[dict[str, Any]] = []
     for turn in history:
@@ -611,7 +612,7 @@ def _summarize_result(name: str, result: Any) -> str:
 
 
 def _tool_result_has_corpus_evidence(name: str, detail: Any) -> bool:
-    """Whether one executed tool call actually surfaced real corpus content (D59) — the signal
+    """Whether one executed tool call actually surfaced real corpus content — the signal
     :meth:`AnswerPipeline.run` accumulates across a turn's whole tool loop into
     ``corpus_evidence_used`` for :func:`_apply_provenance_backstop`.
 
@@ -620,7 +621,8 @@ def _tool_result_has_corpus_evidence(name: str, detail: Any) -> bool:
     ``"documents"`` key — non-empty means the corpus genuinely has matching entries (still real
     evidence: an authoritative enumeration answer, not a guess). A tool error (``{"error": ...}``,
     see :meth:`AnswerPipeline._call_tool`) or an empty/no-hits result of any shape is NOT
-    evidence — this must stay false exactly for the no-hits case D58's own test already scripts.
+    evidence — this must stay false exactly for the no-hits case the mode-separation tests
+    already script.
     """
     if isinstance(detail, list):
         return bool(detail)
@@ -630,7 +632,7 @@ def _tool_result_has_corpus_evidence(name: str, detail: Any) -> bool:
 
 
 def _merge_sources(existing: list[dict[str, Any]], hits: Sequence[Any]) -> list[dict[str, Any]]:
-    """Fold newly-seen ``search`` hits into the running compact-citation list (T6, D42).
+    """Fold newly-seen ``search`` hits into the running compact-citation list.
 
     Dedup by ``(path, page)`` keeping the best score seen so far, snippet clamped to
     ``_SOURCE_SNIPPET_CHARS``, sorted best-first and capped at ``_MAX_SOURCES`` — the same
@@ -701,7 +703,7 @@ class AnswerPipeline:
     """Wires the tool-calling loop together: a `ToolCompleter`, the shared `ToolRegistry`, and
     a `ConversationStore` — no store, no search pipeline, ever (boundary rule).
 
-    ``title_completer`` (T6, D42) is an OPTIONAL plain `Completer` for the auto-title pass —
+    ``title_completer`` is an OPTIONAL plain `Completer` for the auto-title pass —
     kept separate from `tool_completer` because a scripted `FakeToolCompleter` (every existing
     test) implements only `complete_with_tools`, never `complete`; `factory.py` wires the SAME
     completer instance into both (any real `Completer` implements both ports). ``None`` (the
@@ -736,11 +738,11 @@ class AnswerPipeline:
     ) -> AsyncIterator[AnswerEvent]:
         """Run the loop, yielding events as they happen. The final event is always ``"done"``.
 
-        ``grounding`` (D46) selects this turn's trust boundary against the model's own general
+        ``grounding`` selects this turn's trust boundary against the model's own general
         knowledge — ``None`` (the default) falls back to ``Settings.answer_grounding_default``.
         See the module-level ``_GROUNDING_*`` prompts for what each mode instructs the model to
         do; a ``"grounding"`` event carrying ``grounding_used``/``from_general_knowledge``/
-        ``segments`` (D48) is emitted before ``"done"`` regardless of mode — and, per this
+        ``segments`` is emitted before ``"done"`` regardless of mode — and, per this
         module's docstring, ``"done"`` is ALWAYS eventually reached, even on an unexpected
         mid-loop failure (degrades to ``truncated=True`` instead of a bare exception).
         """
@@ -754,7 +756,7 @@ class AnswerPipeline:
         history = await self._conversations.history(tenant, conv_id)
         # This turn's answer is the FIRST one iff no prior turn (before this one) was an
         # assistant turn — checked now, before the loop runs, since `history` already includes
-        # the user turn just appended above but nothing past it yet (T6, D42 auto-title).
+        # the user turn just appended above but nothing past it yet (for the auto-title).
         is_first_answer = not any(turn.role == "assistant" for turn in history)
 
         mode_transition = _history_has_other_mode_turn(history, mode)
@@ -774,14 +776,14 @@ class AnswerPipeline:
         executed = 0
         gathered: list[str] = []
         sources: list[dict[str, Any]] = []
-        # D59 provenance signal for `_apply_provenance_backstop` — whether ANY tool call this
+        # Provenance signal for `_apply_provenance_backstop` — whether ANY tool call this
         # turn actually surfaced real corpus content (never flips true on a zero-tool-call turn
         # or a turn where every search/list/read call came back empty/no-hits).
         corpus_evidence_used = False
         deadline = time.monotonic() + settings.answer_timeout_s
         budget = settings.answer_max_tool_calls
 
-        # BUG-1/D48 fix: the ONLY previously-caught failure here was `TimeoutError` — any OTHER
+        # The ONLY previously-caught failure here was `TimeoutError` — any OTHER
         # exception from the tool-completer (a provider 429/5xx, a dropped connection, a
         # serialization bug in a tool's own result) escaped this generator uncaught, crashing
         # the SSE stream mid-flight with NO terminal "done" frame ever sent (reproduced live: a
@@ -852,24 +854,24 @@ class AnswerPipeline:
         # failure here (a `_coerce_json` repair blowing up in some unanticipated way, a store
         # write hiccup, an auto-title failure escaping its own guard) must degrade to
         # `truncated=True` and still fall through to the four closing yields below, never
-        # escape `run()` uncaught (same D48 guarantee as the tool-calling loop above).
+        # escape `run()` uncaught (same guarantee as the tool-calling loop above).
         segments: list[dict[str, str]] = []
         try:
             if format == "json":
                 final_text = await self._coerce_json(final_text, json_schema, messages, tools)
 
-            # Strict structural OUTPUT guard (D51, variant-extended D59) — see
+            # Strict structural OUTPUT guard (variant-extended) — see
             # `_STRICT_ABSTENTION_TEXT` docstring. Must run BEFORE segmenting/persisting/
             # streaming so the leaked content never reaches any of those three places, not just
-            # the `from_general_knowledge` flag. D59: matches the SAME tolerant variant set as
+            # the `from_general_knowledge` flag. It matches the SAME tolerant variant set as
             # the segmenter (bracket/parenthetical/colon forms) — the exact-substring check this
-            # replaced only caught the bracket form, which would have let a variant (Quentin's
+            # replaced only caught the bracket form, which would have let a variant (a live
             # screenshot proved models emit them) leak real ungrounded prose past strict mode
             # entirely undetected.
             if mode == "strict" and _GENERAL_KNOWLEDGE_VARIANTS.search(final_text):
                 final_text = _STRICT_ABSTENTION_TEXT
 
-            # Structured grounding segments (D48, tolerant-variant + provenance-backstop D59) —
+            # Structured grounding segments (tolerant-variant + provenance-backstop) —
             # the parseable sibling of the boolean flag below, same "strict" structural
             # guarantee: always one "grounded" segment regardless of what the text contains.
             segments = _split_grounding_segments(final_text, mode)
@@ -878,7 +880,7 @@ class AnswerPipeline:
                 segment["kind"] == "general_knowledge" for segment in segments
             )
 
-            # Per-turn immutable grounding (D51/BUG-B) — persisted ON the assistant turn at
+            # Per-turn immutable grounding — persisted ON the assistant turn at
             # receive time so a reopened conversation (History, a tab switch, a page reload)
             # renders THIS turn's own recorded mode/flag/segments. Before this, a remount always
             # reset every historical turn's grounding to "unknown" (never persisted), which is
@@ -913,7 +915,7 @@ class AnswerPipeline:
         # generates anyway must never be REPORTED as grounded general knowledge — the prompt is
         # the only lever over what the model *does*, but this is a hard guarantee over what the
         # response *claims*). hybrid/open derive it from the SAME segments the "grounding" event
-        # carries (D48) — any "general_knowledge" segment means the model used its own marker.
+        # carries — any "general_knowledge" segment means the model used its own marker.
         from_general_knowledge = any(segment["kind"] == "general_knowledge" for segment in segments)
 
         yield AnswerEvent(type="answer_delta", data={"text": final_text})
@@ -932,7 +934,7 @@ class AnswerPipeline:
         """Run one tool call; ANY failure (unknown name, or an executor blowing up) degrades to
         a structured ``{"error": ...}`` result fed back into the transcript as a normal
         ``tool_result`` — never a raw exception propagating out of :meth:`run` and 500ing the
-        whole request (D40 amendment). The model sees the error and can recover (retry, try a
+        whole request. The model sees the error and can recover (retry, try a
         different tool, or answer partially) exactly like it would see an empty/odd result.
         """
         try:
@@ -977,7 +979,7 @@ class AnswerPipeline:
     async def _generate_and_store_title(
         self, tenant: str, conv_id: str, message: str, answer: str
     ) -> None:
-        """Best-effort auto-title (T6, D42) — NEVER lets a title failure fail the answer.
+        """Best-effort auto-title — NEVER lets a title failure fail the answer.
 
         Both the completer call and the store write are guarded: a broken title is a lost
         nicety, not a reason to 500 a request that already has a perfectly good answer.

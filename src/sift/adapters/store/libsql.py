@@ -55,7 +55,7 @@ _DDL_CHUNKS = (
 )
 
 # Additive migration for databases created before ``metadata`` existed on ``chunks`` — same
-# ALTER-if-missing pattern as ``modified_at`` on ``files`` above (D28).
+# ALTER-if-missing pattern as ``modified_at`` on ``files`` above.
 _CHUNKS_HAS_METADATA = "SELECT 1 FROM pragma_table_info('chunks') WHERE name = 'metadata'"
 _ALTER_CHUNKS_ADD_METADATA = "ALTER TABLE chunks ADD COLUMN metadata TEXT"
 
@@ -127,8 +127,8 @@ def _vector_json(vector: Vector) -> str:
 def _search_sql(
     tenant: str, vector: Vector, k: int, filters: SearchFilters | None
 ) -> tuple[str, list[Any]]:
-    """Build the ``search`` SQL + its bound params, narrowing by ``filters`` BEFORE the ``LIMIT``
-    (WP v0.2.0 T2, D38): metadata equality via ``json_extract``, ``modified_at`` range via a
+    """Build the ``search`` SQL + its bound params, narrowing by ``filters`` BEFORE the ``LIMIT``:
+    metadata equality via ``json_extract``, ``modified_at`` range via a
     plain string comparison (consistent zero-padded ISO-8601 sorts lexicographically the same as
     chronologically — no datetime parsing needed store-side)."""
     clauses = ["c.tenant = ?"]

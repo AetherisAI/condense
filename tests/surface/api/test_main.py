@@ -1,4 +1,4 @@
-"""Tests for the app's lifespan (``sift.api.main``) — BUG #1, D40 amendment.
+"""Tests for the app's lifespan (``sift.api.main``).
 
 ``ensure_ready`` must run once at process startup (not just lazily inside the ``search`` tool
 executor / the two toolbox executors it was just added to, ``pipelines/tools.py``) so the FIRST

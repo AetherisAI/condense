@@ -1,9 +1,9 @@
 // Ingest agent sidecar supervision — wraps the `sift-agent-cli` binary (bundled as a Tauri
 // `externalBin`, see `tauri.conf.json`'s `bundle.externalBin` + `capabilities/default.json`'s
 // scoped `shell:allow-spawn`), the headless twin of this desktop app's folder watcher
-// (agent/cli.py's `--watch --json`, D54).
+// (agent/cli.py's `--watch --json`).
 //
-// `AgentConfig` is the one approved contract extension (machine.md): `server`/`token` are
+// `AgentConfig`'s `server`/`token` are
 // optional — when absent, local-mode values (`http://127.0.0.1:{engine_port}` + the app's
 // `ingest_token`) are substituted here, so a caller that doesn't yet know about client-mode
 // nuances can just pass `{paths, delete_removed}` and get local-mode behavior for free.
