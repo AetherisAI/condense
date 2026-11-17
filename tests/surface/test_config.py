@@ -106,12 +106,9 @@ def test_defaults_populate() -> None:
     assert settings.answer_history_ttl_days == 30
     # Grounding mode: defaults to the safest, corpus-only trust boundary.
     assert settings.answer_grounding_default == "strict"
-    # Frozen-engine entry point (packaging/sift_engine_entry.py): the same bind/port the
-    # engine has always used (docker-compose's API_BIND/API_PORT host-mapping vars, previously
-    # compose-only — see the now-narrowed `_NON_SETTINGS_KEYS` in test_config_env_parity.py),
-    # now a real typed field so a frozen binary can call `uvicorn.run(app, host=..., port=...)`
-    # directly instead of the string-based `"sift.api.main:app"` import a frozen app can't do.
-    assert settings.api_bind == "0.0.0.0"
+    # Frozen-engine entry point (packaging/sift_engine_entry.py): loopback unless told
+    # otherwise, so a bare engine never listens on every interface.
+    assert settings.api_bind == "127.0.0.1"
     assert settings.api_port == 8000
 
 
@@ -277,10 +274,10 @@ def test_api_port_above_65535_raises_validation_error(monkeypatch: pytest.Monkey
 
 
 def test_api_bind_and_port_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("API_BIND", "127.0.0.1")
+    monkeypatch.setenv("API_BIND", "0.0.0.0")
     monkeypatch.setenv("API_PORT", "18801")
     settings = Settings(ingest_token="t")
-    assert settings.api_bind == "127.0.0.1"
+    assert settings.api_bind == "0.0.0.0"
     assert settings.api_port == 18801
 
 

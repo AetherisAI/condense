@@ -206,15 +206,12 @@ class Settings(BaseSettings):
 
     # Frozen-engine entry point (`packaging/sift_engine_entry.py`): a PyInstaller-frozen
     # binary can't do uvicorn's string-based app import (`"sift.api.main:app"`, as the Dockerfile
-    # CMD does today) — a frozen app has no importable module path for its own `__main__`, so the
-    # entry point must import the `app` object directly and call `uvicorn.run(app, host=...,
-    # port=...)`. These were previously compose/env-file-only host-mapping vars (`API_BIND`/
-    # `API_PORT` in docker-compose.yml's `ports:`/container-env, never read by the app itself,
-    # which always bound `0.0.0.0:8000` via the Dockerfile's hardcoded CMD); promoting them to
-    # real `Settings` fields with the SAME names/defaults keeps that convention rather than
-    # inventing new ones, and lets one typed source of truth drive both the container and the
-    # desktop-launcher-supervised local engine (local mode binds 127.0.0.1:8801).
-    api_bind: str = "0.0.0.0"
+    # CMD does) — a frozen app has no importable module path for its own `__main__`, so the
+    # entry point imports the `app` object and calls `uvicorn.run(app, host=..., port=...)` with
+    # these. Loopback by default, like every other entry point: set API_BIND=0.0.0.0 to listen
+    # on all interfaces. The Docker image ignores both (its CMD binds 0.0.0.0:8000 inside the
+    # container; compose publishes it on 127.0.0.1).
+    api_bind: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1, le=65535)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
