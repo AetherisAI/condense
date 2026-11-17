@@ -3,7 +3,8 @@
 Drives ``build_tool_registry`` through ``FakeEmbedder``/``FakeVectorStore`` (offline, no
 network) — the same fakes every other pipeline test uses. Covers both renders
 (``to_openai_functions``/``to_json_schema_manifest``) and each tool's executor end-to-end:
-``search`` (incl. ``k`` default/cap and metadata/since/until filters), ``list_documents``
+``search`` (incl. ``k`` default/cap, metadata/since/until filters and the opt-in
+``TOOLS_SEARCH_RERANK`` cross-encoder pass, D88), ``list_documents``
 (pagination + total + metadata filter), and ``get_document_chunks`` (ordering).
 """
 
@@ -159,6 +160,84 @@ def test_get_document_chunks_description_says_modified_at_and_metadata(
 
 
 # --- search executor -------------------------------------------------------------------
+
+
+class _ReversingReranker:
+    """Reranker double: reverses the candidates and records what it was asked to rank."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[Hit]]] = []
+
+    async def rerank(self, query: str, candidates: list[Hit]) -> list[Hit]:
+        self.calls.append((query, list(candidates)))
+        return [replace(hit, score=0.99) for hit in reversed(candidates)]
+
+
+def _docs(n: int) -> list[Chunk]:
+    return [
+        Chunk(text=f"doc {i}", source_path=f"{i}.md", page=1, source_hash=f"h{i}", index=0)
+        for i in range(n)
+    ]
+
+
+async def test_search_does_not_rerank_by_default(
+    embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    # TOOLS_SEARCH_RERANK defaults off: Find and Ask keep the plain vector ranking (D88).
+    settings = Settings(ingest_token="t", embed_dim=DIM, embed_model=MODEL, tools_search_k=2)
+    assert settings.tools_search_rerank is False
+    reranker = _ReversingReranker()
+    registry = build_tool_registry(embedder, store, settings, reranker)
+    await _seed(store, embedder, _docs(5))
+
+    plain = await build_tool_registry(embedder, store, settings).call(
+        "search", {"query": "doc 1"}, TENANT
+    )
+    hits = await registry.call("search", {"query": "doc 1"}, TENANT)
+
+    assert reranker.calls == []
+    assert [h.source_path for h in hits] == [h.source_path for h in plain]
+
+
+async def test_search_reranks_a_retrieve_k_pool_when_enabled(
+    embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    settings = Settings(
+        ingest_token="t",
+        embed_dim=DIM,
+        embed_model=MODEL,
+        tools_search_k=2,
+        retrieve_k=4,
+        tools_search_rerank=True,
+    )
+    reranker = _ReversingReranker()
+    registry = build_tool_registry(embedder, store, settings, reranker)
+    await _seed(store, embedder, _docs(6))
+
+    hits = await registry.call("search", {"query": "doc 1"}, TENANT)
+
+    ((query, pool),) = reranker.calls
+    assert query == "doc 1"
+    assert len(pool) == 4  # retrieve wide (RETRIEVE_K), like /search …
+    assert [h.source_path for h in hits] == [pool[-1].source_path, pool[-2].source_path]
+    assert all(h.score == 0.99 for h in hits)  # … then the reranked top k, re-scored
+
+
+async def test_search_rerank_pool_is_never_smaller_than_k(
+    embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    settings = Settings(
+        ingest_token="t", embed_dim=DIM, embed_model=MODEL, retrieve_k=2, tools_search_rerank=True
+    )
+    reranker = _ReversingReranker()
+    registry = build_tool_registry(embedder, store, settings, reranker)
+    await _seed(store, embedder, _docs(6))
+
+    hits = await registry.call("search", {"query": "doc", "k": 5}, TENANT)
+
+    ((_query, pool),) = reranker.calls
+    assert len(pool) == 5
+    assert len(hits) == 5
 
 
 async def test_search_executor_returns_ranked_hits_no_recap(

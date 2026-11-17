@@ -9,6 +9,8 @@ import {
   agentStop,
   appConfigGet,
   appConfigSet,
+  BACKEND_COMPONENT_LABEL,
+  BACKEND_COMPONENTS,
   backendStart,
   backendStateError,
   backendStateKind,
@@ -77,6 +79,7 @@ const EDITABLE = new Set([
   'chunk_size',
   'chunk_overlap',
   'rerank_strategy',
+  'tools_search_rerank',
 ])
 
 /** Model pins / base URLs / store backend / tokens — baked into the container at startup, so
@@ -149,6 +152,8 @@ const EXPLANATIONS: Record<string, string> = {
   parse_timeout_s: 'Wall-clock timeout for parsing a single file.',
   tools_search_k: 'Default number of hits POST /v1/tools/search returns.',
   tools_search_max_k: 'Hard cap on how many hits a caller may request from /v1/tools/search.',
+  tools_search_rerank:
+    'Rerank Find and Ask results: retrieve RETRIEVE_K passages, re-score them with the reranker, keep the best.',
   auth_tokens: 'Named per-consumer bearer tokens (beyond the ingest token) that resolve to this tenant.',
   answer_tool_mode: "How /v1/answer drives tool-calling: native function-calling, a prompted fallback, or auto.",
   answer_max_tool_calls: 'Max tool executions one /v1/answer call may make before stopping gracefully.',
@@ -174,7 +179,7 @@ const GROUPS: { label: string; keys: string[] }[] = [
       'embed_retry_attempts',
     ],
   },
-  { label: 'Rerank', keys: ['rerank_strategy', 'rerank_base_url', 'rerank_model'] },
+  { label: 'Rerank', keys: ['rerank_strategy', 'rerank_base_url', 'rerank_model', 'tools_search_rerank'] },
   {
     label: 'Retrieval & recap',
     keys: [
@@ -219,7 +224,7 @@ const GROUPS: { label: string; keys: string[] }[] = [
 
 /** Coerce a raw input string into the JSON value PATCH /settings expects for that key. */
 function coerce(key: string, raw: string): unknown {
-  if (key === 'recap_enabled') return raw.trim().toLowerCase() === 'true'
+  if (key === 'recap_enabled' || key === 'tools_search_rerank') return raw.trim().toLowerCase() === 'true'
   if (key === 'rerank_strategy') return raw.trim()
   return Number(raw)
 }
@@ -693,6 +698,19 @@ const SystemMenu = forwardRef<
     }
   }
 
+  /** The Search section's switch (D88): applies live via PATCH /settings; the desktop app also
+   * saves it in config.json so its engine starts with it next time. */
+  async function handleRerankToggle(on: boolean) {
+    await patchSetting('tools_search_rerank', String(on))
+    if (desktopConfig?.mode === 'local') {
+      try {
+        setDesktopConfig(await appConfigSet({ ...desktopConfig, tools_search_rerank: on }))
+      } catch (err) {
+        setDesktopError(err instanceof Error ? err.message : String(err))
+      }
+    }
+  }
+
   const detectedProvider = detectProvider(llmKeyDraft)
 
   return (
@@ -756,13 +774,14 @@ const SystemMenu = forwardRef<
 
                   {desktopConfig.mode === 'local' && backend && (
                     <div className="sys-backend-rows">
-                      {(['embedder', 'engine'] as const).map((component) => {
+                      {BACKEND_COMPONENTS.map((component) => {
                         const status = backend[component]
+                        if (!status) return null
                         const kind = backendStateKind(status.state)
                         return (
                           <div className="sys-row" key={component}>
                             <span className="sys-key">
-                              {component === 'embedder' ? 'Embedding server' : 'Engine'}
+                              {BACKEND_COMPONENT_LABEL[component]}
                             </span>
                             <span className="sys-row-right">
                               <span className={`wizard-state-badge is-${kind}`}>
@@ -994,6 +1013,37 @@ const SystemMenu = forwardRef<
                     Applies after backend restart — set LLM_API_KEY in .env.
                   </p>
                 </div>
+              </>
+            ) : (
+              <p className="sys-muted">Loading…</p>
+            )}
+          </div>
+
+          {/* ---- Search: rerank Find & Ask (D88), off by default ---------------------------- */}
+          <div className="sys-section">
+            <h3 className="sys-heading">Search</h3>
+            {data ? (
+              <>
+                <label className="agent-delete-removed">
+                  <input
+                    type="checkbox"
+                    checked={data.settings.tools_search_rerank === true}
+                    disabled={data.settings.rerank_strategy === 'none'}
+                    onChange={(e) => void handleRerankToggle(e.target.checked)}
+                  />
+                  Rerank Find &amp; Ask results
+                  {savedKeys.has('tools_search_rerank') && <span className="sys-saved">Saved ✓</span>}
+                </label>
+                <p className="agent-note">
+                  {data.settings.rerank_strategy === 'none'
+                    ? 'No reranker is configured (RERANK_STRATEGY=none).'
+                    : `Re-scores the top ${fmt(data.settings.retrieve_k)} passages with ${fmt(
+                        data.settings.rerank_model,
+                      )} before showing the best. Sharper top results, but each search takes a few seconds longer, more on machines without a GPU.`}
+                  {desktopConfig?.mode !== 'local' && data.settings.rerank_strategy !== 'none' && (
+                    <> Lasts until the engine restarts; set TOOLS_SEARCH_RERANK=true in .env to keep it.</>
+                  )}
+                </p>
               </>
             ) : (
               <p className="sys-muted">Loading…</p>

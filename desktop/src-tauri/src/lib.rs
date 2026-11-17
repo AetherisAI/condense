@@ -3,7 +3,7 @@
 // `run()` is the single composition root the mobile entry point and the desktop `main.rs` both
 // call into. T5 (Rust provisioning + supervision) adds four modules, each a managed `State`:
 // `config` (AppConfig load/save), `provisioning` (manifest-driven download/verify/unpack),
-// `backend` (engine + embedder process supervision), `agent` (the ingest sidecar). See
+// `backend` (engine + embedder + reranker process supervision), `agent` (the ingest sidecar). See
 // `docs/Quentin/active/machine.md` for the full command contract these wire up to.
 
 mod agent;
@@ -75,6 +75,9 @@ pub fn run() {
             // does nothing and the wizard/settings Start button remains the only way in.
             // `backend_start`'s own already-starting/running guard (backend.rs) is a no-op, so
             // this can never race a subsequent explicit `backend_start` call into a double-spawn.
+            // Then any optional component the manifest lists but this install lacks (the D89
+            // reranker, for an install that predates it) downloads in the background and its
+            // sidecar starts when it lands — the backend never waits on it.
             if mode.as_deref() == Some("local") {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -97,6 +100,8 @@ pub fn run() {
                             {
                                 eprintln!("auto-start: backend_start failed: {e}");
                             }
+                            provisioning::install_missing_in_background(app_handle.clone(), cfg)
+                                .await;
                         }
                         Ok(false) => {
                             eprintln!(

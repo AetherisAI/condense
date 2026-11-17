@@ -24,13 +24,17 @@ export type AppConfig = {
   mode: AppMode
   engine_port: number
   embedder_port: number
+  /** The bge-reranker-v2-m3 llama-server sidecar (D89); Rust defaults it to 8803 for older configs. */
+  reranker_port: number
   ingest_token: string
   llm: { base_url: string; model: string; api_key: string }
   manifest_url: string | null
   agent: { paths: string[]; delete_removed: boolean }
+  /** "Rerank Find & Ask" (D88): passed to the engine as TOOLS_SEARCH_RERANK at start. */
+  tools_search_rerank: boolean
 }
 
-export type ComponentId = 'engine' | 'embedder' | 'model'
+export type ComponentId = 'engine' | 'embedder' | 'model' | 'reranker'
 
 export type ProvisioningComponent = {
   id: ComponentId
@@ -55,10 +59,24 @@ export type BackendStateString = string
 
 export type BackendComponentStatus = { state: BackendStateString; port: number; pid?: number }
 
+/** The supervised local-mode processes (`backend.rs`). The reranker is optional (D89): an install
+ * still downloading its model runs without it, and Find keeps the vector ranking meanwhile. */
+export type BackendComponent = 'engine' | 'embedder' | 'reranker'
+
+/** Start order, which is also the display order. */
+export const BACKEND_COMPONENTS: readonly BackendComponent[] = ['embedder', 'reranker', 'engine']
+
+export const BACKEND_COMPONENT_LABEL: Record<BackendComponent, string> = {
+  embedder: 'Embedding server',
+  reranker: 'Reranker',
+  engine: 'Engine',
+}
+
 export type BackendStatus = {
   mode: string
   engine: BackendComponentStatus
   embedder: BackendComponentStatus
+  reranker: BackendComponentStatus
 }
 
 export type AgentStatus = { running: boolean; user_stopped: boolean; restarts: number }
@@ -85,7 +103,7 @@ export type ProvisionProgressEvent = {
 
 export type ProvisionErrorEvent = { id: ComponentId; error: string }
 
-export type BackendStateEvent = { component: 'engine' | 'embedder'; state: BackendStateString; detail?: string }
+export type BackendStateEvent = { component: BackendComponent; state: BackendStateString; detail?: string }
 
 export type AgentEventPayload = { line: string }
 
@@ -178,10 +196,12 @@ function freshConfig(): AppConfig {
     mode: null,
     engine_port: 8801,
     embedder_port: 8802,
+    reranker_port: 8803,
     ingest_token: crypto.randomUUID().replace(/-/g, ''),
     llm: { base_url: '', model: '', api_key: '' },
     manifest_url: null,
     agent: { paths: [], delete_removed: false },
+    tools_search_rerank: false,
   }
 }
 
@@ -191,15 +211,17 @@ const MOCK_COMPONENTS: Record<ComponentId, { name: string; version: string; size
   engine: { name: 'Condense engine', version: '0.4.0', size_bytes: 150_000_000 },
   embedder: { name: 'Embedding server (llama-server)', version: 'b9878', size_bytes: 15_000_000 },
   model: { name: 'bge-m3 embedding model', version: 'Q8_0', size_bytes: 605_000_000 },
+  reranker: { name: 'bge-reranker-v2-m3', version: 'Q8_0', size_bytes: 635_676_416 },
 }
 
-const mockInstalled: Record<ComponentId, boolean> = { engine: false, embedder: false, model: false }
+const mockInstalled: Record<ComponentId, boolean> = { engine: false, embedder: false, model: false, reranker: false }
 
 let mockProvisionCancelled = false
 
-let mockBackendState: { engine: BackendStateString; embedder: BackendStateString } = {
+let mockBackendState: Record<BackendComponent, BackendStateString> = {
   engine: 'stopped',
   embedder: 'stopped',
+  reranker: 'stopped',
 }
 
 let mockAgentStatus: AgentStatus = { running: false, user_stopped: false, restarts: 0 }
@@ -301,8 +323,8 @@ export async function backendStart(): Promise<void> {
     await invoke('backend_start')
     return
   }
-  // Real order: embedder first, then engine, health-polling each before moving on.
-  for (const component of ['embedder', 'engine'] as const) {
+  // Real order: embedder, reranker, then engine, health-polling each before moving on.
+  for (const component of BACKEND_COMPONENTS) {
     mockBackendState[component] = 'starting'
     mockEmit<BackendStateEvent>('backend-state', { component, state: 'starting' })
     await sleep(1500)
@@ -316,7 +338,7 @@ export async function backendStop(): Promise<void> {
     await invoke('backend_stop')
     return
   }
-  for (const component of ['engine', 'embedder'] as const) {
+  for (const component of ['engine', 'reranker', 'embedder'] as const) {
     mockBackendState[component] = 'stopped'
     mockEmit<BackendStateEvent>('backend-state', { component, state: 'stopped' })
   }
@@ -328,6 +350,7 @@ export async function backendStatus(): Promise<BackendStatus> {
     mode: mockConfig.mode ?? 'local',
     engine: { state: mockBackendState.engine, port: mockConfig.engine_port },
     embedder: { state: mockBackendState.embedder, port: mockConfig.embedder_port },
+    reranker: { state: mockBackendState.reranker, port: mockConfig.reranker_port },
   }
 }
 

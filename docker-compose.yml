@@ -2,11 +2,12 @@
 #
 # Inference that is NOT containerized here:
 #   - Ollama serving bge-m3 runs on the HOST (Metal) and is reached by URL (EMBED_BASE_URL).
+# The cross-encoder reranker IS (the `reranker` service, D88): Ollama can't serve rerankers.
 #   - Turso / libSQL is cloud or an embedded-replica file — no container.
 #
 # Bind model (README "Security & privacy"): every published port defaults to loopback-only
 # (`127.0.0.1`) — `docker compose up` is safe on a machine with a public IP out of the box.
-# Set `API_HOST`/`WEB_HOST`/`TEI_HOST=0.0.0.0` (or a specific LAN interface IP) to opt in to LAN
+# Set `API_HOST`/`WEB_HOST`/`RERANKER_HOST`/`TEI_HOST=0.0.0.0` (or a LAN interface IP) to opt in to LAN
 # access for the co-dev-over-LAN topology this file was written for. Whichever you choose, the
 # bearer token (`INGEST_TOKEN`/`AUTH_TOKENS`) still gates every write and query, and the hard
 # rule stands either way: NEVER port-forward any of these ports to the public internet.
@@ -37,8 +38,8 @@ services:
       EMBED_RETRY_ATTEMPTS: ${EMBED_RETRY_ATTEMPTS:-3}
       EMBED_QUERY_PREFIX: ${EMBED_QUERY_PREFIX:-}
       EMBED_DOCUMENT_PREFIX: ${EMBED_DOCUMENT_PREFIX:-}
-      RERANK_STRATEGY: ${RERANK_STRATEGY:-llm}
-      RERANK_BASE_URL: ${RERANK_BASE_URL:-http://tei:80}
+      RERANK_STRATEGY: ${RERANK_STRATEGY:-crossencoder}
+      RERANK_BASE_URL: ${RERANK_BASE_URL:-http://reranker:8080}
       RERANK_MODEL: ${RERANK_MODEL:-bge-reranker-v2-m3}
       RERANK_TIMEOUT_S: ${RERANK_TIMEOUT_S:-120.0}
       RETRIEVE_K: ${RETRIEVE_K:-30}
@@ -82,6 +83,7 @@ services:
       # Toolbox `/v1/tools/*` surface (D38) — see .env.example.
       TOOLS_SEARCH_K: ${TOOLS_SEARCH_K:-8}
       TOOLS_SEARCH_MAX_K: ${TOOLS_SEARCH_MAX_K:-20}
+      TOOLS_SEARCH_RERANK: ${TOOLS_SEARCH_RERANK:-false}
       INGEST_TOKEN: ${INGEST_TOKEN:?set a shared bearer token in .env}
       AUTH_TOKENS: ${AUTH_TOKENS:-}
       # CORS (D55) — allow-list for the Tauri desktop shell's webview; see .env.example.
@@ -97,8 +99,8 @@ services:
     ports:
       # Loopback by default; set API_HOST=0.0.0.0 (or a LAN IP) to expose beyond this host.
       - "${API_HOST:-127.0.0.1}:${API_PORT:-8000}:8000"
-    # No hard dependency on tei: the default PoC path is RERANK_STRATEGY=llm (D4, zero-infra).
-    # Start the cross-encoder only with `docker compose --profile tei up` (see tei below).
+    # No hard dependency on the reranker (D88): it downloads its model on first start, and until
+    # it answers the API keeps the vector ranking instead of failing searches.
     # Linux: let the container reach host-side inference (Ollama/LLM) at
     # http://host.docker.internal:<port> just like on Docker Desktop.
     extra_hosts:
@@ -131,12 +133,50 @@ services:
     depends_on:
       - api
 
+  reranker:
+    # Default cross-encoder reranker (D88): bge-reranker-v2-m3, GGUF Q8_0, on llama.cpp's
+    # llama-server: the same build and weights the desktop app provisions (D89), multi-arch
+    # (TEI's CPU image is amd64-only and never finishes warming up under emulation on Apple
+    # silicon). On first start it downloads the GGUF (~636 MB) from Hugging Face into the
+    # `reranker-models` volume, then reuses it. Serves TEI's /rerank request shape. CPU-only in
+    # a container: ~18 s per 30-passage call on 4 vCPUs, ~1.5 GB, so TOOLS_SEARCH_RERANK stays
+    # off by default. -ub/-b = the per-slot context (4096 / 4 = 1024 tokens): a query+passage
+    # pair must fit one micro-batch, which a 512-token chunk plus a ~500-token query does.
+    image: ghcr.io/ggml-org/llama.cpp:server-b9879@sha256:ce6bb66d9c0889501f5df2ca56e5af39eac506e98655330542492abbb74013eb
+    command:
+      - "-hf"
+      - "gpustack/bge-reranker-v2-m3-GGUF:Q8_0"
+      - "--reranking"
+      - "-c"
+      - "4096"
+      - "-ub"
+      - "1024"
+      - "-b"
+      - "1024"
+      - "--parallel"
+      - "4"
+      - "--port"
+      - "8080"
+    environment:
+      LLAMA_CACHE: /models
+    volumes:
+      - reranker-models:/models
+    ports:
+      # Loopback by default; set RERANKER_HOST=0.0.0.0 (or a LAN IP) to expose beyond this host.
+      - "${RERANKER_HOST:-127.0.0.1}:${RERANKER_PORT:-8082}:8080"
+    # The image's own /health probe, with a start period that covers the first-start download.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
+
   tei:
-    # Cross-encoder reranker (README §7): bge-reranker-v2-m3 via Text Embeddings Inference.
-    # Opt-in only — gated behind the `tei` profile so the default `docker compose up` runs the
-    # zero-infra llm-judge path and never pulls the reranker model. Enable with
-    # `docker compose --profile tei up` + RERANK_STRATEGY=crossencoder. Port 8081 leaves
-    # 8080 for Dev B's web/nginx.
+    # Alternative cross-encoder backend: the same bge-reranker-v2-m3 via Text Embeddings
+    # Inference — the pick for a CUDA host (swap in a GPU image). Opt-in behind the `tei` profile:
+    # `docker compose --profile tei up` + RERANK_BASE_URL=http://tei:80. Port 8081 leaves 8080
+    # for Dev B's web/nginx.
     profiles: ["tei"]
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
     command: ["--model-id", "${RERANK_HF_MODEL:-BAAI/bge-reranker-v2-m3}"]
@@ -154,3 +194,5 @@ volumes:
   # Backs the `api` service's default embedded-replica TURSO_DATABASE_URL (D39) — a fresh
   # `docker compose up` gets a working, persistent store with zero manual setup.
   sift-data:
+  # The reranker's downloaded GGUF, so it's fetched once, not on every recreate (D88).
+  reranker-models:

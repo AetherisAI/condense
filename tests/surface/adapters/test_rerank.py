@@ -1,4 +1,4 @@
-"""Tests for the Reranker adapters — the LLM-as-judge double and the TEI cross-encoder.
+"""Tests for the Reranker adapters — the LLM-as-judge double and the HTTP cross-encoder.
 
 ``LlmJudgeReranker`` is driven by a fake :class:`~sift.core.ports.Completer` so the index
 parsing and reorder are exercised with no model. ``CrossEncoderReranker`` is routed through an
@@ -9,6 +9,7 @@ canned ``/rerank`` reply that reorders and re-scores the candidates.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 
 import httpx
@@ -104,7 +105,12 @@ async def test_llm_judge_empty_candidates() -> None:
 
 
 def _ranked(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(200, json=[{"index": 1, "score": 0.9}, {"index": 0, "score": 0.1}])
+    # Raw logits, as TEI returns them for ``raw_scores: true`` and llama-server always does.
+    return httpx.Response(200, json=[{"index": 1, "score": 2.0}, {"index": 0, "score": -1.0}])
+
+
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
 
 
 async def test_crossencoder_reorders_and_rescores(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -115,12 +121,63 @@ async def test_crossencoder_reorders_and_rescores(monkeypatch: pytest.MonkeyPatc
     out = await reranker.rerank("query", candidates)
 
     assert [hit.text for hit in out] == ["b", "a"]
-    assert out[0].score == 0.9
-    assert out[1].score == 0.1
+    assert out[0].score == pytest.approx(_sigmoid(2.0))
+    assert out[1].score == pytest.approx(_sigmoid(-1.0))
 
     (request,) = seen
     assert str(request.url) == "http://tei/rerank"
-    assert json.loads(request.content) == {"query": "query", "texts": ["a", "b"]}
+    assert json.loads(request.content) == {
+        "query": "query",
+        "texts": ["a", "b"],
+        "raw_scores": True,
+    }
+
+
+async def test_crossencoder_scores_are_probabilities_for_large_logits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # llama-server ignores raw_scores and returns logits like 7.8 / -11: the adapter squashes
+    # them itself so every backend yields TEI's default 0..1 scale (D88).
+    def _extreme(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json=[{"index": 0, "score": 800.0}, {"index": 1, "score": -800.0}]
+        )
+
+    _patch_transport(monkeypatch, _extreme)
+    out = await CrossEncoderReranker(base_url="http://llama").rerank("q", [_hit("a"), _hit("b")])
+
+    assert out[0].score == pytest.approx(1.0)
+    assert out[1].score == pytest.approx(0.0)
+    assert all(0.0 <= hit.score <= 1.0 for hit in out)
+
+
+async def test_crossencoder_unreachable_keeps_retrieval_order(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Nothing listening (the desktop's reranker sidecar not downloaded yet, or crashed): Find
+    # keeps working on the vector ranking instead of failing the request (D88).
+    def _refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    _patch_transport(monkeypatch, _refused)
+    candidates = [_hit("a"), _hit("b")]
+
+    with caplog.at_level("WARNING"):
+        out = await CrossEncoderReranker(base_url="http://127.0.0.1:8803").rerank("q", candidates)
+
+    assert out == candidates
+    assert "unreachable" in caplog.text
+
+
+async def test_crossencoder_server_error_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A reranker that answers but fails is a real fault, not "not installed": surface it.
+    def _boom(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "input is too large"})
+
+    _patch_transport(monkeypatch, _boom)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await CrossEncoderReranker(base_url="http://tei").rerank("q", [_hit("a")])
 
 
 async def test_crossencoder_empty_candidates_skips_request(

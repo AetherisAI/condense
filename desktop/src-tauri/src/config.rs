@@ -48,6 +48,10 @@ pub struct AppConfig {
     pub mode: Option<String>,
     pub engine_port: u16,
     pub embedder_port: u16,
+    /// The bge-reranker-v2-m3 llama-server sidecar (D89). `serde(default)` so a `config.json`
+    /// written before the reranker existed still loads, and picks up 8803.
+    #[serde(default = "default_reranker_port")]
+    pub reranker_port: u16,
     /// Generated once on first read; a 32-hex-char CSPRNG token (never logged).
     pub ingest_token: String,
     #[serde(default)]
@@ -56,6 +60,11 @@ pub struct AppConfig {
     pub manifest_url: Option<String>,
     #[serde(default)]
     pub agent: AgentSettings,
+    /// The System drawer's "Rerank Find & Ask" switch (D88), passed to the engine as
+    /// `TOOLS_SEARCH_RERANK` at start so it survives restarts (the drawer's `PATCH /settings`
+    /// alone is in-memory). Off by default.
+    #[serde(default)]
+    pub tools_search_rerank: bool,
 }
 
 impl Default for AppConfig {
@@ -65,12 +74,18 @@ impl Default for AppConfig {
             mode: None,
             engine_port: 8801,
             embedder_port: 8802,
+            reranker_port: default_reranker_port(),
             ingest_token: generate_token(),
             llm: LlmConfig::default(),
             manifest_url: None,
             agent: AgentSettings::default(),
+            tools_search_rerank: false,
         }
     }
+}
+
+fn default_reranker_port() -> u16 {
+    8803
 }
 
 /// 32 hex chars from a CSPRNG (rand's `OsRng`, backed by the `getrandom` crate) — 16 random
@@ -127,4 +142,20 @@ pub fn app_config_set(
     write_config(&path, &config)?;
     *state.0.lock().expect("config mutex poisoned") = config.clone();
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_written_before_the_reranker_loads_with_its_default_port() {
+        let pre_d89 = r#"{"schema":1,"mode":"local","engine_port":8801,"embedder_port":8802,
+            "ingest_token":"abc","llm":{"base_url":"","model":"","api_key":""},
+            "manifest_url":null,"agent":{"paths":[],"delete_removed":false}}"#;
+        let cfg: AppConfig = serde_json::from_str(pre_d89).expect("old config parses");
+        assert_eq!(cfg.reranker_port, 8803);
+        assert_eq!(cfg.embedder_port, 8802);
+        assert!(!cfg.tools_search_rerank);
+    }
 }

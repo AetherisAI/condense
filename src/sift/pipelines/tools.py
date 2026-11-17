@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sift.config import Settings
-from sift.core.ports import Embedder, VectorStore
+from sift.core.ports import Embedder, Reranker, VectorStore
 from sift.core.types import Chunk, Hit, SearchFilters
 from sift.pipelines.documents import SupportsChunkAccess, SupportsDocumentAdmin
 
@@ -183,10 +183,15 @@ async def _search_executor(
     embedder: Embedder,
     store: VectorStore,
     settings: Settings,
+    reranker: Reranker | None,
     args: Mapping[str, Any],
     tenant: str,
 ) -> list[Hit]:
-    """Embed → ``store.search`` — the toolbox's raw-retrieval primitive. NO recap, NO LLM."""
+    """Embed → ``store.search`` — the toolbox's raw-retrieval primitive. NO recap, NO LLM.
+
+    With ``tools_search_rerank`` on (D88) it retrieves wide like ``/search`` — ``retrieve_k``
+    hits, or ``k`` if larger — passes them through the reranker and returns the top ``k``.
+    """
     query = str(args["query"])
     requested_k = args.get("k")
     k = settings.tools_search_k if requested_k is None else int(requested_k)
@@ -194,7 +199,10 @@ async def _search_executor(
     filters = _filters_from_args(args.get("filters"))
     await store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
     (vector,) = await embedder.embed([query])
-    return await store.search(vector, k, tenant, filters)
+    if not (settings.tools_search_rerank and reranker is not None):
+        return await store.search(vector, k, tenant, filters)
+    pool = await store.search(vector, max(k, settings.retrieve_k), tenant, filters)
+    return (await reranker.rerank(query, pool))[:k]
 
 
 async def _list_documents_executor(
@@ -233,8 +241,16 @@ async def _get_document_chunks_executor(
     return await store.get_chunks(source_hash, tenant)
 
 
-def build_tool_registry(embedder: Embedder, store: VectorStore, settings: Settings) -> ToolRegistry:
-    """Build the standing registry from the wired ports — called once by ``factory.py``."""
+def build_tool_registry(
+    embedder: Embedder,
+    store: VectorStore,
+    settings: Settings,
+    reranker: Reranker | None = None,
+) -> ToolRegistry:
+    """Build the standing registry from the wired ports — called once by ``factory.py``.
+
+    ``reranker`` is used by ``search`` only when ``settings.tools_search_rerank`` is on (D88).
+    """
     specs = [
         ToolSpec(
             name="search",
@@ -249,7 +265,7 @@ def build_tool_registry(embedder: Embedder, store: VectorStore, settings: Settin
                 "to appear in a filename."
             ),
             params_json_schema=_SEARCH_PARAMS,
-            executor=functools.partial(_search_executor, embedder, store, settings),
+            executor=functools.partial(_search_executor, embedder, store, settings, reranker),
         ),
         ToolSpec(
             name="list_documents",

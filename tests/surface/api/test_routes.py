@@ -219,6 +219,17 @@ def test_patch_settings_applies_editable_fields(client: TestClient) -> None:
     assert settings["final_k"] == 2
 
 
+def test_patch_settings_toggles_find_and_ask_reranking(client: TestClient) -> None:
+    # The System drawer's "Rerank Find & Ask" switch (D88): off by default, editable live.
+    before = client.get("/status", headers=_AUTH).json()["settings"]
+    assert before["tools_search_rerank"] is False
+
+    response = client.patch("/settings", json={"tools_search_rerank": True}, headers=_AUTH)
+
+    assert response.status_code == 200
+    assert response.json()["settings"]["tools_search_rerank"] is True
+
+
 def test_patch_settings_rejects_non_editable_field(client: TestClient) -> None:
     # Models/secrets/urls are not on the SettingsPatch allowlist (extra="forbid") → 422.
     response = client.patch("/settings", json={"embed_model": "evil"}, headers=_AUTH)

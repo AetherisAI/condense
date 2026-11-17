@@ -67,7 +67,7 @@ async def _probe_embeddings(settings: Settings) -> ComponentHealth:
 
 
 async def _probe_tei(base_url: str, model: str | None) -> ComponentHealth:
-    """TEI cross-encoder exposes a ``/health`` endpoint."""
+    """The cross-encoder server (TEI or llama-server, D88) exposes a ``/health`` endpoint."""
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.get(f"{base_url.rstrip('/')}/health")

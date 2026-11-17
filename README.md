@@ -28,8 +28,8 @@ way, your documents stay on your infrastructure and you bring your own LLM key.
 - **A folder agent** that watches directories and keeps the index continuously up to date as
   files are added, edited, or removed.
 - **Local-first and private** — the desktop app downloads and supervises its own backend
-  (a local `bge-m3` embedder + a file-based libSQL database); nothing about your documents
-  leaves your machine in local mode.
+  (a local `bge-m3` embedder, a `bge-reranker-v2-m3` cross-encoder and a file-based libSQL
+  database); nothing about your documents leaves your machine in local mode.
 - **Bring your own LLM key** — Mistral, OpenAI, or Anthropic, auto-detected from the key's
   shape. No key at all still gets you Find mode.
 - **MIT licensed** and source-available, top to bottom.
@@ -103,7 +103,10 @@ that gets these two platforms to "hardware-verified." Same Releases-page caveat 
 
 ### 🖥️ First run
 - **Run locally (recommended)** — the wizard downloads its own backend (the Condense engine +
-  a `llama-server` sidecar + the `bge-m3` embedding model, ~750MB total) and starts it for you.
+  a `llama-server` build + the `bge-m3` embedding model + the `bge-reranker-v2-m3` reranker,
+  ~1.4GB total) and starts it for you. An install from before the reranker existed fetches it in
+  the background on its next launch. Reranking Find & Ask results is a switch in System → Search
+  (off by default: it adds ~2 s per search on Apple silicon, more on CPU-only machines).
   Paste an LLM key (optional, provider auto-detected from its shape) or skip it — Find mode
   works with no LLM configured at all.
 - **Connect to a server** — point the app at any existing Condense API: a base URL and a bearer
@@ -119,7 +122,10 @@ docker compose up
 - API at `http://localhost:8000` (interactive docs at `/docs`); web UI at `http://localhost:8080`
   — both loopback-only by default (ports configurable via `API_PORT`/`WEB_PORT` in `.env`; see
   "Security & privacy" below to expose either on your LAN).
-- Optional cross-encoder reranker: `docker compose --profile tei up` (+ `RERANK_STRATEGY=crossencoder`).
+- Cross-encoder reranker by default: the `reranker` service (llama.cpp + `bge-reranker-v2-m3`)
+  downloads its model on first start (~636MB). It reranks `/search`; set `TOOLS_SEARCH_RERANK=true`
+  (or flip System → Search) to rerank Find & Ask too. On a CUDA host, `docker compose --profile tei up`
+  + `RERANK_BASE_URL=http://tei:80` serves the same model faster via TEI.
 - Coming with `v0.4.0`: a standalone `condense-server-<os>` bundle (engine + agent CLI + a run
   script, no Docker required) — the same artifact the desktop app downloads for itself, for
   embedding Condense as a backend elsewhere.
@@ -145,12 +151,13 @@ Strict **ports & adapters**: a FastAPI engine composes pipelines against interfa
 metadata, and dedup all live in one **libSQL** database using its native vector search — no
 separate vector DB. Every ML call — embeddings, reranking, the LLM — happens **external, over
 HTTP**; the app itself never imports torch. The desktop shell (Tauri 2) wraps this same engine
-plus a local `llama-server`/`bge-m3` embedder as child processes it supervises; the server
+plus local `llama-server` sidecars (the `bge-m3` embedder and the `bge-reranker-v2-m3` reranker)
+as child processes it supervises; the server
 deployment runs the identical engine in Docker. Full spec: [`docs/SPEC.md`](docs/SPEC.md).
 
 ## Security & privacy
 - **`docker compose up` publishes every port to `127.0.0.1` (loopback) only, by default** — the
-  API, the web UI, and the optional `tei` reranker are unreachable from other machines out of
+  API, the web UI, and the reranker are unreachable from other machines out of
   the box, even on a host with a public IP.
 - To reach a `docker compose` deployment from another machine on your LAN (e.g. the co-dev
   topology this repo was built for), opt in explicitly: set `API_HOST=0.0.0.0` and/or

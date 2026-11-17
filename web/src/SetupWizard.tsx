@@ -7,6 +7,8 @@ import { fmtSize } from './ingestClient'
 import {
   appConfigGet,
   appConfigSet,
+  BACKEND_COMPONENT_LABEL,
+  BACKEND_COMPONENTS,
   backendStart,
   backendStateError,
   backendStateKind,
@@ -15,6 +17,7 @@ import {
   provisionStart,
   provisioningStatus,
   type AppConfig,
+  type BackendComponent,
   type BackendStateEvent,
   type ComponentId,
   type ProvisionErrorEvent,
@@ -95,9 +98,10 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
   const [provisionErrors, setProvisionErrors] = useState<Partial<Record<ComponentId, string>>>({})
   const [provisionAttempt, setProvisionAttempt] = useState(0)
   const [backendAttempt, setBackendAttempt] = useState(0)
-  const [backendStates, setBackendStates] = useState<{ engine: string; embedder: string }>({
+  const [backendStates, setBackendStates] = useState<Record<BackendComponent, string>>({
     engine: 'stopped',
     embedder: 'stopped',
+    reranker: 'stopped',
   })
   const [stepError, setStepError] = useState<string | null>(null)
   const [clientBase, setClientBase] = useState('')
@@ -239,7 +243,7 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
         // `provisionErrors` is the way forward, not a `backend_start` doomed to fail.
         return
       }
-      setBackendStates({ engine: 'stopped', embedder: 'stopped' })
+      setBackendStates({ engine: 'stopped', embedder: 'stopped', reranker: 'stopped' })
       setStep('starting')
     }
     void run()
@@ -348,7 +352,7 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
     }
   }
 
-  function stateLabel(component: 'engine' | 'embedder'): string {
+  function stateLabel(component: BackendComponent): string {
     const raw = backendStates[component]
     const kind = backendStateKind(raw)
     if (kind === 'error') return `Error — ${backendStateError(raw) || 'unknown error'}`
@@ -422,8 +426,8 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
               <span className="wizard-choice-badge">Recommended</span>
               <span className="wizard-choice-title">Run locally</span>
               <span className="wizard-choice-desc">
-                Downloads the backend and the bge-m3 embedding model, and runs everything on this
-                machine. Your documents never leave it.
+                Downloads the backend, the bge-m3 embedding model and the bge-reranker-v2-m3
+                reranker, and runs everything on this machine. Your documents never leave it.
               </span>
             </button>
             <button type="button" className="wizard-choice" onClick={() => setStep('client-setup')}>
@@ -581,11 +585,11 @@ export default function SetupWizard({ onConfigResolved, onTokenChange }: SetupWi
 
             {step === 'starting' && (
               <ul className="wizard-progress-list">
-                {(['embedder', 'engine'] as const).map((component) => {
+                {BACKEND_COMPONENTS.map((component) => {
                   const kind = backendStateKind(backendStates[component])
                   return (
                     <li className="wizard-status-row" key={component}>
-                      <span>{component === 'embedder' ? 'Embedding server' : 'Engine'}</span>
+                      <span>{BACKEND_COMPONENT_LABEL[component]}</span>
                       <span className={`wizard-state-badge is-${kind}`}>{stateLabel(component)}</span>
                     </li>
                   )

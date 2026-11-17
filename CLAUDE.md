@@ -54,7 +54,8 @@ Python 3.12 · FastAPI 0.128 (lifespan DI) · pydantic-settings 2.14 · `httpx` 
 ```
 STORE_BACKEND=libsql        TURSO_DATABASE_URL=        TURSO_AUTH_TOKEN=
 EMBED_BASE_URL=             EMBED_MODEL=bge-m3         EMBED_API_KEY=
-RERANK_STRATEGY=none        RERANK_BASE_URL=          RERANK_MODEL=bge-reranker-v2-m3
+RERANK_STRATEGY=crossencoder RERANK_BASE_URL=http://reranker:8080 RERANK_MODEL=bge-reranker-v2-m3
+TOOLS_SEARCH_RERANK=false   (rerank Find & Ask too; D88)
 RETRIEVE_K=30               FINAL_K=1
 LLM_BASE_URL=               LLM_MODEL=                LLM_API_KEY=
 CHUNK_SIZE=512              CHUNK_OVERLAP=64          CHUNK_TOKENIZER=auto
@@ -84,7 +85,7 @@ eval/              sift-eval harness — separate dev-tool app, own EvalSettings
                    golden · matching · metrics · collect · judge/ragas_judge · noise ·
                    report · runner · validate · bootstrap · cli   (docs/evaluation.md)
 web/               Vite+React chat-first workbench (Ask|Find, System drawer incl. AccessTokens.tsx)
-docker-compose.yml (api · web · tei profile)
+docker-compose.yml (api · web · reranker · tei profile)
 ```
 
 ## 10. Pointers & shared source of truth

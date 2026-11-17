@@ -104,7 +104,7 @@ def build_container(settings: Settings, *, ephemeral_conversations: bool = False
     reranker = _build_reranker(settings, completer)
     search = SearchPipeline(query_embedder, store, reranker, completer, settings)
     ingest = _build_ingest(settings, document_embedder, store)
-    tools = build_tool_registry(query_embedder, store, settings)
+    tools = build_tool_registry(query_embedder, store, settings, reranker)
     auth_tokens = parse_auth_tokens(settings.auth_tokens)
     # Both `OpenAICompatCompleter` and `NullCompleter` implement `ToolCompleter` too (D40) — one
     # instance serves both the recap `Completer` port and the answer loop's `ToolCompleter` port,
@@ -276,8 +276,8 @@ def _build_reranker(settings: Settings, completer: Completer) -> Reranker:
         case "crossencoder":
             if not settings.rerank_base_url:
                 raise ValueError("RERANK_STRATEGY='crossencoder' requires RERANK_BASE_URL")
-            # TEI's /rerank endpoint serves a single model and takes no model param, so
-            # rerank_model is intentionally not forwarded here (it pins the deployed TEI image).
+            # The /rerank endpoint (TEI or llama-server, D88) serves a single model and takes no
+            # model param, so rerank_model is intentionally not forwarded here.
             return CrossEncoderReranker(
                 settings.rerank_base_url, timeout_s=settings.rerank_timeout_s
             )

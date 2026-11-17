@@ -139,6 +139,11 @@ class Settings(BaseSettings):
     # so the cap (not just the default) is config-driven rather than a hardcoded constant.
     tools_search_k: int = Field(default=8, ge=1)
     tools_search_max_k: int = Field(default=20, ge=1)
+    # Rerank the toolbox `search` — what the UI's Find mode and Ask's agent both call (D88).
+    # Off by default: each search then retrieves `retrieve_k`, sends them all through the
+    # configured reranker (bge-reranker-v2-m3 by default) and keeps the top k, which costs
+    # ~2 s on Apple-silicon Metal and ~10 s or more on CPU-only hosts per search.
+    tools_search_rerank: bool = False
 
     # Per-consumer bearer tokens, additive on top of the required `ingest_token` (D38): parsed
     # from "name1:token1,name2:token2" (see `parse_auth_tokens`). Every token resolves to the

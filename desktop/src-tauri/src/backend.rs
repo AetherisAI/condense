@@ -1,19 +1,26 @@
-// Local-mode backend supervision: embedder (llama-server serving bge-m3) then engine
-// (the frozen FastAPI app), in that order — the engine's adapter dials the embedder over HTTP,
-// so it must already be listening. Client mode has no backend to manage here at all.
+// Local-mode backend supervision: embedder (llama-server serving bge-m3), then reranker (a
+// second llama-server serving bge-reranker-v2-m3, D89), then engine (the frozen FastAPI app), in
+// that order — the engine's adapters dial both over HTTP, so they should already be listening.
+// Client mode has no backend to manage here at all.
+//
+// The reranker is optional: if its model isn't downloaded yet (an install from before D89 —
+// `provisioning::install_missing_in_background` fetches it) or its sidecar fails to start, the
+// backend still comes up, and the engine's cross-encoder adapter keeps the retrieval order while
+// nothing listens on the reranker port (D88). `ensure_reranker_running` starts the sidecar later
+// once the model lands, with no engine restart: the engine is always pointed at its port.
 //
 // `binary_path` (where the executable lives inside an unpacked component directory) comes
 // straight from the provisioning manifest, re-fetched at `backend_start` time — see
 // `provisioning.rs`'s module doc for why there's no separate cached copy of that fact.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::process::{Child, Command};
 
 use crate::config::{AppConfig, ConfigState};
@@ -36,13 +43,36 @@ impl ProcState {
             pid: None,
         }
     }
+
+    fn is_live(&self) -> bool {
+        matches!(self.state.as_str(), "starting" | "running")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Component {
+    Engine,
+    Embedder,
+    Reranker,
+}
+
+impl Component {
+    fn name(self) -> &'static str {
+        match self {
+            Component::Engine => "engine",
+            Component::Embedder => "embedder",
+            Component::Reranker => "reranker",
+        }
+    }
 }
 
 pub struct BackendInner {
     pub engine: ProcState,
     pub embedder: ProcState,
+    pub reranker: ProcState,
     engine_child: Option<Child>,
     embedder_child: Option<Child>,
+    reranker_child: Option<Child>,
 }
 
 impl Default for BackendInner {
@@ -50,8 +80,28 @@ impl Default for BackendInner {
         Self {
             engine: ProcState::stopped(8801),
             embedder: ProcState::stopped(8802),
+            reranker: ProcState::stopped(8803),
             engine_child: None,
             embedder_child: None,
+            reranker_child: None,
+        }
+    }
+}
+
+impl BackendInner {
+    fn proc_mut(&mut self, component: Component) -> &mut ProcState {
+        match component {
+            Component::Engine => &mut self.engine,
+            Component::Embedder => &mut self.embedder,
+            Component::Reranker => &mut self.reranker,
+        }
+    }
+
+    fn child_slot(&mut self, component: Component) -> &mut Option<Child> {
+        match component {
+            Component::Engine => &mut self.engine_child,
+            Component::Embedder => &mut self.embedder_child,
+            Component::Reranker => &mut self.reranker_child,
         }
     }
 }
@@ -64,6 +114,7 @@ pub struct BackendStatusResponse {
     pub mode: Option<String>,
     pub engine: ProcState,
     pub embedder: ProcState,
+    pub reranker: ProcState,
 }
 
 #[tauri::command]
@@ -82,13 +133,14 @@ pub fn backend_status(
         mode,
         engine: inner.engine.clone(),
         embedder: inner.embedder.clone(),
+        reranker: inner.reranker.clone(),
     }
 }
 
-fn emit_state(app: &AppHandle, component: &str, state: &str, detail: Option<&str>) {
+fn emit_state(app: &AppHandle, component: Component, state: &str, detail: Option<&str>) {
     let _ = app.emit(
         "backend-state",
-        serde_json::json!({ "component": component, "state": state, "detail": detail }),
+        serde_json::json!({ "component": component.name(), "state": state, "detail": detail }),
     );
 }
 
@@ -124,9 +176,7 @@ pub async fn backend_start(
 
     {
         let inner = backend_state.0.lock().expect("backend mutex poisoned");
-        if matches!(inner.engine.state.as_str(), "starting" | "running")
-            || matches!(inner.embedder.state.as_str(), "starting" | "running")
-        {
+        if inner.engine.is_live() || inner.embedder.is_live() {
             // No-op, not an error: both the wizard's explicit `backend_start` call and the
             // setup-time auto-start (`lib.rs`, when `mode == "local"` and everything is already
             // provisioned) can reach here in either order — whichever wins the race starts the
@@ -153,92 +203,221 @@ pub async fn backend_start(
         .map_err(|e| format!("resolving provisioning manifest: {e}"))?;
 
     // --- Embedder first: the engine's embedding adapter dials it over HTTP.
-    set_state(&backend_state, false, "starting", cfg.embedder_port, None);
-    emit_state(&app, "embedder", "starting", None);
+    set_state(
+        &backend_state,
+        Component::Embedder,
+        "starting",
+        cfg.embedder_port,
+        None,
+    );
+    emit_state(&app, Component::Embedder, "starting", None);
     let embedder_child = match start_embedder(&app, &cfg, &manifest).await {
         Ok(child) => child,
         Err(e) => {
             set_state(
                 &backend_state,
-                false,
+                Component::Embedder,
                 &format!("error:{e}"),
                 cfg.embedder_port,
                 None,
             );
-            emit_state(&app, "embedder", "error", Some(&e));
+            emit_state(&app, Component::Embedder, "error", Some(&e));
             return Err(e);
         }
     };
     let embedder_pid = embedder_child.id();
-    {
-        let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
-        inner.embedder_child = Some(embedder_child);
-    }
+    store_child(&backend_state, Component::Embedder, embedder_child);
     set_state(
         &backend_state,
-        false,
+        Component::Embedder,
         "running",
         cfg.embedder_port,
         embedder_pid,
     );
-    emit_state(&app, "embedder", "running", None);
+    emit_state(&app, Component::Embedder, "running", None);
+
+    // --- Then the reranker, when its model is installed. Never fatal (see the module doc).
+    start_reranker_if_installed(&app, &backend_state, &cfg, &manifest).await;
 
     // --- Then the engine.
-    set_state(&backend_state, true, "starting", cfg.engine_port, None);
-    emit_state(&app, "engine", "starting", None);
+    set_state(
+        &backend_state,
+        Component::Engine,
+        "starting",
+        cfg.engine_port,
+        None,
+    );
+    emit_state(&app, Component::Engine, "starting", None);
     let engine_child = match start_engine(&app, &cfg, &manifest).await {
         Ok(child) => child,
         Err(e) => {
-            // Don't leave a half-started backend behind — roll the embedder back too.
-            let embedder_child = {
-                let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
-                inner.embedder_child.take()
-            };
-            if let Some(mut child) = embedder_child {
-                let _ = child.kill().await;
+            // Don't leave a half-started backend behind — roll the sidecars back too.
+            for sidecar in [Component::Reranker, Component::Embedder] {
+                let child = {
+                    let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
+                    inner.child_slot(sidecar).take()
+                };
+                if let Some(mut child) = child {
+                    let _ = child.kill().await;
+                }
             }
             set_state(
                 &backend_state,
-                true,
+                Component::Engine,
                 &format!("error:{e}"),
                 cfg.engine_port,
                 None,
             );
-            set_state(&backend_state, false, "stopped", cfg.embedder_port, None);
-            emit_state(&app, "engine", "error", Some(&e));
-            emit_state(&app, "embedder", "stopped", None);
+            set_state(
+                &backend_state,
+                Component::Embedder,
+                "stopped",
+                cfg.embedder_port,
+                None,
+            );
+            set_state(
+                &backend_state,
+                Component::Reranker,
+                "stopped",
+                cfg.reranker_port,
+                None,
+            );
+            emit_state(&app, Component::Engine, "error", Some(&e));
+            emit_state(&app, Component::Embedder, "stopped", None);
+            emit_state(&app, Component::Reranker, "stopped", None);
             return Err(e);
         }
     };
     let engine_pid = engine_child.id();
-    {
-        let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
-        inner.engine_child = Some(engine_child);
-    }
-    set_state(&backend_state, true, "running", cfg.engine_port, engine_pid);
-    emit_state(&app, "engine", "running", None);
+    store_child(&backend_state, Component::Engine, engine_child);
+    set_state(
+        &backend_state,
+        Component::Engine,
+        "running",
+        cfg.engine_port,
+        engine_pid,
+    );
+    emit_state(&app, Component::Engine, "running", None);
 
     Ok(())
 }
 
 fn set_state(
     backend_state: &State<'_, BackendState>,
-    is_engine: bool,
+    component: Component,
     state: &str,
     port: u16,
     pid: Option<u32>,
 ) {
     let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
-    let target = if is_engine {
-        &mut inner.engine
-    } else {
-        &mut inner.embedder
-    };
-    *target = ProcState {
+    *inner.proc_mut(component) = ProcState {
         state: state.to_string(),
         port,
         pid,
     };
+}
+
+fn store_child(backend_state: &State<'_, BackendState>, component: Component, child: Child) {
+    let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
+    *inner.child_slot(component) = Some(child);
+}
+
+/// Start the reranker sidecar if the manifest lists one and its model is on disk. Claims the
+/// "starting" state under the lock first, so `backend_start` and a just-finished background
+/// download (`ensure_reranker_running`) can't both spawn it. Failure leaves an `error:` state
+/// and a log line; the backend runs on without a reranker.
+async fn start_reranker_if_installed(
+    app: &AppHandle,
+    backend_state: &State<'_, BackendState>,
+    cfg: &AppConfig,
+    manifest: &Manifest,
+) {
+    match provisioning::reranker_installed(app, manifest) {
+        Ok(true) => {}
+        Ok(false) => {
+            let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
+            if !inner.reranker.is_live() {
+                inner.reranker = ProcState::stopped(cfg.reranker_port);
+            }
+            return;
+        }
+        Err(e) => {
+            eprintln!("backend: checking the reranker model failed: {e}");
+            return;
+        }
+    }
+    {
+        let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
+        if inner.reranker.is_live() {
+            return;
+        }
+        inner.reranker = ProcState {
+            state: "starting".to_string(),
+            port: cfg.reranker_port,
+            pid: None,
+        };
+    }
+    emit_state(app, Component::Reranker, "starting", None);
+    let started = if port_available(cfg.reranker_port) {
+        start_reranker(app, cfg, manifest).await
+    } else {
+        Err(format!(
+            "port {} (reranker) is already in use",
+            cfg.reranker_port
+        ))
+    };
+    match started {
+        Ok(child) => {
+            let pid = child.id();
+            store_child(backend_state, Component::Reranker, child);
+            set_state(
+                backend_state,
+                Component::Reranker,
+                "running",
+                cfg.reranker_port,
+                pid,
+            );
+            emit_state(app, Component::Reranker, "running", None);
+        }
+        Err(e) => {
+            eprintln!("backend: reranker failed to start, continuing without it: {e}");
+            set_state(
+                backend_state,
+                Component::Reranker,
+                &format!("error:{e}"),
+                cfg.reranker_port,
+                None,
+            );
+            emit_state(app, Component::Reranker, "error", Some(&e));
+        }
+    }
+}
+
+/// Start the reranker sidecar now if the backend runs in local mode without it — called once its
+/// model finishes downloading (background install or the System menu's Download button). The
+/// engine needs no restart: it already points at the reranker port (D89).
+pub async fn ensure_reranker_running(app: &AppHandle) {
+    let cfg = app
+        .state::<ConfigState>()
+        .0
+        .lock()
+        .expect("config mutex poisoned")
+        .clone();
+    if cfg.mode.as_deref() != Some("local") {
+        return;
+    }
+    let backend_state = app.state::<BackendState>();
+    {
+        let inner = backend_state.0.lock().expect("backend mutex poisoned");
+        if !inner.embedder.is_live() || inner.reranker.is_live() {
+            // Backend stopped: the next `backend_start` starts the reranker with everything else.
+            return;
+        }
+    }
+    match provisioning::resolve_manifest(&cfg).await {
+        Ok(manifest) => start_reranker_if_installed(app, &backend_state, &cfg, &manifest).await,
+        Err(e) => eprintln!("backend: can't start the reranker, manifest unavailable: {e}"),
+    }
 }
 
 #[tauri::command]
@@ -250,30 +429,27 @@ pub async fn backend_stop(
     Ok(())
 }
 
-/// Kill engine first, then embedder (mirrors start order, reversed); shared by `backend_stop`
-/// and the app-exit handler in `lib.rs`.
+/// Kill engine first, then the sidecars (mirrors start order, reversed); shared by
+/// `backend_stop` and the app-exit handler in `lib.rs`.
 pub async fn kill_backend(app: &AppHandle, backend_state: &State<'_, BackendState>) {
-    let engine_child = {
-        let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
-        inner.engine_child.take()
-    };
-    if let Some(mut child) = engine_child {
-        let _ = child.kill().await;
-    }
-    let embedder_child = {
-        let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
-        inner.embedder_child.take()
-    };
-    if let Some(mut child) = embedder_child {
-        let _ = child.kill().await;
+    for component in [Component::Engine, Component::Reranker, Component::Embedder] {
+        let child = {
+            let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
+            inner.child_slot(component).take()
+        };
+        if let Some(mut child) = child {
+            let _ = child.kill().await;
+        }
     }
     {
         let mut inner = backend_state.0.lock().expect("backend mutex poisoned");
         inner.engine = ProcState::stopped(inner.engine.port);
         inner.embedder = ProcState::stopped(inner.embedder.port);
+        inner.reranker = ProcState::stopped(inner.reranker.port);
     }
-    emit_state(app, "engine", "stopped", None);
-    emit_state(app, "embedder", "stopped", None);
+    emit_state(app, Component::Engine, "stopped", None);
+    emit_state(app, Component::Reranker, "stopped", None);
+    emit_state(app, Component::Embedder, "stopped", None);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -354,11 +530,9 @@ async fn wait_for_health(
     }
 }
 
-async fn start_embedder(
-    app: &AppHandle,
-    cfg: &AppConfig,
-    manifest: &Manifest,
-) -> Result<Child, String> {
+/// The llama-server executable from the unpacked `embedder` component — the embedder AND the
+/// reranker sidecar both run it, each with its own model.
+fn llama_server_bin(app: &AppHandle, manifest: &Manifest) -> Result<PathBuf, String> {
     let target = manifest
         .embedder
         .targets
@@ -371,58 +545,159 @@ async fn start_embedder(
     let bin = paths::runtime_embedder_dir(app)?.join(binary_path);
     if !bin.exists() {
         return Err(format!(
-            "embedder binary not found at {} — provision it first",
+            "llama-server binary not found at {} — provision the embedder first",
             bin.display()
         ));
     }
-    let model_path = paths::models_dir(app)?.join(&manifest.model.file);
+    Ok(bin)
+}
+
+fn model_path_string(app: &AppHandle, file: &str, what: &str) -> Result<String, String> {
+    let model_path = paths::models_dir(app)?.join(file);
     if !model_path.exists() {
         return Err(format!(
-            "embedder model not found at {} — provision it first",
+            "{what} model not found at {} — provision it first",
             model_path.display()
         ));
     }
-    let model_path_str = model_path
+    model_path
         .to_str()
-        .ok_or_else(|| "model path is not valid UTF-8".to_string())?
-        .to_string();
+        .map(str::to_string)
+        .ok_or_else(|| "model path is not valid UTF-8".to_string())
+}
 
-    let log_path = paths::ensure_dir(paths::logs_dir(app)?)?.join("embedder.log");
+/// Spawn a llama-server child logging to `logs/<log_name>` and wait for its `/health`.
+async fn spawn_llama_server(
+    app: &AppHandle,
+    bin: &Path,
+    args: Vec<String>,
+    port: u16,
+    log_name: &str,
+    what: &str,
+) -> Result<Child, String> {
+    let log_path = paths::ensure_dir(paths::logs_dir(app)?)?.join(log_name);
     let stdout_file = open_log(&log_path)?;
     let stderr_file = open_log(&log_path)?;
 
-    // Flags verified empirically against llama.cpp b9878 tonight (D61): OpenAI-compat
-    // /v1/embeddings, dim 1024, L2-normalized, ~342MB RSS.
-    let args: Vec<String> = vec![
-        "-m".into(),
-        model_path_str,
-        "--embedding".into(),
-        "--pooling".into(),
-        "cls".into(),
-        "-c".into(),
-        "8192".into(),
-        "--host".into(),
-        "127.0.0.1".into(),
-        "--port".into(),
-        cfg.embedder_port.to_string(),
-    ];
-
-    let mut cmd = Command::new(&bin);
+    let mut cmd = Command::new(bin);
     cmd.args(args)
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .kill_on_drop(true);
     set_parent_death_signal(&mut cmd);
-    let mut child = cmd.spawn().map_err(|e| format!("spawning embedder: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("spawning {what}: {e}"))?;
 
-    wait_for_health(
-        &mut child,
-        cfg.embedder_port,
-        "/health",
-        Duration::from_secs(90),
-    )
-    .await?;
+    wait_for_health(&mut child, port, "/health", Duration::from_secs(90)).await?;
     Ok(child)
+}
+
+async fn start_embedder(
+    app: &AppHandle,
+    cfg: &AppConfig,
+    manifest: &Manifest,
+) -> Result<Child, String> {
+    let bin = llama_server_bin(app, manifest)?;
+    let model_path = model_path_string(app, &manifest.model.file, "embedder")?;
+    spawn_llama_server(
+        app,
+        &bin,
+        embedder_args(&model_path, cfg.embedder_port),
+        cfg.embedder_port,
+        "embedder.log",
+        "embedder",
+    )
+    .await
+}
+
+async fn start_reranker(
+    app: &AppHandle,
+    cfg: &AppConfig,
+    manifest: &Manifest,
+) -> Result<Child, String> {
+    let reranker = manifest
+        .reranker
+        .as_ref()
+        .ok_or_else(|| "this manifest lists no reranker".to_string())?;
+    let bin = llama_server_bin(app, manifest)?;
+    let model_path = model_path_string(app, &reranker.file, "reranker")?;
+    spawn_llama_server(
+        app,
+        &bin,
+        reranker_args(&model_path, cfg.reranker_port),
+        cfg.reranker_port,
+        "reranker.log",
+        "reranker",
+    )
+    .await
+}
+
+/// Flags verified empirically against llama.cpp b9878 (D61): OpenAI-compat /v1/embeddings,
+/// dim 1024, L2-normalized, ~342MB RSS.
+fn embedder_args(model_path: &str, port: u16) -> Vec<String> {
+    [
+        "-m",
+        model_path,
+        "--embedding",
+        "--pooling",
+        "cls",
+        "-c",
+        "8192",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port.to_string(),
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// bge-reranker-v2-m3 as a cross-encoder (D89), verified against llama.cpp b9878: `--reranking`
+/// serves `/rerank` in TEI's `{query, texts}` → `[{index, score}]` shape (raw logits; the
+/// engine's adapter applies the sigmoid, D88). A query+passage pair must fit one micro-batch, so
+/// `-ub`/`-b` equal the per-slot context (4096 / 4 slots = 1024 tokens): a 512-token chunk plus a
+/// query of up to ~500 tokens; a longer pair gets a 500. Measured on an M5 with Metal: ~2.7 s
+/// for 30 ~500-token passages, 864 MB footprint (`-c 8192 -ub 2048`: 3.0 s, 2.2 GB).
+fn reranker_args(model_path: &str, port: u16) -> Vec<String> {
+    [
+        "-m",
+        model_path,
+        "--reranking",
+        "-c",
+        "4096",
+        "-ub",
+        "1024",
+        "-b",
+        "1024",
+        "--parallel",
+        "4",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port.to_string(),
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// The engine's rerank settings (D88/D89). With a reranker in the manifest the engine always
+/// uses the cross-encoder at the sidecar's port, even while its model is still downloading: the
+/// adapter keeps the retrieval order until the sidecar answers. Without one, no reranking — the
+/// LLM judge it replaces made top-1 worse with the default Mistral Small (MITRE eval: 0.69 →
+/// 0.65), and it fails outright with no LLM key.
+fn rerank_env(manifest: &Manifest, reranker_port: u16) -> Vec<(&'static str, String)> {
+    match &manifest.reranker {
+        Some(reranker) => vec![
+            ("RERANK_STRATEGY", "crossencoder".to_string()),
+            (
+                "RERANK_BASE_URL",
+                format!("http://127.0.0.1:{reranker_port}"),
+            ),
+            ("RERANK_MODEL", reranker.name.clone()),
+        ],
+        None => vec![("RERANK_STRATEGY", "none".to_string())],
+    }
 }
 
 async fn start_engine(
@@ -464,7 +739,13 @@ async fn start_engine(
     );
     env.insert("EMBED_MODEL".into(), "bge-m3".into());
     env.insert("EMBED_DIM".into(), "1024".into());
-    env.insert("RERANK_STRATEGY".into(), "llm".into());
+    for (key, value) in rerank_env(manifest, cfg.reranker_port) {
+        env.insert(key.into(), value);
+    }
+    env.insert(
+        "TOOLS_SEARCH_RERANK".into(),
+        cfg.tools_search_rerank.to_string(),
+    );
     env.insert("LLM_BASE_URL".into(), cfg.llm.base_url.clone());
     env.insert("LLM_MODEL".into(), cfg.llm.model.clone());
     env.insert("LLM_API_KEY".into(), cfg.llm.api_key.clone());
@@ -500,4 +781,63 @@ async fn start_engine(
     )
     .await?;
     Ok(child)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest(with_reranker: bool) -> Manifest {
+        let mut value: serde_json::Value =
+            serde_json::from_str(include_str!("../../provisioning/manifest.json"))
+                .expect("manifest is JSON");
+        if !with_reranker {
+            value.as_object_mut().unwrap().remove("reranker");
+        }
+        serde_json::from_value(value).expect("manifest parses")
+    }
+
+    fn env_map(manifest: &Manifest, port: u16) -> HashMap<&'static str, String> {
+        rerank_env(manifest, port).into_iter().collect()
+    }
+
+    #[test]
+    fn engine_uses_the_cross_encoder_sidecar_when_the_manifest_has_a_reranker() {
+        let env = env_map(&manifest(true), 8803);
+        assert_eq!(env["RERANK_STRATEGY"], "crossencoder");
+        assert_eq!(env["RERANK_BASE_URL"], "http://127.0.0.1:8803");
+        assert_eq!(env["RERANK_MODEL"], "bge-reranker-v2-m3");
+    }
+
+    #[test]
+    fn engine_skips_reranking_without_a_reranker_in_the_manifest() {
+        let env = env_map(&manifest(false), 8803);
+        assert_eq!(env["RERANK_STRATEGY"], "none");
+        assert!(!env.contains_key("RERANK_BASE_URL"));
+    }
+
+    #[test]
+    fn reranker_sidecar_serves_rerank_on_loopback_at_its_port() {
+        let args = reranker_args("/models/r.gguf", 8813);
+        let joined = args.join(" ");
+        assert!(joined.starts_with("-m /models/r.gguf --reranking"));
+        assert!(joined.contains("--host 127.0.0.1 --port 8813"));
+        assert!(!args.iter().any(|a| a == "--embedding"));
+        // A pair must fit one micro-batch: -ub covers the per-slot context.
+        let ub = args.iter().position(|a| a == "-ub").unwrap();
+        let ctx = args.iter().position(|a| a == "-c").unwrap();
+        let slots = args.iter().position(|a| a == "--parallel").unwrap();
+        let per_slot: u32 =
+            args[ctx + 1].parse::<u32>().unwrap() / args[slots + 1].parse::<u32>().unwrap();
+        assert_eq!(args[ub + 1].parse::<u32>().unwrap(), per_slot);
+    }
+
+    #[test]
+    fn embedder_args_are_unchanged_by_the_reranker() {
+        let joined = embedder_args("/models/e.gguf", 8802).join(" ");
+        assert_eq!(
+            joined,
+            "-m /models/e.gguf --embedding --pooling cls -c 8192 --host 127.0.0.1 --port 8802"
+        );
+    }
 }

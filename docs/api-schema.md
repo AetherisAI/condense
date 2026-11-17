@@ -34,7 +34,7 @@ Three tiers, all bearer (`Authorization: Bearer <token>`):
 | `GET /documents` | any token | One row per ingested source file. `supported=false` (not an error) if the store can't enumerate documents. | `DocumentsResponse` |
 | `DELETE /documents/{source_hash}` | any token | Drop a file's chunks by content hash. `501` if the store doesn't support document admin. | `DeleteDocumentResponse` |
 | `POST /v1/documents` | any token | JSON ingest of one inline text document — the non-multipart sibling of `POST /ingest`. `text` non-empty, ≤ `PARSE_MAX_CHARS` (`422` otherwise). | `IngestFileResult` |
-| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → `store.search`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`). | `ToolSearchResponse` |
+| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → `store.search`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`). With `TOOLS_SEARCH_RERANK=true` (off by default, D88) it retrieves `RETRIEVE_K`, reranks and returns the top `k`; this is what the UI's Find mode and Ask's agent call. | `ToolSearchResponse` |
 | `GET /v1/tools/documents?limit=&offset=&metadata=` | any token | Paginated document listing, optionally narrowed by a JSON `metadata` query param. | `ToolDocumentsResponse` |
 | `GET /v1/tools/documents/{source_hash}/chunks` | any token | One document's chunks, ordered by `index`. | `ToolChunksResponse` |
 | `GET /v1/tools/schema` | any token | Machine-readable manifest of every registered tool (OpenAI-functions form + JSON-schema form), generated FROM the live `ToolRegistry` — `PATCH /settings` never appears here (never registered as a tool). | `ToolSchemaResponse` |
@@ -136,6 +136,7 @@ class SettingsPatch(BaseModel):             # PATCH /settings body — extra="fo
     chunk_overlap: int | None = None
     chunk_tokenizer: Literal["auto", "bge-m3", "tiktoken"] | None = None
     rerank_strategy: Literal["none", "llm", "crossencoder"] | None = None
+    tools_search_rerank: bool | None = None     # the System drawer's "Rerank Find & Ask" (D88)
 
 class ToolSearchRequest(BaseModel):         # POST /v1/tools/search body
     query: str
@@ -193,17 +194,21 @@ the source of truth:
 ```
 STORE_BACKEND=libsql            TURSO_DATABASE_URL=        TURSO_AUTH_TOKEN=
 EMBED_BASE_URL=                 EMBED_MODEL=bge-m3         EMBED_DIM=1024        EMBED_API_KEY=
-RERANK_STRATEGY=none            RERANK_BASE_URL=          RERANK_MODEL=bge-reranker-v2-m3
+RERANK_STRATEGY=crossencoder    RERANK_BASE_URL=http://reranker:8080   RERANK_MODEL=bge-reranker-v2-m3
+TOOLS_SEARCH_RERANK=false
 RETRIEVE_K=30                   FINAL_K=1
 LLM_BASE_URL=                   LLM_MODEL=                LLM_API_KEY=
 CHUNK_TOKENIZER=auto            CHUNK_SIZE=512            CHUNK_OVERLAP=64
 INGEST_TOKEN=                   AUTH_TOKENS=
 ```
 
-**`RERANK_STRATEGY` default is `"none"`** (identity reranker, zero infra) — not `crossencoder`; earlier
-drafts of this doc and `docs/SPEC.md` claimed `crossencoder` was the default, which was never true in
-code. Pick `llm` (LLM-as-judge, zero extra infra) or `crossencoder` (TEI, needs the `tei` compose profile)
-explicitly to change it.
+**Every shipped deployment reranks with `crossencoder` = bge-reranker-v2-m3 (D88/D89)**: `.env.example`
+and compose point `RERANK_BASE_URL` at compose's `reranker` service (llama.cpp, downloads its GGUF on
+first start), and the desktop app provisions and supervises the same model as a llama-server sidecar.
+The bare `Settings` code default stays `"none"`, since an engine started with no config has no
+reranker to reach. The cross-encoder adapter keeps the vector ranking while nothing listens at
+`RERANK_BASE_URL`. `/search` always reranks; the toolbox search (Find, Ask) only with
+`TOOLS_SEARCH_RERANK=true`, off by default for latency (~2 s per search on Metal, ~10–20 s on CPU).
 
 **`CHUNK_TOKENIZER` IS a `Settings` field** (not a compose-only/decorative key): `"auto"` (default)
 resolves to `bge-m3`'s own tokenizer when `EMBED_MODEL` names bge-m3, else falls back to the generic
@@ -211,7 +216,7 @@ resolves to `bge-m3`'s own tokenizer when `EMBED_MODEL` names bge-m3, else falls
 mis-tokenizes chunks in the wrong units. An explicit `"tiktoken"`/`"bge-m3"` always overrides the
 auto-resolution (D72).
 
-**Hard rule:** every compose port publishes to `127.0.0.1` by default (`API_HOST`/`WEB_HOST`/`TEI_HOST`
+**Hard rule:** every compose port publishes to `127.0.0.1` by default (`API_HOST`/`WEB_HOST`/`RERANKER_HOST`/`TEI_HOST`
 opt-in to LAN, D70) — the bearer token still gates every write and query either way. **Never**
 port-forward any of these ports to the public internet.
 

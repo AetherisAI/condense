@@ -1,8 +1,10 @@
 # Condense Desktop (Tauri 2 shell)
 
 Standalone desktop launcher for Condense: a small Tauri 2 app that (in **local** mode) downloads
-and supervises its own backend — the PyInstaller engine bundle, a `llama-server` sidecar serving
-a local `bge-m3` GGUF embedder, and the folder-watching ingest agent — or (in **client** mode)
+and supervises its own backend — the PyInstaller engine bundle, `llama-server` sidecars serving
+a local `bge-m3` GGUF embedder (port 8802) and the `bge-reranker-v2-m3` GGUF cross-encoder (port
+8803, D89; downloaded in the background on the next launch of an install that predates it), and
+the folder-watching ingest agent — or (in **client** mode)
 just talks to any Condense server the same way the browser build does (base URL + token). See
 `docs/Quentin/active/machine.md` for the full design (D60–D64), the AppConfig schema, and the
 Tauri command contract.
