@@ -54,6 +54,10 @@ sift-eval compare evals/ci/baseline eval-runs/*-ci-retrieval \
 `--env-file /dev/null` keeps your `.env` out of both, as on the runner. Delete `eval-ci.db` before
 re-ingesting.
 
+A run takes about 50 minutes on a GitHub runner, almost all of it ingest: its 4 vCPUs embed
+about 2.1 s per chunk, 3.4× slower than a 4-vCPU Apple Silicon Docker VM (15 minutes). The
+workflow sets `EMBED_TIMEOUT_S=300` because one file's chunks go out in a single request.
+
 ## Updating the baseline
 
 Update it when a change makes retrieval better on purpose, or when the slice, the Ollama image

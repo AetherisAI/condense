@@ -23,6 +23,10 @@ env:
   TURSO_DATABASE_URL: file:eval-ci.db
   EMBED_BASE_URL: http://127.0.0.1:11434/v1
   EMBED_MODEL: bge-m3
+  # The runner's CPU embeds ~2.1 s per chunk, and a file's chunks go out in one request (up to
+  # EMBED_BATCH_SIZE=64): the 60 s default timed out the 5 largest files (32-43 chunks).
+  # A wait budget only, so it doesn't change what is measured.
+  EMBED_TIMEOUT_S: "300"
   RERANK_STRATEGY: none
   RECAP_ENABLED: "false"
   EVAL_OUTPUT_DIR: eval-runs
@@ -31,7 +35,7 @@ jobs:
   retrieval:
     name: Retrieval · MITRE slice · bge-m3 on CPU
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
