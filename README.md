@@ -3,7 +3,7 @@
 
   # Condense
 
-  Chat with your documents, locally.
+  Search and chat with your documents, on your own machine.
 
   [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -12,20 +12,63 @@
   <img src="docs/assets/general-knowledge-chat.png" width="720" alt="Condense answering a question with general knowledge enabled; the answer is marked purple as not coming from the documents" />
 </div>
 
-Condense indexes a folder of documents and lets you search them or ask questions about them.
-Answers cite the passages they came from. It runs as a desktop app or as a self-hosted server,
-your documents stay on your machine, and you bring your own LLM key.
+Condense indexes a folder of documents and lets you search them or ask questions about them,
+with answers that cite their sources. It runs as a desktop app or a self-hosted server. In the
+desktop app the embedding and reranking models run locally, so your documents and the index
+stay on your machine. The only remote call is the LLM behind Ask, with your own key.
 
+- **Find**: a ranked list of passages for your query. No LLM, no key needed.
 - **Ask**: an agent searches your documents and answers with citations. In *Corpus only* mode
-  it says so when the documents don't cover the question. In *+ General knowledge* mode it may
-  add what the model knows, and that part is shown in purple.
-- **Find**: plain retrieval, a ranked list of passages, no LLM involved.
+  it tells you when the documents don't cover the question. In *+ General knowledge* mode it
+  may add what the model knows, shown in purple.
 - **Folder agent**: watches directories and keeps the index in sync as files change.
-- **Local models**: bge-m3 embeddings and the bge-reranker-v2-m3 cross-encoder run on your
-  machine through llama.cpp. Only the LLM is remote (Mistral, OpenAI or Anthropic; the provider
-  is detected from the key). Find works without any key.
+- **Formats**: PDF, Word, PowerPoint, Excel, HTML, Markdown and plain text. Scanned PDFs and
+  images too, with OCR turned on (it uses Mistral's OCR API, so those files are sent there).
+- **Models**: bge-m3 embeddings and the bge-reranker-v2-m3 cross-encoder, served by llama.cpp.
+  Ask uses Mistral, OpenAI or Anthropic, detected from the key you paste.
 
-## Screenshots
+## How well it works
+
+We benchmark Condense on the MITRE ATT&CK knowledge base: 2,298 documents, 306 questions they
+answer and 26 they don't. Each question is asked several ways: as written, as keywords, inside a
+work scenario, paraphrased, and in German. A search succeeds when it returns the right document.
+
+| Find | Right document first | In the top 3 | In the top 10 | Median search time |
+| --- | --- | --- | --- | --- |
+| Keyword search (BM25), for reference | 71% | 83% | 91% | |
+| Condense, reranker off | 69% | 84% | 94% | 0.15 s |
+| Condense, reranker on | **82%** | **93%** | **96%** | 2.1 s on an Apple M5 |
+
+- **Other languages work.** Asked in German about English documents, Find ranks the right one
+  first 84% of the time with the reranker (keyword search: 56%).
+- **Ask says when it doesn't know.** It declined 25 of the 26 questions the documents don't
+  answer (23 by a second judge's count), and wrongly declined 9% of the answerable ones.
+- **Ask sticks to its sources.** Two LLM judges found 78% to 90% of its claims backed by the
+  passages it read (Claude Haiku 5.5, and Mistral Small, which also wrote the answers).
+
+Reranking is on for the `/search` API. In the app it is a switch in System → Search, off by
+default because it adds about 2 s per search on Apple silicon and 10 s or more on a CPU.
+
+The benchmark tool, `sift-eval`, ships with Condense, so you can run the same measurements on
+your own documents. [docs/evaluation.md](docs/evaluation.md) has the method and full results.
+
+## Install
+
+### Desktop app
+
+Installers for Linux (AppImage, .deb), macOS (.dmg) and Windows (.exe, .msi) come with v0.4.0,
+which is not released yet. Until then, build from source (below). Once it is out:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh
+```
+
+This installs into `$HOME` without sudo (`--server-only` for the headless server,
+`--uninstall` to remove). On Windows use `scripts/install-windows.ps1`. The macOS and Windows
+builds are unsigned, so expect a Gatekeeper or SmartScreen warning the first time.
+
+On first launch, **Run locally** downloads the backend (engine, llama.cpp and both models,
+about 1.4 GB). **Connect to a server** asks for the URL and token of an existing server.
 
 <table>
   <tr>
@@ -34,52 +77,11 @@ your documents stay on your machine, and you bring your own LLM key.
       <br /><sub>First run: local or connect to a server</sub>
     </td>
     <td width="50%">
-      <img src="docs/assets/wizard-setup.png" alt="Run-locally step listing the components to download and an optional LLM key field" />
-      <br /><sub>Components to download, LLM key optional</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <img src="docs/assets/wizard-downloads.png" alt="Download progress for the engine, embedder and model" />
-      <br /><sub>Downloading the local backend</sub>
-    </td>
-    <td width="50%">
-      <img src="docs/assets/workbench.png" alt="The empty chat workbench" />
-      <br /><sub>Drop files anywhere, or point the folder agent at a directory</sub>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <img src="docs/assets/find-zephyrium.png" width="60%" alt="Find mode showing ranked passages for a query" />
-      <br /><sub>Find mode</sub>
+      <img src="docs/assets/find-zephyrium.png" alt="Find mode showing ranked passages for a query" />
+      <br /><sub>Find: ranked passages, no LLM</sub>
     </td>
   </tr>
 </table>
-
-## Install
-
-### Desktop app
-
-Desktop installers (AppImage and .deb for Linux, .dmg for macOS, .exe/.msi for Windows) are
-attached to each release starting with v0.4.0. Once it's out:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/AetherisAI/condense/main/scripts/install.sh | sh
-```
-
-This installs into `$HOME` without sudo. `--server-only` installs the headless server bundle
-instead, `--uninstall` removes either. On Windows use `scripts/install-windows.ps1`. The macOS
-and Windows builds are unsigned, so expect a Gatekeeper or SmartScreen warning the first time.
-Until v0.4.0 is tagged, build from source (below).
-
-On first launch, choose **Run locally** and the app downloads its backend: the engine, a
-llama.cpp build, the bge-m3 embedding model and the bge-reranker-v2-m3 reranker, about 1.4 GB.
-Or choose **Connect to a server** and give it the URL and token of an existing Condense server.
-
-Reranking is on for the `/search` API. For Find and Ask it is a switch in System → Search, off by
-default because it adds about 2 s per search on Apple silicon and more on machines without a
-GPU. On a MITRE ATT&CK benchmark it raised top-1 accuracy from 0.69 to 0.82
-(see [docs/evaluation.md](docs/evaluation.md)).
 
 ### Server (Docker)
 
@@ -89,17 +91,15 @@ cp .env.example .env   # set INGEST_TOKEN and your LLM_* settings
 docker compose up
 ```
 
-The API listens on `http://localhost:8000` (OpenAPI docs at `/docs`) and the web UI on
-`http://localhost:8080`. Embeddings come from an OpenAI-compatible endpoint you configure,
-for example Ollama serving `bge-m3` on the host. The `reranker` service downloads its model
-(about 636 MB) on first start. `TOOLS_SEARCH_RERANK=true` turns on reranking for Find and Ask.
-On a machine with a CUDA GPU, `docker compose --profile tei up` with
-`RERANK_BASE_URL=http://tei:80` serves the same reranker through Text Embeddings Inference.
+The API listens on `http://localhost:8000` (OpenAPI docs at `/docs`), the web UI on
+`http://localhost:8080`. Embeddings come from an OpenAI-compatible endpoint you configure, for
+example Ollama serving `bge-m3` on the host. The `reranker` service downloads its model
+(636 MB) on first start. `TOOLS_SEARCH_RERANK=true` turns reranking on for Find and Ask.
 
 ### From source
 
-You need Python 3.12, Node 22+ and, for the desktop app, Rust 1.77+ (plus the Tauri system
-libraries on Linux, or the Docker builder in `desktop/`).
+Python 3.12, Node 22+ and, for the desktop app, Rust 1.77+ (plus the Tauri system libraries on
+Linux).
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
@@ -110,36 +110,25 @@ cd desktop && npm install && npx tauri build
 
 ## How it works
 
-The engine is a FastAPI app built from ports and adapters: pipelines talk to interfaces for the
-embedder, reranker, LLM and vector store, and `src/sift/factory.py` wires the concrete adapters
-from one typed `Settings` object. Vectors, metadata and deduplication live in a single libSQL
-database using its built-in vector search. All model inference happens over HTTP, so the engine
-itself doesn't depend on torch. The desktop app (Tauri 2) runs the same engine and supervises
-the two llama.cpp servers; the Docker setup runs the same engine in a container.
+Each file is parsed to text, split into 512-token chunks and embedded with bge-m3. Vectors,
+metadata and deduplication records live in one libSQL database, using its built-in vector
+search. A search embeds the query, takes the 30 closest chunks, reranks them if reranking is
+on, and returns the top results. Ask gives an LLM tools to search the same index and read
+documents, then writes a cited answer.
 
-```
-src/sift/   engine: core types and ports, adapters, pipelines, API, eval harness
-web/        React + Vite UI
-agent/      folder-watching ingestion agent
-desktop/    Tauri desktop app
-packaging/  PyInstaller specs for the engine and agent bundles
-evals/      evaluation golden-set example and the CI retrieval benchmark
-docs/       API reference, evaluation guide, images
-```
-
-Reference: [API and configuration](docs/api-schema.md) ·
-[Evaluation with `sift-eval`](docs/evaluation.md) · every setting is listed in
+The engine is a FastAPI app built from ports and adapters that calls every model over HTTP, so
+it has no torch dependency. The desktop app (Tauri 2) runs the same engine plus the two
+llama.cpp servers. Reference: [API and configuration](docs/api-schema.md), and every setting in
 [`.env.example`](.env.example).
 
 ## Security
 
-- `docker compose up` publishes every port on `127.0.0.1` only. To reach it from your LAN, set
-  `API_HOST` / `WEB_HOST` to `0.0.0.0` or an interface address. Don't expose it to the public
-  internet: there is no TLS or rate limiting.
-- A bearer token (`INGEST_TOKEN`, plus optional named tokens in `AUTH_TOKENS`) is required for
-  every read and write.
-- In local desktop mode your documents, their embeddings and the database stay on your machine.
-  Condense only talks to the embedding, reranking and LLM endpoints you configure.
+- `docker compose up` binds every port to `127.0.0.1`. Set `API_HOST` / `WEB_HOST` to reach it
+  from your LAN, but don't expose it to the internet: there is no TLS or rate limiting.
+- Every read and write needs a bearer token (`INGEST_TOKEN`, plus optional named tokens in
+  `AUTH_TOKENS`).
+- In local desktop mode Condense only talks to the LLM, embedding and reranking endpoints you
+  configure.
 
 ## License
 

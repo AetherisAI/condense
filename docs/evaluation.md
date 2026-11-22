@@ -261,6 +261,41 @@ Qwen3-4B ranks paraphrased questions better but drops some exact-identifier look
 IDs, tool names) out of its top 30, which a reranker can't recover, and costs about twice as much
 per query and five times as much to ingest. bge-m3 stays the default.
 
+Keyword search, estimated offline because the store has no keyword index yet: the same 7,278
+chunks indexed with SQLite FTS5 (BM25 over the question's words, common English words
+dropped), fused with the bge-m3 top 30 by reciprocal-rank fusion (k = 60), and the fused top 30
+reranked by the same llama.cpp cross-encoder. The reranked bge-m3 row reproduces the product
+run exactly.
+
+| Retrieval | hit@1 | hit@3 | hit@10 | hit@30 |
+| --- | --- | --- | --- | --- |
+| BM25 only | 0.71 | 0.83 | 0.91 | 0.94 |
+| bge-m3 only (default) | 0.69 | 0.84 | 0.94 | 0.97 |
+| bge-m3 + BM25 | 0.76 | 0.92 | 0.97 | 0.98 |
+| bge-m3, reranked | 0.82 | 0.93 | 0.96 | 0.97 |
+| bge-m3 + BM25, reranked | 0.84 | 0.94 | 0.96 | 0.98 |
+
+BM25 alone matches bge-m3 at top-1 on this corpus, because ATT&CK questions are full of IDs and
+names. bge-m3 is far ahead on the German questions (0.68 against 0.56). Fusing the two lifts
+top-1 from 0.69 to 0.76 without a reranker (37 questions fixed, 17 broken, McNemar p = 0.009)
+for the cost of one full-text query. With the reranker the gain shrinks to 0.82 to 0.84 (10
+fixed, 4 broken, p = 0.18), within noise.
+
+Answer quality, judged: the same 332 questions, Mistral Small as the generator, no reranker in
+Ask's search, and the same answers scored by two judges. Answer metrics cover the 306
+answerable questions.
+
+| Ask | Mistral Small judge | Claude Haiku 5.5 judge |
+| --- | --- | --- |
+| faithfulness | 0.90 | 0.78 |
+| answer recall | 0.70 | 0.65 |
+| answer correctness | 0.63 | 0.55 |
+| declined an unanswerable question | 25 of 26 | 23 of 26 |
+| false refusal | 0.09 | 0.09 |
+
+Mistral Small also wrote the answers, so it grades them more generously. Compare runs under
+one judge rather than reading either column as a grade.
+
 ## 8. Caveats
 
 - **Cost:** each judged question makes roughly 15–25 judge-LLM calls per surface (answer recall
