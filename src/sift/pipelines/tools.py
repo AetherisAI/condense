@@ -27,6 +27,7 @@ from sift.config import Settings
 from sift.core.ports import Embedder, Reranker, VectorStore
 from sift.core.types import Chunk, Hit, SearchFilters
 from sift.pipelines.documents import SupportsChunkAccess, SupportsDocumentAdmin
+from sift.pipelines.retrieval import retrieve
 
 Executor = Callable[[Mapping[str, Any], str], Awaitable[Any]]
 
@@ -187,10 +188,12 @@ async def _search_executor(
     args: Mapping[str, Any],
     tenant: str,
 ) -> list[Hit]:
-    """Embed → ``store.search`` — the toolbox's raw-retrieval primitive. NO recap, NO LLM.
+    """Embed → retrieve — the toolbox's raw-retrieval primitive. NO recap, NO LLM.
 
-    With ``tools_search_rerank`` on it retrieves wide like ``/search`` — ``retrieve_k``
-    hits, or ``k`` if larger — passes them through the reranker and returns the top ``k``.
+    Under ``SEARCH_MODE=hybrid`` the vector and keyword searches each fetch ``retrieve_k``
+    candidates (or ``k`` if larger) before fusion, so the fused top ``k`` is drawn from the
+    same depth as ``/search``'s. With ``tools_search_rerank`` on, that pool goes through the
+    reranker and the top ``k`` comes back.
     """
     query = str(args["query"])
     requested_k = args.get("k")
@@ -199,9 +202,12 @@ async def _search_executor(
     filters = _filters_from_args(args.get("filters"))
     await store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
     (vector,) = await embedder.embed([query])
-    if not (settings.tools_search_rerank and reranker is not None):
-        return await store.search(vector, k, tenant, filters)
-    pool = await store.search(vector, max(k, settings.retrieve_k), tenant, filters)
+    hybrid = settings.search_mode == "hybrid"
+    rerank = settings.tools_search_rerank and reranker is not None
+    depth = max(k, settings.retrieve_k) if hybrid or rerank else k
+    pool = await retrieve(store, query, vector, depth, tenant, filters, hybrid=hybrid)
+    if reranker is None or not rerank:
+        return pool[:k]
     return (await reranker.rerank(query, pool))[:k]
 
 

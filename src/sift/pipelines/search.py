@@ -1,7 +1,8 @@
 """The search pipeline — embed → retrieve_K → rerank → FINAL_K → recap.
 
 Ports only (the dependency rule: ``pipelines`` never imports an adapter). It embeds the
-query once, retrieves ``RETRIEVE_K`` nearest chunks, reranks them by true relevance, keeps
+query once, retrieves the ``RETRIEVE_K`` best chunks (vector search, fused with keyword search
+under ``SEARCH_MODE=hybrid``; see :mod:`sift.pipelines.retrieval`), reranks them, keeps
 the ``FINAL_K`` best, and recaps the top passage into a summary carried back with its source
 citations. An empty base short-circuits to a "No results found." recap with no sources.
 
@@ -20,6 +21,7 @@ from datetime import UTC, datetime
 from sift.config import Settings
 from sift.core.ports import Completer, Embedder, Reranker, VectorStore
 from sift.core.types import Hit, SearchOutcome, SearchSource
+from sift.pipelines.retrieval import retrieve
 
 _RECAP_SYSTEM = (
     "Answer the user's question directly and helpfully, using ONLY the passages provided. Lead "
@@ -220,7 +222,14 @@ class SearchPipeline:
         lap("ensure_ready")
         vectors = await self._embedder.embed([query])
         lap("embed")
-        retrieved = await self._store.search(vectors[0], settings.retrieve_k, tenant)
+        retrieved = await retrieve(
+            self._store,
+            query,
+            vectors[0],
+            settings.retrieve_k,
+            tenant,
+            hybrid=settings.search_mode == "hybrid",
+        )
         lap("retrieve")
         if not retrieved:
             timings["total"] = (time.perf_counter() - start) * 1000

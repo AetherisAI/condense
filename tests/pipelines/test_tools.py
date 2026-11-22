@@ -240,6 +240,37 @@ async def test_search_rerank_pool_is_never_smaller_than_k(
     assert len(hits) == 5
 
 
+def _filler_and_named(n: int) -> list[Chunk]:
+    """``n`` filler chunks plus one whose only distinctive feature is the word zephyrium."""
+    filler = [
+        Chunk(text=f"filler {i}", source_path=f"{i}.md", page=1, source_hash=f"h{i}", index=0)
+        for i in range(n)
+    ]
+    named = Chunk(
+        text="zephyrium alloy datasheet", source_path="z.md", page=1, source_hash="hz", index=0
+    )
+    return [*filler, named]
+
+
+async def test_search_hybrid_finds_a_chunk_by_its_words(
+    embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    # The fake embedder isn't semantic, so only the keyword side can know "zephyrium" matters.
+    await _seed(store, embedder, _filler_and_named(20))
+    query = {"query": "which datasheet covers zephyrium", "k": 1}
+    vector_only = Settings(ingest_token="t", embed_dim=DIM, embed_model=MODEL, search_mode="vector")
+    hybrid = Settings(ingest_token="t", embed_dim=DIM, embed_model=MODEL)
+    assert hybrid.search_mode == "hybrid"  # the default
+
+    (by_vector,) = await build_tool_registry(embedder, store, vector_only).call(
+        "search", query, TENANT
+    )
+    (by_hybrid,) = await build_tool_registry(embedder, store, hybrid).call("search", query, TENANT)
+
+    assert by_vector.source_path != "z.md"
+    assert by_hybrid.source_path == "z.md"
+
+
 async def test_search_executor_returns_ranked_hits_no_recap(
     registry: ToolRegistry, store: FakeVectorStore, embedder: FakeEmbedder
 ) -> None:

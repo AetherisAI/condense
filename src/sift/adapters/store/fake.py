@@ -1,13 +1,14 @@
 """In-memory test double for the :class:`~sift.core.ports.VectorStore` port.
 
 Implements the per-tenant model-pin guard, the content-hash manifest, brute-force cosine
-search, and tenant isolation — everything a pipeline needs to run end-to-end with no real
-database.
+search, a word-overlap stand-in for keyword search, and tenant isolation — everything a
+pipeline needs to run end-to-end with no real database.
 """
 
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 
 from sift.core.errors import ModelPinMismatch, SiftError
@@ -74,22 +75,48 @@ class FakeVectorStore:
             if chunk.vector is not None
         ]
         scored.sort(key=lambda pair: pair[0], reverse=True)
-        stamps = self._indexed_at.get(tenant, {})
-        mtimes = self._modified_at.get(tenant, {})
-        return [
-            Hit(
-                text=chunk.text,
-                score=score,
-                source_path=chunk.source_path,
-                page=chunk.page,
-                source_hash=chunk.source_hash,
-                index=chunk.index,
-                modified_at=mtimes.get(chunk.source_hash),
-                indexed_at=stamps.get(chunk.source_hash),
-                metadata=chunk.metadata,
-            )
-            for score, chunk in scored[:k]
+        return [self._hit(chunk, score, tenant) for score, chunk in scored[:k]]
+
+    async def keyword_search(
+        self,
+        query: str,
+        vector: Vector,
+        k: int,
+        tenant: str,
+        filters: SearchFilters | None = None,
+    ) -> list[Hit]:
+        """Chunks sharing at least one word with ``query``, most shared distinct words first
+        (a stand-in for BM25), each scored by cosine similarity like :meth:`search`."""
+        rows = self._rows.get(tenant)
+        words = _words(query)
+        if not rows or not words:
+            return []
+        candidates = rows.values()
+        if filters is not None:
+            candidates = [chunk for chunk in candidates if _matches_filters(chunk, filters)]
+        matched = [
+            (shared, chunk, chunk.vector)
+            for chunk in candidates
+            if chunk.vector is not None and (shared := len(words & _words(chunk.text)))
         ]
+        matched.sort(key=lambda row: row[0], reverse=True)
+        return [
+            self._hit(chunk, _cosine(vector, chunk_vector), tenant)
+            for _shared, chunk, chunk_vector in matched[:k]
+        ]
+
+    def _hit(self, chunk: Chunk, score: float, tenant: str) -> Hit:
+        return Hit(
+            text=chunk.text,
+            score=score,
+            source_path=chunk.source_path,
+            page=chunk.page,
+            source_hash=chunk.source_hash,
+            index=chunk.index,
+            modified_at=self._modified_at.get(tenant, {}).get(chunk.source_hash),
+            indexed_at=self._indexed_at.get(tenant, {}).get(chunk.source_hash),
+            metadata=chunk.metadata,
+        )
 
     async def known_hashes(self, tenant: str) -> set[str]:
         rows = self._rows.get(tenant)
@@ -179,6 +206,10 @@ def _matches_filters(chunk: Chunk, filters: SearchFilters) -> bool:
         if filters.until is not None and chunk.modified_at > filters.until:
             return False
     return True
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"\w+", text.lower()))
 
 
 def _cosine(a: Vector, b: Vector) -> float:

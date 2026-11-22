@@ -35,12 +35,16 @@ work scenario, paraphrased, and in German. A search succeeds when it returns the
 
 | Find | Right document first | In the top 3 | In the top 10 | Median search time |
 | --- | --- | --- | --- | --- |
-| Keyword search (BM25), for reference | 71% | 83% | 91% | |
-| Condense, reranker off | 69% | 84% | 94% | 0.15 s |
-| Condense, reranker on | **82%** | **93%** | **96%** | 2.1 s on an Apple M5 |
+| Keyword search (BM25) alone | 71% | 83% | 91% | |
+| Embeddings (bge-m3) alone | 69% | 84% | 94% | 0.15 s |
+| Condense, reranker off | 76% | 92% | 97% | 0.15 s |
+| Condense, reranker on | **84%** | **94%** | **96%** | 2 s on an Apple M5 |
 
+- **Two searches in one.** Keyword search finds exact IDs and names, embeddings find
+  paraphrases; each alone puts the right document first about 70% of the time. Condense runs
+  both and merges the results, which adds about 5 ms per search.
 - **Other languages work.** Asked in German about English documents, Find ranks the right one
-  first 84% of the time with the reranker (keyword search: 56%).
+  first 83% of the time with the reranker (keyword search alone: 56%).
 - **Ask says when it doesn't know.** It declined 25 of the 26 questions the documents don't
   answer (23 by a second judge's count), and wrongly declined 9% of the answerable ones.
 - **Ask sticks to its sources.** Two LLM judges found 78% to 90% of its claims backed by the
@@ -110,10 +114,11 @@ cd desktop && npm install && npx tauri build
 
 ## How it works
 
-Each file is parsed to text, split into 512-token chunks and embedded with bge-m3. Vectors,
-metadata and deduplication records live in one libSQL database, using its built-in vector
-search. A search embeds the query, takes the 30 closest chunks, reranks them if reranking is
-on, and returns the top results. Ask gives an LLM tools to search the same index and read
+Each file is parsed to text, split into 512-token chunks and embedded with bge-m3. Vectors, a
+keyword index, metadata and deduplication records live in one libSQL database, using its
+built-in vector and full-text search. A search runs a vector search and a keyword search,
+merges the two shortlists of 30, reranks them if reranking is on, and returns the top
+results. Ask gives an LLM tools to search the same index and read
 documents, then writes a cited answer.
 
 The engine is a FastAPI app built from ports and adapters that calls every model over HTTP, so

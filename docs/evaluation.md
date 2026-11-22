@@ -4,8 +4,8 @@
 write. It gives you numbers to compare before and after a change (chunk size, rerank strategy,
 `RETRIEVE_K`, a new LLM) instead of judging the results by eye.
 
-- **Find**: the `/search` pipeline (embed → retrieve `RETRIEVE_K` → version-collapse →
-  rerank → top-`FINAL_K` + recap).
+- **Find**: the `/search` pipeline (embed → retrieve `RETRIEVE_K`, vector + keyword under
+  `SEARCH_MODE=hybrid` → version-collapse → rerank → top-`FINAL_K` + recap).
 - **Ask**: the `/v1/answer` tool-calling agent.
 
 It runs the real pipeline in-process from the same `.env` as the server, so it sees what
@@ -230,7 +230,8 @@ These numbers set the defaults. The corpus is the MITRE ATT&CK knowledge base (2
 7,278 chunks); the question set has 332 questions written from it, 306 of them answerable:
 base questions, keyword, scenario, paraphrase and reword variants, and German translations.
 Find surface, `--skip-judge`, `RETRIEVE_K=30`, bge-m3 embeddings, doc-level hit@1 over the 306
-answerable questions.
+answerable questions. The reranker and embedder tables below used vector search only
+(`SEARCH_MODE=vector`); hybrid search, now the default, comes after them.
 
 | Reranker | hit@1 | rerank time per query |
 | --- | --- | --- |
@@ -261,29 +262,29 @@ Qwen3-4B ranks paraphrased questions better but drops some exact-identifier look
 IDs, tool names) out of its top 30, which a reranker can't recover, and costs about twice as much
 per query and five times as much to ingest. bge-m3 stays the default.
 
-Keyword search, estimated offline because the store has no keyword index yet: the same 7,278
-chunks indexed with SQLite FTS5 (BM25 over the question's words, common English words
-dropped), fused with the bge-m3 top 30 by reciprocal-rank fusion (k = 60), and the fused top 30
-reranked by the same llama.cpp cross-encoder. The reranked bge-m3 row reproduces the product
-run exactly.
+Hybrid search (`SEARCH_MODE=hybrid`, the default): a BM25 keyword search over the same chunks
+(SQLite FTS5 in the libSQL database, the question's words OR-ed, common English words dropped),
+fused with the bge-m3 shortlist by reciprocal-rank fusion. Hit@k at the first and last stage,
+and median whole-search time:
 
-| Retrieval | hit@1 | hit@3 | hit@10 | hit@30 |
+| Retrieval | hit@1 | hit@3 | hit@10 | median search |
 | --- | --- | --- | --- | --- |
-| BM25 only | 0.71 | 0.83 | 0.91 | 0.94 |
-| bge-m3 only (default) | 0.69 | 0.84 | 0.94 | 0.97 |
-| bge-m3 + BM25 | 0.76 | 0.92 | 0.97 | 0.98 |
-| bge-m3, reranked | 0.82 | 0.93 | 0.96 | 0.97 |
-| bge-m3 + BM25, reranked | 0.84 | 0.94 | 0.96 | 0.98 |
+| BM25 only (offline, for reference) | 0.71 | 0.83 | 0.91 | |
+| bge-m3 only (`SEARCH_MODE=vector`) | 0.69 | 0.84 | 0.94 | 148 ms |
+| hybrid | 0.76 | 0.92 | 0.97 | 153 ms |
+| bge-m3 only, reranked | 0.82 | 0.93 | 0.96 | 2.1 s |
+| hybrid, reranked | 0.84 | 0.94 | 0.96 | 2.0 s |
 
 BM25 alone matches bge-m3 at top-1 on this corpus, because ATT&CK questions are full of IDs and
 names. bge-m3 is far ahead on the German questions (0.68 against 0.56). Fusing the two lifts
 top-1 from 0.69 to 0.76 without a reranker (37 questions fixed, 17 broken, McNemar p = 0.009)
-for the cost of one full-text query. With the reranker the gain shrinks to 0.82 to 0.84 (10
-fixed, 4 broken, p = 0.18), within noise.
+for about 5 ms of full-text search. With the reranker the gain shrinks to 0.82 to 0.84 (10
+fixed, 4 broken, p = 0.18), within noise. The offline BM25 row was computed from the same
+chunks outside the product.
 
-Answer quality, judged: the same 332 questions, Mistral Small as the generator, no reranker in
-Ask's search, and the same answers scored by two judges. Answer metrics cover the 306
-answerable questions.
+Answer quality, judged: the same 332 questions, Mistral Small as the generator, Ask's search on
+vectors only and without a reranker (these runs predate hybrid search), and the same answers
+scored by two judges. Answer metrics cover the 306 answerable questions.
 
 | Ask | Mistral Small judge | Claude Haiku 5.5 judge |
 | --- | --- | --- |

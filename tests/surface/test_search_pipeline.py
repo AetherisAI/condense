@@ -187,3 +187,30 @@ async def test_empty_store_returns_no_results() -> None:
 
     assert response.summary == "No results found."
     assert response.sources == []
+
+
+async def test_search_fuses_keyword_matches_into_retrieval() -> None:
+    embedder = FakeEmbedder()
+    store = FakeVectorStore()
+    filler = [
+        Chunk(text=f"filler {i}", source_path=f"{i}.md", page=1, source_hash=f"h{i}", index=0)
+        for i in range(20)
+    ]
+    named = Chunk(
+        text="zephyrium alloy datasheet", source_path="z.md", page=1, source_hash="hz", index=0
+    )
+    await _seed(store, embedder, [*filler, named])
+    query = "which datasheet covers zephyrium"
+
+    vector_only = Settings(ingest_token="t", final_k=1, retrieve_k=30, search_mode="vector")
+    plain = await SearchPipeline(
+        embedder, store, NullReranker(), NullCompleter(), vector_only
+    ).trace(query, recap=False)
+    fused = await SearchPipeline(
+        embedder, store, NullReranker(), NullCompleter(), _settings()
+    ).trace(query, recap=False)
+
+    assert plain.retrieved[0].source_path != "z.md"
+    assert fused.retrieved[0].source_path == "z.md"
+    (source,) = fused.outcome.sources
+    assert source.path == "z.md"

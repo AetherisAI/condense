@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import AsyncIterator
 from dataclasses import replace
+from typing import Any
 
 import pytest
 
@@ -537,3 +538,198 @@ async def test_list_documents_metadata_filter_narrows_via_exists_subquery(
     docs = await store.list_documents(TENANT, metadata={"project": "condense"})
 
     assert [d.source_hash for d in docs] == ["h1"]
+
+
+# --- keyword search (SupportsKeywordSearch) ------------------------------
+
+
+def _chunk(text: str, source_hash: str, index: int = 0, **extra: Any) -> Chunk:
+    return Chunk(
+        text=text,
+        source_path=f"{source_hash}.md",
+        page=1,
+        source_hash=source_hash,
+        index=index,
+        **extra,
+    )
+
+
+async def _keyword_hashes(
+    store: LibSQLStore, embedder: FakeEmbedder, query: str, **kw: Any
+) -> list[str]:
+    (vector,) = await embedder.embed([query])
+    return [hit.source_hash for hit in await store.keyword_search(query, vector, 10, TENANT, **kw)]
+
+
+async def test_satisfies_keyword_search_capability(store: LibSQLStore) -> None:
+    from sift.pipelines.retrieval import SupportsKeywordSearch
+
+    assert isinstance(store, SupportsKeywordSearch)
+
+
+async def test_keyword_search_ranks_by_matching_words(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        _chunk("FrostyGoop sent Modbus commands over TCP port 502", "h1"),
+        _chunk("Modbus is an industrial protocol", "h2"),
+        _chunk("Spearphishing attachments deliver malware", "h3"),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    # h1 shares three words, h2 one, h3 none: h3 isn't a match at all.
+    assert await _keyword_hashes(store, embedder, "Which device used Modbus port 502?") == [
+        "h1",
+        "h2",
+    ]
+    assert await _keyword_hashes(store, embedder, "frostygoop") == ["h1"]
+
+
+async def test_keyword_search_matches_identifiers_the_tokenizer_splits(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    chunks = [
+        _chunk("T1566.001 Spearphishing Attachment", "h1"),
+        _chunk("T1566 Phishing, and sub-technique 001 elsewhere", "h2"),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+
+    # "t1566.001" is one quoted phrase: both parts, adjacent, so h1 ranks first.
+    assert (await _keyword_hashes(store, embedder, "what is T1566.001"))[0] == "h1"
+
+
+async def test_keyword_search_scores_hits_by_cosine_similarity(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("exact passage text", "h1"))], TENANT)
+
+    (vector,) = await embedder.embed(["exact passage text"])
+    (hit,) = await store.keyword_search("exact passage text", vector, 5, TENANT)
+    assert math.isclose(hit.score, 1.0, rel_tol=1e-4)  # cosine, like search(), not BM25
+
+
+async def test_keyword_search_treats_operators_and_punctuation_as_text(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("NEAR the OR gate", "h1"))], TENANT)
+
+    # FTS5 syntax in user input must not raise or change the query's meaning.
+    assert await _keyword_hashes(store, embedder, 'gate" OR text:* NEAR(') == ["h1"]
+    assert await _keyword_hashes(store, embedder, "?!... ---") == []  # no words, no query
+
+
+async def test_keyword_search_keeps_stopwords_when_nothing_else_is_left(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("to be or not to be", "h1"))], TENANT)
+
+    assert await _keyword_hashes(store, embedder, "to be") == ["h1"]
+
+
+async def test_keyword_search_respects_tenant_and_filters(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    await store.ensure_ready(MODEL, DIM, "other")
+    chunks = [
+        _chunk("zephyrium report", "h1", metadata={"kind": "report"}),
+        _chunk("zephyrium memo", "h2", metadata={"kind": "memo"}),
+    ]
+    await store.upsert([await _embedded(embedder, c) for c in chunks], TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("zephyrium elsewhere", "h3"))], "other")
+
+    assert sorted(await _keyword_hashes(store, embedder, "zephyrium")) == ["h1", "h2"]
+    narrowed = await _keyword_hashes(
+        store, embedder, "zephyrium", filters=SearchFilters(metadata={"kind": "memo"})
+    )
+    assert narrowed == ["h2"]
+
+
+async def test_keyword_index_follows_updates_and_deletes(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("original wording", "h1"))], TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("revised wording", "h1"))], TENANT)
+
+    assert await _keyword_hashes(store, embedder, "original") == []
+    assert await _keyword_hashes(store, embedder, "revised") == ["h1"]
+
+    await store.delete_document("h1", TENANT)
+    assert await _keyword_hashes(store, embedder, "revised wording") == []
+
+
+async def test_ensure_ready_indexes_chunks_stored_before_keyword_search(tmp_path) -> None:
+    # A database written by a version without the keyword index: the first ensure_ready
+    # creates it and indexes what's already there.
+    db = str(tmp_path / "pre_fts.db")
+    embedder = FakeEmbedder(dim=DIM)
+    old = LibSQLStore(db)
+    try:
+        await old.ensure_ready(MODEL, DIM, TENANT)
+        await old.upsert([await _embedded(embedder, _chunk("legacy passage", "h1"))], TENANT)
+    finally:
+        await old.aclose()
+    conn = libsql.connect(db)
+    for name in ("chunks_fts_insert", "chunks_fts_delete", "chunks_fts_update"):
+        conn.execute(f"DROP TRIGGER {name}")
+    conn.execute("DROP TABLE chunks_fts")
+    conn.commit()
+    conn.close()
+
+    store = LibSQLStore(db)
+    try:
+        await store.ensure_ready(MODEL, DIM, TENANT)
+        assert await _keyword_hashes(store, embedder, "legacy") == ["h1"]
+    finally:
+        await store.aclose()
+
+
+async def test_keyword_search_before_ensure_ready_returns_empty(
+    store: LibSQLStore, embedder: FakeEmbedder
+) -> None:
+    assert await _keyword_hashes(store, embedder, "anything") == []
+
+
+async def test_store_without_fts5_falls_back_to_vector_search(
+    store: LibSQLStore, embedder: FakeEmbedder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Stand in for a libSQL server built without FTS5: creating the index fails with
+    # "no such module", and the store must keep working with vectors alone.
+    import sift.adapters.store.libsql as libsql_store
+
+    monkeypatch.setattr(
+        libsql_store, "_DDL_CHUNKS_FTS", "CREATE VIRTUAL TABLE chunks_fts USING not_fts5(text)"
+    )
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("still searchable", "h1"))], TENANT)
+
+    assert await _keyword_hashes(store, embedder, "searchable") == []
+    (vector,) = await embedder.embed(["still searchable"])
+    assert [hit.source_hash for hit in await store.search(vector, 5, TENANT)] == ["h1"]
+
+
+async def test_failed_index_setup_leaves_no_half_made_index(
+    store: LibSQLStore, embedder: FakeEmbedder, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    # The table gets created, then a trigger fails: an index with no triggers would go stale,
+    # so it must be dropped and search must carry on with vectors.
+    import sift.adapters.store.libsql as libsql_store
+
+    broken = "CREATE TRIGGER chunks_fts_insert AFTER INSERT ON no_such_table BEGIN SELECT 1; END"
+    monkeypatch.setattr(libsql_store, "_FTS_TRIGGERS", (broken,))
+    await store.ensure_ready(MODEL, DIM, TENANT)
+    await store.upsert([await _embedded(embedder, _chunk("still searchable", "h1"))], TENANT)
+
+    assert await _keyword_hashes(store, embedder, "searchable") == []
+    (vector,) = await embedder.embed(["still searchable"])
+    assert [hit.source_hash for hit in await store.search(vector, 5, TENANT)] == ["h1"]
+    conn = libsql.connect(str(tmp_path / "sift.db"))  # the store fixture's database
+    leftovers = conn.execute(libsql_store._FTS_TABLE_EXISTS).fetchall()
+    conn.close()
+    assert leftovers == []

@@ -22,8 +22,9 @@ still named `sift` (the project's original codename).
   `tests/contract/test_config_env_parity.py` fails otherwise.
 - **Inference over HTTP.** Embeddings, reranking and the LLM are external services (Ollama,
   llama.cpp `llama-server`, TEI, OpenAI-compatible APIs). The engine never imports torch.
-- **One store.** Vectors, metadata and dedup live in one libSQL database using its native vector
-  search; no separate vector DB.
+- **One store.** Vectors, metadata, dedup and the FTS5 keyword index live in one libSQL database
+  (native vector search; triggers on `chunks` keep the keyword index in sync); no separate
+  vector DB or search engine. Hybrid fusion lives in `src/sift/pipelines/retrieval.py`.
 - **Model pin.** Ingest and search check `EMBED_MODEL` against the model pinned in the store and
   refuse on mismatch.
 - **Tenant.** `tenant` is threaded through every layer and resolved in one place

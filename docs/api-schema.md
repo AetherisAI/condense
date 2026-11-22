@@ -26,13 +26,13 @@ Three tiers, all bearer (`Authorization: Bearer <token>`):
 | `GET /healthz` | open | Liveness + the pinned embed model. | `HealthResponse` |
 | `GET /status` | any token | Health probes for every configured dependency + the effective config, secrets redacted. | `StatusResponse` |
 | `PATCH /settings` | any token | Edit an allowlisted set of tuning knobs live (rebuilds the container in place, no restart). `extra="forbid"` — anything off the allowlist → `422`. | `StatusResponse` |
-| `GET /search?q=&recap=` | any token | Embed → retrieve `RETRIEVE_K` → rerank → `FINAL_K` → recap. `recap` overrides `RECAP_ENABLED` per-request. | `SearchResponse` |
+| `GET /search?q=&recap=` | any token | Embed → retrieve `RETRIEVE_K` (vector + keyword search under `SEARCH_MODE=hybrid`) → rerank → `FINAL_K` → recap. `recap` overrides `RECAP_ENABLED` per-request. | `SearchResponse` |
 | `POST /ingest` | any token | Multipart upload (`files`, optional `modified_at` form field: JSON `{filename: iso8601}`). Streamed one file at a time (bounded memory). `409` on a model-pin mismatch. | `IngestResponse` |
 | `GET /ingest/manifest` | any token | The tenant's known content-hashes — backs the agent's dedup diff. | `ManifestResponse` |
 | `GET /documents` | any token | One row per ingested source file. `supported=false` (not an error) if the store can't enumerate documents. | `DocumentsResponse` |
 | `DELETE /documents/{source_hash}` | any token | Drop a file's chunks by content hash. `501` if the store doesn't support document admin. | `DeleteDocumentResponse` |
 | `POST /v1/documents` | any token | JSON ingest of one inline text document — the non-multipart sibling of `POST /ingest`. `text` non-empty, ≤ `PARSE_MAX_CHARS` (`422` otherwise). | `IngestFileResult` |
-| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → `store.search`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`). With `TOOLS_SEARCH_RERANK=true` (off by default) it retrieves `RETRIEVE_K`, reranks and returns the top `k`; this is what the UI's Find mode and Ask's agent call. | `ToolSearchResponse` |
+| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → vector search, fused with keyword search under `SEARCH_MODE=hybrid`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`). With `TOOLS_SEARCH_RERANK=true` (off by default) it retrieves `RETRIEVE_K`, reranks and returns the top `k`; this is what the UI's Find mode and Ask's agent call. | `ToolSearchResponse` |
 | `GET /v1/tools/documents?limit=&offset=&metadata=` | any token | Paginated document listing, optionally narrowed by a JSON `metadata` query param. | `ToolDocumentsResponse` |
 | `GET /v1/tools/documents/{source_hash}/chunks` | any token | One document's chunks, ordered by `index`. | `ToolChunksResponse` |
 | `GET /v1/tools/schema` | any token | Machine-readable manifest of every registered tool (OpenAI-functions form + JSON-schema form), generated FROM the live `ToolRegistry` — `PATCH /settings` never appears here (never registered as a tool). | `ToolSchemaResponse` |
@@ -194,7 +194,7 @@ STORE_BACKEND=libsql            TURSO_DATABASE_URL=        TURSO_AUTH_TOKEN=
 EMBED_BASE_URL=                 EMBED_MODEL=bge-m3         EMBED_DIM=1024        EMBED_API_KEY=
 RERANK_STRATEGY=crossencoder    RERANK_BASE_URL=http://reranker:8080   RERANK_MODEL=bge-reranker-v2-m3
 TOOLS_SEARCH_RERANK=false
-RETRIEVE_K=30                   FINAL_K=1
+RETRIEVE_K=30                   FINAL_K=1                 SEARCH_MODE=hybrid
 LLM_BASE_URL=                   LLM_MODEL=                LLM_API_KEY=
 CHUNK_TOKENIZER=auto            CHUNK_SIZE=512            CHUNK_OVERLAP=64
 INGEST_TOKEN=                   AUTH_TOKENS=
@@ -207,6 +207,13 @@ The bare `Settings` code default stays `"none"`, since an engine started with no
 reranker to reach. The cross-encoder adapter keeps the vector ranking while nothing listens at
 `RERANK_BASE_URL`. `/search` always reranks; the toolbox search (Find, Ask) only with
 `TOOLS_SEARCH_RERANK=true`, off by default for latency (~2 s per search on Metal, ~10–20 s on CPU).
+
+**`SEARCH_MODE=hybrid`** (the default) runs a BM25 keyword search beside the vector search and
+merges the two shortlists by reciprocal-rank fusion, for `/search` and the toolbox search alike.
+The keyword index is an SQLite FTS5 table in the same libSQL database, kept in sync by triggers on
+`chunks` and built once for an existing database on its first start. Hits keep their cosine
+similarity as `score`, so only the order changes. `SEARCH_MODE=vector` is embeddings only; a
+libSQL server without FTS5 also falls back to it, with a warning in the log.
 
 **`CHUNK_TOKENIZER` IS a `Settings` field** (not a compose-only/decorative key): `"auto"` (default)
 resolves to `bge-m3`'s own tokenizer when `EMBED_MODEL` names bge-m3, else falls back to the generic

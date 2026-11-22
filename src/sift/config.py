@@ -65,6 +65,10 @@ class Settings(BaseSettings):
 
     retrieve_k: int = 30
     final_k: int = 1
+    # hybrid: fuse the vector search with a BM25 keyword search (reciprocal-rank fusion), which
+    # finds exact IDs, names and codes that embeddings blur. vector: embeddings only. On the MITRE
+    # ATT&CK benchmark hybrid ranked the right document first 76% of the time against 69%.
+    search_mode: Literal["hybrid", "vector"] = "hybrid"
     # Version collapse: before reranking, fold near-identical retrieved passages (a typo fix, a
     # re-export, v1→v2 of the same doc) into one, keeping the most recently *modified* copy (by
     # the source file's mtime) so a stale version can never out-rank its newer twin. Non-

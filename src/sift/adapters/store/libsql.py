@@ -11,6 +11,12 @@ methods to make the single-writer intent explicit.
 Vector search uses libSQL's native ``F32_BLOB``/``vector32``/``vector_distance_cos``.
 Cosine *distance* = 1 − similarity, so ``Hit.score = 1.0 - distance`` (≈ 1.0 for an
 exact-text match), matching :class:`~sift.adapters.store.fake.FakeVectorStore`.
+
+Keyword search uses SQLite's FTS5 (BM25 ranking) over ``chunks.text``: an external-content
+index, so the text isn't stored twice, kept in sync by triggers on ``chunks``. Every write
+path, including ones added later, updates it without remembering to. If the database can't
+create FTS5 tables (a server built without the module), keyword search returns no hits and
+retrieval falls back to vectors alone.
 """
 
 from __future__ import annotations
@@ -18,6 +24,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
+import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -31,6 +39,8 @@ from sift.core.types import Chunk, DocumentInfo, Hit, SearchFilters, Vector
 # ``libsql`` is a stub-less compiled extension; route attribute access through ``Any`` so
 # the rest of this module stays fully type-checked.
 _libsql: Any = libsql
+
+logger = logging.getLogger(__name__)
 
 _DDL_MODEL_PIN = (
     "CREATE TABLE IF NOT EXISTS model_pin (tenant TEXT PRIMARY KEY, model TEXT, dim INTEGER)"  # noqa: E501
@@ -75,6 +85,44 @@ _INSERT_FILE = (
     "modified_at = excluded.modified_at"
 )
 
+# The keyword index. External content: FTS5 stores only the inverted index and reads the text
+# back from ``chunks`` by rowid. ``chunks`` rowids stay put (the store never VACUUMs); if they
+# ever moved, ``INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')`` re-derives the index.
+_DDL_CHUNKS_FTS = (
+    "CREATE VIRTUAL TABLE chunks_fts USING fts5("
+    "text, content='chunks', content_rowid='rowid', tokenize='unicode61')"
+)
+_FTS_TRIGGERS = (
+    "CREATE TRIGGER IF NOT EXISTS chunks_fts_insert AFTER INSERT ON chunks BEGIN "
+    "INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text); END",
+    "CREATE TRIGGER IF NOT EXISTS chunks_fts_delete AFTER DELETE ON chunks BEGIN "
+    "INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.rowid, old.text); END",
+    "CREATE TRIGGER IF NOT EXISTS chunks_fts_update AFTER UPDATE OF text ON chunks BEGIN "
+    "INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.rowid, old.text); "
+    "INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text); END",
+)
+_DROP_FTS = (
+    "DROP TRIGGER IF EXISTS chunks_fts_insert",
+    "DROP TRIGGER IF EXISTS chunks_fts_delete",
+    "DROP TRIGGER IF EXISTS chunks_fts_update",
+    "DROP TABLE IF EXISTS chunks_fts",
+)
+# Indexes every chunk already in the table: run once, when an older database gets the index.
+_REBUILD_CHUNKS_FTS = "INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')"
+_FTS_TABLE_EXISTS = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chunks_fts'"
+
+# Words too common to help a keyword match. BM25 already gives them little weight, but each
+# one still pulls in matches; dropping them measurably sharpens the ranking. English only: the
+# list is a refinement, and other languages still work without it.
+_STOPWORDS = frozenset(
+    "a about an and any are as at be by can could did do does for from has have how i in into "
+    "is it its of on or some than that the their them then there these they this those to was "
+    "were what when where which who whom whose why will with would you your".split()
+)
+# A pasted paragraph shouldn't become a 300-term query; the first distinct words carry it.
+_FTS_MAX_TERMS = 64
+_WORD = re.compile(r"\w+")
+
 _PIN_TABLE_EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'model_pin'"
 
 _FILES_TABLE_EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'files'"
@@ -89,6 +137,15 @@ _SEARCH_BASE = (
     "FROM chunks c "
     "LEFT JOIN files f ON f.tenant = c.tenant AND f.content_hash = c.source_hash "
     "WHERE {where} ORDER BY d ASC LIMIT ?"
+)
+
+_KEYWORD_SEARCH_BASE = (
+    "SELECT c.text, c.source_path, c.page, c.source_hash, c.idx, "
+    "vector_distance_cos(c.embedding, vector32(?)) AS d, f.indexed_at, f.modified_at, c.metadata "
+    "FROM chunks_fts "
+    "JOIN chunks c ON c.rowid = chunks_fts.rowid "
+    "LEFT JOIN files f ON f.tenant = c.tenant AND f.content_hash = c.source_hash "
+    "WHERE chunks_fts MATCH ? AND {where} ORDER BY bm25(chunks_fts), c.rowid LIMIT ?"
 )
 
 _SELECT_HASHES = "SELECT content_hash FROM files WHERE tenant = ?"
@@ -124,15 +181,28 @@ def _vector_json(vector: Vector) -> str:
     return json.dumps([float(component) for component in vector])
 
 
-def _search_sql(
-    tenant: str, vector: Vector, k: int, filters: SearchFilters | None
-) -> tuple[str, list[Any]]:
-    """Build the ``search`` SQL + its bound params, narrowing by ``filters`` BEFORE the ``LIMIT``:
-    metadata equality via ``json_extract``, ``modified_at`` range via a
-    plain string comparison (consistent zero-padded ISO-8601 sorts lexicographically the same as
-    chronologically — no datetime parsing needed store-side)."""
+def _fts_query(text: str) -> str | None:
+    """Turn free text into an FTS5 query: its distinct words, each quoted, OR-ed together.
+
+    Quoting makes every word a literal (no FTS5 operators or column filters from user input);
+    a word the tokenizer splits, like ``T1566.001``, becomes a phrase that matches its parts in
+    order. Stopwords are dropped unless nothing else is left. ``None`` when ``text`` has no
+    words at all.
+    """
+    words = list(dict.fromkeys(_WORD.findall(text.lower())))
+    kept = [word for word in words if word not in _STOPWORDS] or words
+    if not kept:
+        return None
+    return " OR ".join(f'"{word}"' for word in kept[:_FTS_MAX_TERMS])
+
+
+def _filter_clauses(tenant: str, filters: SearchFilters | None) -> tuple[list[str], list[Any]]:
+    """The tenant + ``filters`` WHERE clauses shared by vector and keyword search: metadata
+    equality via ``json_extract``, ``modified_at`` range via a plain string comparison
+    (consistent zero-padded ISO-8601 sorts lexicographically the same as chronologically — no
+    datetime parsing needed store-side)."""
     clauses = ["c.tenant = ?"]
-    params: list[Any] = [_vector_json(vector), tenant]
+    params: list[Any] = [tenant]
     if filters is not None:
         if filters.metadata:
             for key, value in filters.metadata.items():
@@ -145,9 +215,43 @@ def _search_sql(
         if filters.until is not None:
             clauses.append("f.modified_at <= ?")
             params.append(filters.until)
+    return clauses, params
+
+
+def _search_sql(
+    tenant: str, vector: Vector, k: int, filters: SearchFilters | None
+) -> tuple[str, list[Any]]:
+    """Build the ``search`` SQL + its bound params, narrowing by ``filters`` BEFORE the
+    ``LIMIT``."""
+    clauses, params = _filter_clauses(tenant, filters)
     sql = _SEARCH_BASE.format(where=" AND ".join(clauses))
-    params.append(k)
-    return sql, params
+    return sql, [_vector_json(vector), *params, k]
+
+
+def _keyword_search_sql(
+    match: str, tenant: str, vector: Vector, k: int, filters: SearchFilters | None
+) -> tuple[str, list[Any]]:
+    """Build the ``keyword_search`` SQL: BM25 order over the FTS5 match, the same tenant and
+    ``filters`` narrowing as :func:`_search_sql`, and each hit's cosine distance to ``vector``
+    so its score means what a vector hit's score means."""
+    clauses, params = _filter_clauses(tenant, filters)
+    sql = _KEYWORD_SEARCH_BASE.format(where=" AND ".join(clauses))
+    return sql, [_vector_json(vector), match, *params, k]
+
+
+def _hit(row: Sequence[Any]) -> Hit:
+    """A :class:`Hit` from a ``_SEARCH_BASE``/``_KEYWORD_SEARCH_BASE`` row."""
+    return Hit(
+        text=row[0],
+        score=1.0 - row[5],
+        source_path=row[1],
+        page=row[2],
+        source_hash=row[3],
+        index=row[4],
+        indexed_at=row[6],
+        modified_at=row[7],
+        metadata=json.loads(row[8]) if row[8] else None,
+    )
 
 
 def _documents_where(metadata: Mapping[str, str] | None) -> tuple[str, list[Any]]:
@@ -198,6 +302,8 @@ class LibSQLStore:
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._lock = asyncio.Lock()
         self._conn: Any = None
+        # Whether ``chunks_fts`` exists: set by ``ensure_ready``, or looked up on first use.
+        self._has_fts: bool | None = None
 
     # --- async-over-sync plumbing -------------------------------------------------
 
@@ -235,6 +341,21 @@ class LibSQLStore:
 
     async def known_hashes(self, tenant: str) -> set[str]:
         return await self._submit(functools.partial(self._known_hashes_job, tenant))
+
+    # --- keyword-search seam (SupportsKeywordSearch) ------------------------------
+
+    async def keyword_search(
+        self,
+        query: str,
+        vector: Vector,
+        k: int,
+        tenant: str,
+        filters: SearchFilters | None = None,
+    ) -> list[Hit]:
+        # Read-only: no lock, mirroring search.
+        return await self._submit(
+            functools.partial(self._keyword_search_job, query, vector, k, tenant, filters)
+        )
 
     # --- document-admin seam (SupportsDocumentAdmin) ------------------------------
 
@@ -283,6 +404,8 @@ class LibSQLStore:
         if not conn.execute(_CHUNKS_HAS_METADATA).fetchall():
             conn.execute(_ALTER_CHUNKS_ADD_METADATA)  # migrate a pre-``metadata`` database
         conn.commit()
+        if self._has_fts is None:  # ensure_ready runs on every search; check the index once
+            self._ensure_fts(conn)
 
         rows = conn.execute(_SELECT_PIN, (tenant,)).fetchall()
         if not rows:
@@ -335,26 +458,59 @@ class LibSQLStore:
             conn.execute(_INSERT_FILE, (tenant, source_hash, source_path, now, modified_at))
         conn.commit()
 
+    def _ensure_fts(self, conn: Any) -> None:
+        """Create the keyword index and its triggers if missing, indexing existing chunks.
+
+        A database from before keyword search gets the index on its first ``ensure_ready``;
+        the one-time rebuild reads every chunk, so it costs about as long as one full scan.
+        Any failure (a server without FTS5, say) leaves search on vectors alone rather than
+        failing it.
+        """
+        try:
+            if not conn.execute(_FTS_TABLE_EXISTS).fetchall():
+                conn.execute(_DDL_CHUNKS_FTS)
+                logger.info("creating the keyword index; chunks already stored are indexed once")
+                conn.execute(_REBUILD_CHUNKS_FTS)
+            for trigger in _FTS_TRIGGERS:
+                conn.execute(trigger)
+            conn.commit()
+        except ValueError as error:  # libsql reports SQLite errors as ValueError
+            logger.warning("keyword index unavailable (%s); search uses vectors only", error)
+            self._drop_fts(conn)
+            self._has_fts = False
+            return
+        self._has_fts = True
+
+    def _drop_fts(self, conn: Any) -> None:
+        """Remove a half-made keyword index. DDL commits as it runs, so a failure part-way can
+        leave the table without its triggers, and an index nothing updates goes stale. The
+        next start builds it again from scratch."""
+        try:
+            conn.rollback()
+            for statement in _DROP_FTS:
+                conn.execute(statement)
+            conn.commit()
+        except ValueError as error:
+            logger.warning("could not remove the partial keyword index (%s)", error)
+
     def _search_job(
         self, vector: Vector, k: int, tenant: str, filters: SearchFilters | None
     ) -> list[Hit]:
         conn = self._connection()
         sql, params = _search_sql(tenant, vector, k, filters)
-        rows = conn.execute(sql, params).fetchall()
-        return [
-            Hit(
-                text=row[0],
-                score=1.0 - row[5],
-                source_path=row[1],
-                page=row[2],
-                source_hash=row[3],
-                index=row[4],
-                indexed_at=row[6],
-                modified_at=row[7],
-                metadata=json.loads(row[8]) if row[8] else None,
-            )
-            for row in rows
-        ]
+        return [_hit(row) for row in conn.execute(sql, params).fetchall()]
+
+    def _keyword_search_job(
+        self, query: str, vector: Vector, k: int, tenant: str, filters: SearchFilters | None
+    ) -> list[Hit]:
+        conn = self._connection()
+        if self._has_fts is None:
+            self._has_fts = bool(conn.execute(_FTS_TABLE_EXISTS).fetchall())
+        match = _fts_query(query)
+        if not self._has_fts or match is None:
+            return []
+        sql, params = _keyword_search_sql(match, tenant, vector, k, filters)
+        return [_hit(row) for row in conn.execute(sql, params).fetchall()]
 
     def _known_hashes_job(self, tenant: str) -> set[str]:
         conn = self._connection()
