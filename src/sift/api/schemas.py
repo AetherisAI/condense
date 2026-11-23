@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from sift.config import get_settings
+from sift.config import SearchMode, get_settings
 
 
 class IngestStatus(StrEnum):
@@ -142,13 +142,16 @@ class ToolSearchRequest(BaseModel):
     """Request body for ``POST /v1/tools/search`` — the toolbox's raw-retrieval primitive.
 
     ``k`` defaults to ``Settings.tools_search_k`` and is capped at ``Settings.tools_search_max_k``
-    when omitted/oversized. Unlike ``GET /search``, there is NO recap — the caller reasons over
+    when omitted/oversized. ``mode`` overrides ``SEARCH_MODE`` for this request: ``keyword``
+    returns only passages containing the query's words, ``vector`` matches on meaning alone,
+    ``hybrid`` fuses both. Unlike ``GET /search``, there is NO recap — the caller reasons over
     the returned hits itself.
     """
 
     query: str = Field(min_length=1)
     k: int | None = None
     filters: ToolSearchFilters | None = None
+    mode: SearchMode | None = None
 
 
 class ToolSearchHit(BaseModel):

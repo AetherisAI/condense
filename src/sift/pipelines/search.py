@@ -228,7 +228,7 @@ class SearchPipeline:
             vectors[0],
             settings.retrieve_k,
             tenant,
-            hybrid=settings.search_mode == "hybrid",
+            mode=settings.search_mode,
         )
         lap("retrieve")
         if not retrieved:

@@ -271,6 +271,75 @@ async def test_search_hybrid_finds_a_chunk_by_its_words(
     assert by_hybrid.source_path == "z.md"
 
 
+async def test_search_mode_argument_overrides_the_setting(
+    embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    await _seed(store, embedder, _filler_and_named(20))
+    vector_default = build_tool_registry(
+        embedder,
+        store,
+        Settings(ingest_token="t", embed_dim=DIM, embed_model=MODEL, search_mode="vector"),
+    )
+    query = "which datasheet covers zephyrium"
+
+    (by_default,) = await vector_default.call("search", {"query": query, "k": 1}, TENANT)
+    (by_hybrid,) = await vector_default.call(
+        "search", {"query": query, "k": 1, "mode": "hybrid"}, TENANT
+    )
+
+    assert by_default.source_path != "z.md"
+    assert by_hybrid.source_path == "z.md"
+
+
+async def test_search_keyword_mode_returns_only_passages_with_the_words(
+    registry: ToolRegistry, embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    await _seed(store, embedder, _filler_and_named(20))
+
+    hits = await registry.call("search", {"query": "zephyrium", "k": 5, "mode": "keyword"}, TENANT)
+
+    assert [hit.source_path for hit in hits] == ["z.md"]
+
+
+async def test_search_keyword_mode_from_settings(
+    embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    await _seed(store, embedder, _filler_and_named(20))
+    settings = Settings(ingest_token="t", embed_dim=DIM, embed_model=MODEL, search_mode="keyword")
+
+    hits = await build_tool_registry(embedder, store, settings).call(
+        "search", {"query": "zephyrium", "k": 5}, TENANT
+    )
+
+    assert [hit.source_path for hit in hits] == ["z.md"]
+
+
+async def test_search_treats_an_empty_mode_as_unset(
+    registry: ToolRegistry, embedder: FakeEmbedder, store: FakeVectorStore
+) -> None:
+    await _seed(store, embedder, _filler_and_named(20))
+
+    (hit,) = await registry.call(
+        "search", {"query": "which datasheet covers zephyrium", "k": 1, "mode": ""}, TENANT
+    )
+
+    assert hit.source_path == "z.md"  # the hybrid default
+
+
+async def test_search_rejects_an_unknown_mode(registry: ToolRegistry) -> None:
+    # The agent's tool loop reports the error back to the model, which can retry.
+    with pytest.raises(ValueError, match="semantic"):
+        await registry.call("search", {"query": "q", "mode": "semantic"}, TENANT)
+
+
+def test_search_schema_offers_the_modes(registry: ToolRegistry) -> None:
+    spec = registry.get("search")
+    assert spec is not None
+    mode = spec.params_json_schema["properties"]["mode"]
+    assert mode["enum"] == ["hybrid", "vector", "keyword"]
+    assert "mode" not in spec.params_json_schema["required"]
+
+
 async def test_search_executor_returns_ranked_hits_no_recap(
     registry: ToolRegistry, store: FakeVectorStore, embedder: FakeEmbedder
 ) -> None:

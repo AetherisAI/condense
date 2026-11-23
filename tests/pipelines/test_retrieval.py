@@ -95,24 +95,39 @@ def test_keyword_store_satisfies_the_capability() -> None:
 async def test_retrieve_fuses_when_hybrid() -> None:
     store = _KeywordStore([_hit("v1"), _hit("shared")], [_hit("shared"), _hit("k1")])
     filters = SearchFilters(metadata={"kind": "note"})
-    hits = await retrieve(store, "q", (1.0,), 5, TENANT, filters, hybrid=True)
+    hits = await retrieve(store, "q", (1.0,), 5, TENANT, filters, mode="hybrid")
     assert _names(hits) == ["shared", "v1", "k1"]
     assert store.keyword_calls == [("q", 5, filters)]
 
 
-async def test_retrieve_is_vector_only_when_hybrid_is_off() -> None:
+async def test_retrieve_vector_mode_never_runs_the_keyword_search() -> None:
     store = _KeywordStore([_hit("v1")], [_hit("k1")])
-    hits = await retrieve(store, "q", (1.0,), 5, TENANT, hybrid=False)
+    hits = await retrieve(store, "q", (1.0,), 5, TENANT, mode="vector")
     assert _names(hits) == ["v1"]
     assert store.keyword_calls == []
 
 
+async def test_retrieve_keyword_mode_returns_only_keyword_matches() -> None:
+    store = _KeywordStore([_hit("v1"), _hit("shared")], [_hit("shared"), _hit("k1")])
+    filters = SearchFilters(since="2026-01-01")
+    hits = await retrieve(store, "q", (1.0,), 5, TENANT, filters, mode="keyword")
+    assert _names(hits) == ["shared", "k1"]
+    assert store.keyword_calls == [("q", 5, filters)]
+
+
+async def test_retrieve_keyword_mode_with_no_match_returns_nothing() -> None:
+    # An explicit keyword search means "passages containing these words": none is an answer.
+    store = _KeywordStore([_hit("v1")], [])
+    assert await retrieve(store, "q", (1.0,), 5, TENANT, mode="keyword") == []
+
+
 async def test_retrieve_is_vector_only_for_a_store_without_keyword_search() -> None:
-    hits = await retrieve(_Store([_hit("v1")], None), "q", (1.0,), 5, TENANT, hybrid=True)
-    assert _names(hits) == ["v1"]
+    for mode in ("hybrid", "keyword"):
+        hits = await retrieve(_Store([_hit("v1")], None), "q", (1.0,), 5, TENANT, mode=mode)
+        assert _names(hits) == ["v1"]
 
 
 async def test_retrieve_keeps_vector_order_when_no_keyword_matches() -> None:
     store = _KeywordStore([_hit("v1"), _hit("v2")], [])
-    hits = await retrieve(store, "q", (1.0,), 5, TENANT, hybrid=True)
+    hits = await retrieve(store, "q", (1.0,), 5, TENANT, mode="hybrid")
     assert _names(hits) == ["v1", "v2"]

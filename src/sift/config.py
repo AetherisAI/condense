@@ -18,6 +18,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 
+# How first-stage retrieval matches a query; see ``pipelines/retrieval.py``.
+SearchMode = Literal["hybrid", "vector", "keyword"]
+
+
 class Settings(BaseSettings):
     """The typed env-config: field names map case-insensitively to env keys.
 
@@ -66,9 +70,11 @@ class Settings(BaseSettings):
     retrieve_k: int = 30
     final_k: int = 1
     # hybrid: fuse the vector search with a BM25 keyword search (reciprocal-rank fusion), which
-    # finds exact IDs, names and codes that embeddings blur. vector: embeddings only. On the MITRE
-    # ATT&CK benchmark hybrid ranked the right document first 76% of the time against 69%.
-    search_mode: Literal["hybrid", "vector"] = "hybrid"
+    # finds exact IDs, names and codes that embeddings blur. vector: embeddings only. keyword:
+    # BM25 only, so only passages containing the query's words. On the MITRE ATT&CK benchmark
+    # hybrid ranked the right document first 76% of the time, vector 69% and keyword 71%. The
+    # toolbox search (Find, Ask) can also pick a mode per request.
+    search_mode: SearchMode = "hybrid"
     # Query-time caches, held in RAM per process: query embeddings, and cross-encoder scores per
     # (query, passage). The keys are the texts themselves, so a cached value can't go stale and
     # nothing needs invalidating when documents change; a restart or a settings edit starts empty.
