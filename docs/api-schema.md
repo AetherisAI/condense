@@ -32,7 +32,7 @@ Three tiers, all bearer (`Authorization: Bearer <token>`):
 | `GET /documents` | any token | One row per ingested source file. `supported=false` (not an error) if the store can't enumerate documents. | `DocumentsResponse` |
 | `DELETE /documents/{source_hash}` | any token | Drop a file's chunks by content hash. `501` if the store doesn't support document admin. | `DeleteDocumentResponse` |
 | `POST /v1/documents` | any token | JSON ingest of one inline text document — the non-multipart sibling of `POST /ingest`. `text` non-empty, ≤ `PARSE_MAX_CHARS` (`422` otherwise). | `IngestFileResult` |
-| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → vector search, fused with keyword search under `SEARCH_MODE=hybrid`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`). With `TOOLS_SEARCH_RERANK=true` (off by default) it retrieves `RETRIEVE_K`, reranks and returns the top `k`; this is what the UI's Find mode and Ask's agent call. | `ToolSearchResponse` |
+| `POST /v1/tools/search` | any token | The toolbox's raw-retrieval primitive: embed → vector search, fused with keyword search under `SEARCH_MODE=hybrid`. **No recap, no LLM.** `k` defaults/caps at `TOOLS_SEARCH_K`/`TOOLS_SEARCH_MAX_K`; optional `filters` (metadata equality + `since`/`until`); optional `mode` (`hybrid`, `vector` or `keyword`) overrides `SEARCH_MODE` for the request. With `TOOLS_SEARCH_RERANK=true` (off by default) it retrieves `RETRIEVE_K`, reranks and returns the top `k`; this is what the UI's Find mode and Ask's agent call. | `ToolSearchResponse` |
 | `GET /v1/tools/documents?limit=&offset=&metadata=` | any token | Paginated document listing, optionally narrowed by a JSON `metadata` query param. | `ToolDocumentsResponse` |
 | `GET /v1/tools/documents/{source_hash}/chunks` | any token | One document's chunks, ordered by `index`. | `ToolChunksResponse` |
 | `GET /v1/tools/schema` | any token | Machine-readable manifest of every registered tool (OpenAI-functions form + JSON-schema form), generated FROM the live `ToolRegistry` — `PATCH /settings` never appears here (never registered as a tool). | `ToolSchemaResponse` |
@@ -140,6 +140,7 @@ class ToolSearchRequest(BaseModel):         # POST /v1/tools/search body
     query: str
     k: int | None = None
     filters: ToolSearchFilters | None = None  # {metadata, since, until}
+    mode: Literal["hybrid", "vector", "keyword"] | None = None  # None → SEARCH_MODE
 
 class ToolSearchHit(BaseModel):             # one hit in ToolSearchResponse
     text: str
@@ -214,7 +215,15 @@ merges the two shortlists by reciprocal-rank fusion, for `/search` and the toolb
 The keyword index is an SQLite FTS5 table in the same libSQL database, kept in sync by triggers on
 `chunks` and built once for an existing database on its first start. Hits keep their cosine
 similarity as `score`, so only the order changes. `SEARCH_MODE=vector` is embeddings only; a
-libSQL server without FTS5 also falls back to it, with a warning in the log.
+libSQL server without FTS5 also falls back to it, with a warning in the log. `SEARCH_MODE=keyword`
+is BM25 alone: only passages that contain the query's words come back (possibly none), still
+scored by cosine similarity.
+
+**Per-request mode.** `POST /v1/tools/search` takes an optional `mode` that overrides
+`SEARCH_MODE` for that call, and the same parameter is in the `search` tool Ask's agent calls, so
+the agent can switch to `keyword` for an exact identifier, error code or name, or to `vector`
+for a question worded unlike the documents. An unknown mode is a `422` over HTTP; inside Ask the
+error goes back to the model.
 
 **Caching (`CACHE_ENABLED=true`, the default)** keeps two least-recently-used caches in RAM, shared
 by `/search`, Find and Ask: query embeddings (up to `CACHE_EMBED_MAX_ENTRIES`, ~8 KB each at 1024

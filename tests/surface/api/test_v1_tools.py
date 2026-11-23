@@ -123,6 +123,23 @@ def test_tools_search_metadata_filter(client: TestClient) -> None:
     assert all(hit["source_path"] == "cats.md" for hit in hits)
 
 
+def test_tools_search_keyword_mode(client: TestClient) -> None:
+    response = client.post(
+        "/v1/tools/search", json={"query": "dogs", "k": 10, "mode": "keyword"}, headers=_AUTH
+    )
+
+    assert response.status_code == 200
+    assert [hit["source_path"] for hit in response.json()["hits"]] == ["dogs.md"]
+
+
+def test_tools_search_rejects_an_unknown_mode(client: TestClient) -> None:
+    response = client.post(
+        "/v1/tools/search", json={"query": "dogs", "mode": "semantic"}, headers=_AUTH
+    )
+
+    assert response.status_code == 422
+
+
 def test_tools_search_k_is_capped(client: TestClient) -> None:
     response = client.post("/v1/tools/search", json={"query": "alpha", "k": 999}, headers=_AUTH)
 

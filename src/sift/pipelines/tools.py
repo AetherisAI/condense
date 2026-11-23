@@ -23,11 +23,11 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sift.config import Settings
+from sift.config import SearchMode, Settings
 from sift.core.ports import Embedder, Reranker, VectorStore
 from sift.core.types import Chunk, Hit, SearchFilters
 from sift.pipelines.documents import SupportsChunkAccess, SupportsDocumentAdmin
-from sift.pipelines.retrieval import retrieve
+from sift.pipelines.retrieval import SEARCH_MODES, retrieve
 
 Executor = Callable[[Mapping[str, Any], str], Awaitable[Any]]
 
@@ -101,6 +101,15 @@ _SEARCH_PARAMS: Mapping[str, Any] = {
     "type": "object",
     "properties": {
         "query": {"type": "string", "description": "The natural-language search query."},
+        "mode": {
+            "type": "string",
+            "enum": list(SEARCH_MODES),
+            "description": "How to match; leave unset for the server default (normally "
+            "hybrid). hybrid: meaning and exact words together, best for most questions. "
+            "keyword: only passages containing the query's words; use it for an exact "
+            "identifier, error code, file name or product name. vector: meaning only, for a "
+            "question worded unlike the documents or asked in another language.",
+        },
         "k": {
             "type": "integer",
             "minimum": 1,
@@ -180,6 +189,17 @@ def _filters_from_args(raw: Mapping[str, Any] | None) -> SearchFilters | None:
     return SearchFilters(metadata=metadata, since=since, until=until)
 
 
+def _search_mode(requested: object, default: SearchMode) -> SearchMode:
+    """The requested search mode, or ``default`` when none was given (a model filling in a
+    tool call may send an empty string for "unset")."""
+    if requested is None or requested == "":
+        return default
+    for mode in SEARCH_MODES:
+        if requested == mode:
+            return mode
+    raise ValueError(f"unknown search mode {requested!r}; use one of {', '.join(SEARCH_MODES)}")
+
+
 async def _search_executor(
     embedder: Embedder,
     store: VectorStore,
@@ -190,22 +210,24 @@ async def _search_executor(
 ) -> list[Hit]:
     """Embed → retrieve — the toolbox's raw-retrieval primitive. NO recap, NO LLM.
 
-    Under ``SEARCH_MODE=hybrid`` the vector and keyword searches each fetch ``retrieve_k``
-    candidates (or ``k`` if larger) before fusion, so the fused top ``k`` is drawn from the
-    same depth as ``/search``'s. With ``tools_search_rerank`` on, that pool goes through the
-    reranker and the top ``k`` comes back.
+    ``mode`` (optional) overrides ``SEARCH_MODE`` for this call. In hybrid mode the vector and
+    keyword searches each fetch ``retrieve_k`` candidates (or ``k`` if larger) before fusion,
+    so the fused top ``k`` is drawn from the same depth as ``/search``'s. With
+    ``tools_search_rerank`` on, that pool goes through the reranker and the top ``k`` comes
+    back. An unknown mode raises ``ValueError``, which the agent's tool loop reports back to
+    the model.
     """
     query = str(args["query"])
     requested_k = args.get("k")
     k = settings.tools_search_k if requested_k is None else int(requested_k)
     k = min(max(k, 1), settings.tools_search_max_k)
     filters = _filters_from_args(args.get("filters"))
+    mode = _search_mode(args.get("mode"), settings.search_mode)
     await store.ensure_ready(settings.embed_model, settings.embed_dim, tenant)
     (vector,) = await embedder.embed([query])
-    hybrid = settings.search_mode == "hybrid"
     rerank = settings.tools_search_rerank and reranker is not None
-    depth = max(k, settings.retrieve_k) if hybrid or rerank else k
-    pool = await retrieve(store, query, vector, depth, tenant, filters, hybrid=hybrid)
+    depth = max(k, settings.retrieve_k) if mode == "hybrid" or rerank else k
+    pool = await retrieve(store, query, vector, depth, tenant, filters, mode=mode)
     if reranker is None or not rerank:
         return pool[:k]
     return (await reranker.rerank(query, pool))[:k]

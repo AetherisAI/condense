@@ -11,17 +11,23 @@ need to be put on one scale. Each fused hit keeps the cosine similarity its stor
 ``Hit.score`` still means "how close is this to the query" for every hit; only the order
 changes.
 
-Keyword search is a capability, like :class:`~sift.pipelines.documents.SupportsDocumentAdmin`:
-a store without it, or a ``SEARCH_MODE=vector`` deployment, gets plain vector search.
+Three modes (``SEARCH_MODE``, or per request in the toolbox search): ``hybrid`` fuses both
+lists, ``vector`` uses embeddings alone, and ``keyword`` uses the keyword index alone, returning
+only passages that contain the query's words (an exact identifier, error code or name). Keyword
+search is a capability, like :class:`~sift.pipelines.documents.SupportsDocumentAdmin`: a store
+without it serves every mode from vectors alone.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol, runtime_checkable
+from typing import Protocol, get_args, runtime_checkable
 
+from sift.config import SearchMode
 from sift.core.ports import VectorStore
 from sift.core.types import Hit, SearchFilters, Vector
+
+SEARCH_MODES: tuple[SearchMode, ...] = get_args(SearchMode)
 
 # The constant from the paper that introduced RRF (Cormack, Clarke and Buettcher, 2009). It
 # flattens the gap between the first few ranks so that neither list's top hit dominates.
@@ -76,13 +82,19 @@ async def retrieve(
     tenant: str,
     filters: SearchFilters | None = None,
     *,
-    hybrid: bool,
+    mode: SearchMode,
 ) -> list[Hit]:
-    """The ``k`` best chunks for ``query``: vector search, fused with keyword search when
-    ``hybrid`` is on and the store supports it."""
+    """The ``k`` best chunks for ``query`` under ``mode``.
+
+    ``keyword`` returns only keyword matches, possibly none: asked for passages containing these
+    words, an empty list is the answer. ``hybrid`` keeps the vector order when nothing matches
+    the words.
+    """
+    if mode == "vector" or not isinstance(store, SupportsKeywordSearch):
+        return await store.search(vector, k, tenant, filters)
+    if mode == "keyword":
+        return await store.keyword_search(query, vector, k, tenant, filters)
     by_vector = await store.search(vector, k, tenant, filters)
-    if not hybrid or not isinstance(store, SupportsKeywordSearch):
-        return by_vector
     by_keyword = await store.keyword_search(query, vector, k, tenant, filters)
     if not by_keyword:
         return by_vector
