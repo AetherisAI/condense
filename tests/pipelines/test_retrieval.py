@@ -5,8 +5,17 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
+import pytest
+
 from sift.core.types import Chunk, Hit, SearchFilters, Vector
-from sift.pipelines.retrieval import RRF_K, SupportsKeywordSearch, fuse, retrieve
+from sift.pipelines.retrieval import (
+    RRF_K,
+    FusionWeights,
+    SupportsKeywordSearch,
+    fuse,
+    is_keyword_style,
+    retrieve,
+)
 
 TENANT = "default"
 
@@ -131,3 +140,64 @@ async def test_retrieve_keeps_vector_order_when_no_keyword_matches() -> None:
     store = _KeywordStore([_hit("v1"), _hit("v2")], [])
     hits = await retrieve(store, "q", (1.0,), 5, TENANT, mode="hybrid")
     assert _names(hits) == ["v1", "v2"]
+
+
+# --- weighted fusion ------------------------------------------------------------------------
+
+
+def test_fuse_weights_scale_each_lists_contribution() -> None:
+    # Equal weights: the lists interleave, the first list winning each tie. At weight 2 even the
+    # keyword list's second hit (2/62) beats the vector list's first (1/61).
+    vector, keyword = [_hit("a"), _hit("b")], [_hit("k"), _hit("c")]
+    assert _names(fuse([vector, keyword], k=10)) == ["a", "k", "b", "c"]
+    assert _names(fuse([vector, keyword], k=10, weights=[1.0, 2.0])) == ["k", "c", "a", "b"]
+
+
+def test_fuse_weighted_score_is_the_weighted_reciprocal_rank_sum() -> None:
+    # b: 1/(60+2) from the first list + 3/(60+1) from the second beats a's 1/(60+1).
+    fused = fuse([[_hit("a"), _hit("b")], [_hit("b")]], k=10, weights=[1.0, 3.0])
+    assert _names(fused) == ["b", "a"]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("T1553 tactic", True),
+        ("OnionDuke group years backup C2", True),
+        ("rundll32.exe", True),
+        ("What tactic is T1553 part of?", False),  # a question
+        ("Welche Technik verbirgt sich hinter T0884?", False),  # a question in German
+        ("how to reset the admin password", False),  # English function words
+        ("", False),
+        ("   ", False),
+    ],
+)
+def test_is_keyword_style(query: str, expected: bool) -> None:
+    assert is_keyword_style(query) is expected
+
+
+def test_fusion_weights_pick_the_keyword_style_weight_for_keyword_queries() -> None:
+    weights = FusionWeights(keyword=1.0, keyword_style=2.5)
+    assert weights.keyword_weight("T1553 tactic") == 2.5
+    assert weights.keyword_weight("What tactic is T1553 part of?") == 1.0
+
+
+async def test_retrieve_applies_the_keyword_weight_for_the_query() -> None:
+    store = _KeywordStore([_hit("v1"), _hit("v2")], [_hit("k1"), _hit("k2")])
+    weights = FusionWeights(keyword=1.0, keyword_style=2.0)
+
+    question = await retrieve(
+        store, "which file mentions it?", (1.0,), 5, TENANT, mode="hybrid", weights=weights
+    )
+    keywords = await retrieve(
+        store, "zephyrium datasheet", (1.0,), 5, TENANT, mode="hybrid", weights=weights
+    )
+
+    assert _names(question)[0] == "v1"  # plain fusion: the vector list's top wins the tie
+    assert _names(keywords)[0] == "k1"  # keyword-style: the keyword list counts double
+
+
+async def test_retrieve_defaults_to_plain_fusion() -> None:
+    store = _KeywordStore([_hit("v1")], [_hit("k1")])
+    hits = await retrieve(store, "zephyrium datasheet", (1.0,), 5, TENANT, mode="hybrid")
+    assert _names(hits) == ["v1", "k1"]

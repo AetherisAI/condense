@@ -37,7 +37,7 @@ work scenario, paraphrased, and in German. A search succeeds when it returns the
 | --- | --- | --- | --- | --- |
 | Keyword search (BM25) alone | 71% | 83% | 91% | |
 | Embeddings (bge-m3) alone | 69% | 84% | 94% | 0.15 s |
-| Condense, reranker off | 76% | 92% | 97% | 0.15 s |
+| Condense, reranker off | 78% | 92% | 97% | 0.15 s |
 | Condense, reranker on | **84%** | **94%** | **96%** | 2 s on an Apple M5 |
 
 - **Two searches in one.** Keyword search finds exact IDs and names, embeddings find

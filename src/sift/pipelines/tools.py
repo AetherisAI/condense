@@ -27,7 +27,7 @@ from sift.config import SearchMode, Settings
 from sift.core.ports import Embedder, Reranker, VectorStore
 from sift.core.types import Chunk, Hit, SearchFilters
 from sift.pipelines.documents import SupportsChunkAccess, SupportsDocumentAdmin
-from sift.pipelines.retrieval import SEARCH_MODES, retrieve
+from sift.pipelines.retrieval import SEARCH_MODES, FusionWeights, retrieve
 
 Executor = Callable[[Mapping[str, Any], str], Awaitable[Any]]
 
@@ -227,7 +227,8 @@ async def _search_executor(
     (vector,) = await embedder.embed([query])
     rerank = settings.tools_search_rerank and reranker is not None
     depth = max(k, settings.retrieve_k) if mode == "hybrid" or rerank else k
-    pool = await retrieve(store, query, vector, depth, tenant, filters, mode=mode)
+    weights = FusionWeights.from_settings(settings)
+    pool = await retrieve(store, query, vector, depth, tenant, filters, mode=mode, weights=weights)
     if reranker is None or not rerank:
         return pool[:k]
     return (await reranker.rerank(query, pool))[:k]
