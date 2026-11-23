@@ -8,6 +8,7 @@ adapter. No network is touched — the default container is self-contained.
 
 from __future__ import annotations
 
+from sift.adapters.cache.embedding import CachingEmbedder
 from sift.adapters.conversation.fake import FakeConversationStore
 from sift.adapters.embedding.fake import FakeEmbedder
 from sift.adapters.embedding.openai_compat import OpenAICompatEmbedder
@@ -90,7 +91,9 @@ def test_embedder_wired_with_configured_batch_size_and_timeouts() -> None:
 
     container = build_container(settings)
 
-    embedder = container.search._embedder
+    cached = container.search._embedder
+    assert isinstance(cached, CachingEmbedder)
+    embedder = cached._inner
     assert isinstance(embedder, OpenAICompatEmbedder)
     assert embedder._batch_size == 8
     assert embedder._timeout.read == 30.0
@@ -116,11 +119,51 @@ def test_query_and_document_prefixes_reach_the_right_embedders(tmp_path) -> None
     assert tool_spec is not None
     tool_embedder = tool_spec.executor.args[0]  # pyright: ignore[reportFunctionMemberAccess]
     ingest_embedder = container.ingest._embedder  # pyright: ignore[reportAttributeAccessIssue]
-    assert isinstance(search_embedder, OpenAICompatEmbedder)
+    # Only the query side is cached: ingested chunks almost never repeat.
+    assert isinstance(search_embedder, CachingEmbedder)
+    assert isinstance(search_embedder._inner, OpenAICompatEmbedder)
     assert isinstance(ingest_embedder, OpenAICompatEmbedder)
-    assert search_embedder._prefix == "Instruct: find\nQuery:"
+    assert search_embedder._inner._prefix == "Instruct: find\nQuery:"
     assert tool_embedder is search_embedder
     assert ingest_embedder._prefix == "passage: "
+
+
+def test_caches_are_sized_from_settings() -> None:
+    container = build_container(
+        Settings(
+            ingest_token="t",
+            embed_base_url="http://embed.local/v1",
+            rerank_strategy="crossencoder",
+            rerank_base_url="http://tei.local",
+            cache_embed_max_entries=7,
+            cache_rerank_max_entries=11,
+        )
+    )
+
+    embedder = container.search._embedder
+    reranker = container.search._reranker
+    assert isinstance(embedder, CachingEmbedder)
+    assert embedder._cache._max_entries == 7
+    assert isinstance(reranker, CrossEncoderReranker)
+    assert reranker._score_cache is not None
+    assert reranker._score_cache._max_entries == 11
+
+
+def test_cache_disabled_wires_the_plain_adapters() -> None:
+    container = build_container(
+        Settings(
+            ingest_token="t",
+            embed_base_url="http://embed.local/v1",
+            rerank_strategy="crossencoder",
+            rerank_base_url="http://tei.local",
+            cache_enabled=False,
+        )
+    )
+
+    assert isinstance(container.search._embedder, OpenAICompatEmbedder)
+    reranker = container.search._reranker
+    assert isinstance(reranker, CrossEncoderReranker)
+    assert reranker._score_cache is None
 
 
 def test_prefixes_default_to_empty() -> None:

@@ -35,7 +35,8 @@ still named `sift` (the project's original codename).
 ## Layout
 ```
 src/sift/core/        types, ports, errors, hashing
-src/sift/adapters/    embedding, rerank, llm, store (libSQL), parsing, chunking, ocr, conversation
+src/sift/adapters/    embedding, rerank, llm, store (libSQL), parsing, chunking, ocr, conversation,
+                      cache (query embeddings, rerank scores)
 src/sift/pipelines/   search, ingest, answer (Ask agent), tools (Find/Ask search), documents
 src/sift/api/         FastAPI app, routes, /v1 toolbox and answer, auth, schemas
 src/sift/eval/        sift-eval harness (own EvalSettings; product code never imports it)

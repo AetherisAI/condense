@@ -195,6 +195,7 @@ EMBED_BASE_URL=                 EMBED_MODEL=bge-m3         EMBED_DIM=1024       
 RERANK_STRATEGY=crossencoder    RERANK_BASE_URL=http://reranker:8080   RERANK_MODEL=bge-reranker-v2-m3
 TOOLS_SEARCH_RERANK=false
 RETRIEVE_K=30                   FINAL_K=1                 SEARCH_MODE=hybrid
+CACHE_ENABLED=true              CACHE_EMBED_MAX_ENTRIES=1024   CACHE_RERANK_MAX_ENTRIES=16384
 LLM_BASE_URL=                   LLM_MODEL=                LLM_API_KEY=
 CHUNK_TOKENIZER=auto            CHUNK_SIZE=512            CHUNK_OVERLAP=64
 INGEST_TOKEN=                   AUTH_TOKENS=
@@ -214,6 +215,16 @@ The keyword index is an SQLite FTS5 table in the same libSQL database, kept in s
 `chunks` and built once for an existing database on its first start. Hits keep their cosine
 similarity as `score`, so only the order changes. `SEARCH_MODE=vector` is embeddings only; a
 libSQL server without FTS5 also falls back to it, with a warning in the log.
+
+**Caching (`CACHE_ENABLED=true`, the default)** keeps two least-recently-used caches in RAM, shared
+by `/search`, Find and Ask: query embeddings (up to `CACHE_EMBED_MAX_ENTRIES`, ~8 KB each at 1024
+dimensions) and cross-encoder scores per (query, passage) pair (up to `CACHE_RERANK_MAX_ENTRIES`,
+under 200 bytes each). A repeated query skips the embedding call, and the rerank sends only the
+passages it hasn't scored for that query yet, or nothing at all. The keys are the query and passage
+texts, so an edited or deleted document can never be served a stale value and nothing needs
+invalidating. Retrieval itself always runs, so new documents show up at once. The caches start
+empty on every restart and after `PATCH /settings`. `sift-eval` turns them off so its timings
+measure uncached searches.
 
 **`CHUNK_TOKENIZER` IS a `Settings` field** (not a compose-only/decorative key): `"auto"` (default)
 resolves to `bge-m3`'s own tokenizer when `EMBED_MODEL` names bge-m3, else falls back to the generic

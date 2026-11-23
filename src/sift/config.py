@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     # finds exact IDs, names and codes that embeddings blur. vector: embeddings only. On the MITRE
     # ATT&CK benchmark hybrid ranked the right document first 76% of the time against 69%.
     search_mode: Literal["hybrid", "vector"] = "hybrid"
+    # Query-time caches, held in RAM per process: query embeddings, and cross-encoder scores per
+    # (query, passage). The keys are the texts themselves, so a cached value can't go stale and
+    # nothing needs invalidating when documents change; a restart or a settings edit starts empty.
+    # The sizes bound the RAM: ~8 KB per cached 1024-dim query, under 200 bytes per cached score.
+    cache_enabled: bool = True
+    cache_embed_max_entries: int = Field(default=1024, ge=1)
+    cache_rerank_max_entries: int = Field(default=16384, ge=1)
     # Version collapse: before reranking, fold near-identical retrieved passages (a typo fix, a
     # re-export, v1→v2 of the same doc) into one, keeping the most recently *modified* copy (by
     # the source file's mtime) so a stale version can never out-rank its newer twin. Non-
