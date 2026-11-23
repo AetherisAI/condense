@@ -15,6 +15,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
+from sift.adapters.cache.lru import LruCache
 from sift.adapters.rerank.crossencoder_http import CrossEncoderReranker
 from sift.adapters.rerank.llm_judge import LlmJudgeReranker
 from sift.core.types import Hit
@@ -204,3 +205,107 @@ async def test_crossencoder_uses_configured_timeout(monkeypatch: pytest.MonkeyPa
         "write": 90.0,
         "pool": 90.0,
     }
+
+
+# --- score cache ---------------------------------------------------------------------------
+
+_LOGITS = {"a": -1.0, "b": 2.0, "c": 0.5}
+
+
+def _score_by_text(logits: dict[str, float]) -> Callable[[httpx.Request], httpx.Response]:
+    """A ``/rerank`` double scoring each text from a table, best first like the real servers."""
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        texts = json.loads(request.content)["texts"]
+        ranked = sorted(range(len(texts)), key=lambda i: logits[texts[i]], reverse=True)
+        return httpx.Response(200, json=[{"index": i, "score": logits[texts[i]]} for i in ranked])
+
+    return _handler
+
+
+def _cached_reranker() -> CrossEncoderReranker:
+    return CrossEncoderReranker(base_url="http://tei", score_cache=LruCache(64))
+
+
+async def test_crossencoder_cache_serves_a_repeat_without_a_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _patch_transport(monkeypatch, _score_by_text(_LOGITS))
+    reranker = _cached_reranker()
+    candidates = [_hit("a"), _hit("b"), _hit("c")]
+
+    first = await reranker.rerank("q", candidates)
+    second = await reranker.rerank("q", candidates)
+
+    assert len(seen) == 1
+    assert [hit.text for hit in first] == ["b", "c", "a"]
+    assert second == first
+
+
+async def test_crossencoder_cache_sends_only_new_passages(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _patch_transport(monkeypatch, _score_by_text(_LOGITS))
+    reranker = _cached_reranker()
+    await reranker.rerank("q", [_hit("a"), _hit("b")])
+
+    out = await reranker.rerank("q", [_hit("c"), _hit("b")])
+
+    assert json.loads(seen[1].content)["texts"] == ["c"]
+    assert [hit.text for hit in out] == ["b", "c"]
+    assert out[0].score == pytest.approx(_sigmoid(2.0))
+    assert out[1].score == pytest.approx(_sigmoid(0.5))
+
+
+async def test_crossencoder_cache_is_keyed_by_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _patch_transport(monkeypatch, _score_by_text(_LOGITS))
+    reranker = _cached_reranker()
+
+    await reranker.rerank("first question", [_hit("a")])
+    await reranker.rerank("second question", [_hit("a")])
+
+    assert len(seen) == 2
+
+
+async def test_crossencoder_unreachable_result_is_not_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The sidecar comes up after the first search: the second must be really reranked, not
+    # served the retrieval-order fallback.
+    up = False
+    scored = _score_by_text(_LOGITS)
+
+    def _starting(request: httpx.Request) -> httpx.Response:
+        if not up:
+            raise httpx.ConnectError("connection refused", request=request)
+        return scored(request)
+
+    seen = _patch_transport(monkeypatch, _starting)
+    reranker = _cached_reranker()
+    candidates = [_hit("a"), _hit("b")]
+
+    assert await reranker.rerank("q", candidates) == candidates
+    up = True
+    out = await reranker.rerank("q", candidates)
+
+    assert len(seen) == 2
+    assert [hit.text for hit in out] == ["b", "a"]
+
+
+async def test_crossencoder_unreachable_with_some_cached_keeps_retrieval_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mixing cross-encoder scores with retrieval scores would rank on two scales at once.
+    up = True
+    scored = _score_by_text(_LOGITS)
+
+    def _flaky(request: httpx.Request) -> httpx.Response:
+        if not up:
+            raise httpx.ConnectError("connection refused", request=request)
+        return scored(request)
+
+    _patch_transport(monkeypatch, _flaky)
+    reranker = _cached_reranker()
+    await reranker.rerank("q", [_hit("b")])
+    up = False
+    candidates = [_hit("a"), _hit("b")]
+
+    assert await reranker.rerank("q", candidates) == candidates
