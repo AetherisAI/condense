@@ -16,6 +16,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from sift.adapters.cache.embedding import CachingEmbedder
+from sift.adapters.cache.lru import LruCache
 from sift.adapters.conversation.fake import FakeConversationStore
 from sift.adapters.embedding.fake import FakeEmbedder
 from sift.adapters.embedding.openai_compat import OpenAICompatEmbedder
@@ -97,6 +99,11 @@ def build_container(settings: Settings, *, ephemeral_conversations: bool = False
     """
     # One embedder per role: queries and documents may need different prompt prefixes.
     query_embedder = _build_embedder(settings, prefix=settings.embed_query_prefix)
+    if settings.cache_enabled and settings.embed_base_url:
+        # Queries repeat (a Find run again, Ask searching the same words); ingested chunks
+        # almost never do, so only the query side is cached. This one instance serves /search,
+        # Find and Ask alike.
+        query_embedder = CachingEmbedder(query_embedder, settings.cache_embed_max_entries)
     document_embedder = _build_embedder(settings, prefix=settings.embed_document_prefix)
     store = _build_store(settings)
     completer = build_completer(settings)
@@ -277,8 +284,13 @@ def _build_reranker(settings: Settings, completer: Completer) -> Reranker:
                 raise ValueError("RERANK_STRATEGY='crossencoder' requires RERANK_BASE_URL")
             # The /rerank endpoint (TEI or llama-server) serves a single model and takes no
             # model param, so rerank_model is intentionally not forwarded here.
+            score_cache: LruCache[bytes, float] | None = (
+                LruCache(settings.cache_rerank_max_entries) if settings.cache_enabled else None
+            )
             return CrossEncoderReranker(
-                settings.rerank_base_url, timeout_s=settings.rerank_timeout_s
+                settings.rerank_base_url,
+                timeout_s=settings.rerank_timeout_s,
+                score_cache=score_cache,
             )
         case "none":
             return NullReranker()
