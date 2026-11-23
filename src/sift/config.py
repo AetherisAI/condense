@@ -75,6 +75,14 @@ class Settings(BaseSettings):
     # hybrid ranked the right document first 76% of the time, vector 69% and keyword 71%. The
     # toolbox search (Find, Ask) can also pick a mode per request.
     search_mode: SearchMode = "hybrid"
+    # Hybrid fusion weights: how much the keyword list counts against the vector list (which
+    # counts 1.0). A keyword-style query (no question mark, no English stopword: "T1553 tactic")
+    # uses the second one. On MITRE ATT&CK without a reranker, 2.0 there ranked the right
+    # document first for 6 more of 306 questions and none fewer (no effect once the reranker
+    # runs); raising the weight for every query instead lost top-3 hits and German questions.
+    # Set both to 1.0 for plain reciprocal-rank fusion.
+    hybrid_keyword_weight: float = Field(default=1.0, gt=0)
+    hybrid_keyword_style_weight: float = Field(default=2.0, gt=0)
     # Query-time caches, held in RAM per process: query embeddings, and cross-encoder scores per
     # (query, passage). The keys are the texts themselves, so a cached value can't go stale and
     # nothing needs invalidating when documents change; a restart or a settings edit starts empty.

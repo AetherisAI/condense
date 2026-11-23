@@ -196,6 +196,7 @@ EMBED_BASE_URL=                 EMBED_MODEL=bge-m3         EMBED_DIM=1024       
 RERANK_STRATEGY=crossencoder    RERANK_BASE_URL=http://reranker:8080   RERANK_MODEL=bge-reranker-v2-m3
 TOOLS_SEARCH_RERANK=false
 RETRIEVE_K=30                   FINAL_K=1                 SEARCH_MODE=hybrid
+HYBRID_KEYWORD_WEIGHT=1.0       HYBRID_KEYWORD_STYLE_WEIGHT=2.0
 CACHE_ENABLED=true              CACHE_EMBED_MAX_ENTRIES=1024   CACHE_RERANK_MAX_ENTRIES=16384
 LLM_BASE_URL=                   LLM_MODEL=                LLM_API_KEY=
 CHUNK_TOKENIZER=auto            CHUNK_SIZE=512            CHUNK_OVERLAP=64
@@ -218,6 +219,14 @@ similarity as `score`, so only the order changes. `SEARCH_MODE=vector` is embedd
 libSQL server without FTS5 also falls back to it, with a warning in the log. `SEARCH_MODE=keyword`
 is BM25 alone: only passages that contain the query's words come back (possibly none), still
 scored by cosine similarity.
+
+**Fusion weights.** Hybrid fusion is weighted reciprocal-rank fusion: the vector list counts
+1.0 and the keyword list `HYBRID_KEYWORD_WEIGHT` (1.0), except for a keyword-style query, one
+with no question mark and no English stopword (`T1553 tactic`, `OnionDuke backup C2`), where it
+counts `HYBRID_KEYWORD_STYLE_WEIGHT` (2.0). Someone typing bare terms wants passages with those
+terms; someone asking a question may be using different words than the documents. The question
+mark keeps questions in other languages out, since the stopword list is English only. Set both
+weights to 1.0 for plain RRF. Measurements are in `docs/evaluation.md`.
 
 **Per-request mode.** `POST /v1/tools/search` takes an optional `mode` that overrides
 `SEARCH_MODE` for that call, and the same parameter is in the `search` tool Ask's agent calls, so

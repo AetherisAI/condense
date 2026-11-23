@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from sift.config import Settings
 from sift.core.ports import Completer, Embedder, Reranker, VectorStore
 from sift.core.types import Hit, SearchOutcome, SearchSource
-from sift.pipelines.retrieval import retrieve
+from sift.pipelines.retrieval import FusionWeights, retrieve
 
 _RECAP_SYSTEM = (
     "Answer the user's question directly and helpfully, using ONLY the passages provided. Lead "
@@ -229,6 +229,7 @@ class SearchPipeline:
             settings.retrieve_k,
             tenant,
             mode=settings.search_mode,
+            weights=FusionWeights.from_settings(settings),
         )
         lap("retrieve")
         if not retrieved:

@@ -280,7 +280,32 @@ names. bge-m3 is far ahead on the German questions (0.68 against 0.56). Fusing t
 top-1 from 0.69 to 0.76 without a reranker (37 questions fixed, 17 broken, McNemar p = 0.009)
 for about 5 ms of full-text search. With the reranker the gain shrinks to 0.82 to 0.84 (10
 fixed, 4 broken, p = 0.18), within noise. The offline BM25 row was computed from the same
-chunks outside the product.
+chunks outside the product. (These hybrid rows used plain fusion; the weighting below came
+later.)
+
+Fusion weights: on keyword-style questions BM25 alone still beat hybrid at top-1 (0.81 against
+0.75), so the merge was watering down the keyword match. Three ways to give it more weight,
+first stage, no reranker, against plain fusion:
+
+| Change | hit@1 | hit@3 | fixed / broken |
+| --- | --- | --- | --- |
+| plain fusion (weights 1 : 1) | 0.758 | 0.922 | |
+| keyword list ×2 for every query | 0.784 | 0.895 | 15 / 7 |
+| keyword list ×2 for queries with an ID-like token | 0.761 | 0.922 | 1 / 0 |
+| keyword list ×2 for keyword-style queries (the default) | 0.778 | 0.925 | 6 / 0 |
+
+Weighting every query helps top-1 but costs top-3, most of it on the German questions (top-3
+0.905 to 0.81), which BM25 can't match against English text. IDs turned out not to be the
+problem: hybrid already ranks ID questions first 90% of the time. What helps is how the query is
+written. A keyword-style query, with no question mark and no English stopword ("T1553 tactic",
+"OnionDuke group years backup C2"), gets the extra weight. Those are 51 of the 306 questions,
+and their top-1 goes from 0.75 to 0.84 (McNemar p = 0.031). Nothing else changes, and search
+time doesn't either. Weights from 1.5 to 3 give the same result; from 4 up, top-3 starts to
+drop. The weight and the rule were chosen on these same questions, so treat the gain as an
+upper estimate until it is confirmed on another corpus. With the reranker on, the weighting
+makes no difference (top-1 0.840 against 0.837: 0 fixed, 1 broken, p = 1.0), because the
+cross-encoder re-sorts the same shortlist. It matters for Find and Ask, which don't rerank by
+default.
 
 Answer quality, judged: the same 332 questions, Mistral Small as the generator, Ask's search on
 vectors only and without a reranker (these runs predate hybrid search), and the same answers

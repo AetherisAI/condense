@@ -25,7 +25,6 @@ import asyncio
 import functools
 import json
 import logging
-import re
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -34,6 +33,7 @@ from typing import Any
 import libsql
 
 from sift.core.errors import ModelPinMismatch, SiftError
+from sift.core.text import STOPWORDS, words
 from sift.core.types import Chunk, DocumentInfo, Hit, SearchFilters, Vector
 
 # ``libsql`` is a stub-less compiled extension; route attribute access through ``Any`` so
@@ -111,17 +111,8 @@ _DROP_FTS = (
 _REBUILD_CHUNKS_FTS = "INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')"
 _FTS_TABLE_EXISTS = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chunks_fts'"
 
-# Words too common to help a keyword match. BM25 already gives them little weight, but each
-# one still pulls in matches; dropping them measurably sharpens the ranking. English only: the
-# list is a refinement, and other languages still work without it.
-_STOPWORDS = frozenset(
-    "a about an and any are as at be by can could did do does for from has have how i in into "
-    "is it its of on or some than that the their them then there these they this those to was "
-    "were what when where which who whom whose why will with would you your".split()
-)
 # A pasted paragraph shouldn't become a 300-term query; the first distinct words carry it.
 _FTS_MAX_TERMS = 64
-_WORD = re.compile(r"\w+")
 
 _PIN_TABLE_EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'model_pin'"
 
@@ -189,8 +180,10 @@ def _fts_query(text: str) -> str | None:
     order. Stopwords are dropped unless nothing else is left. ``None`` when ``text`` has no
     words at all.
     """
-    words = list(dict.fromkeys(_WORD.findall(text.lower())))
-    kept = [word for word in words if word not in _STOPWORDS] or words
+    # Stopwords are too common to help a match: BM25 already gives them little weight, but each
+    # one still pulls in matches, and dropping them measurably sharpens the ranking.
+    distinct = list(dict.fromkeys(words(text)))
+    kept = [word for word in distinct if word not in STOPWORDS] or distinct
     if not kept:
         return None
     return " OR ".join(f'"{word}"' for word in kept[:_FTS_MAX_TERMS])
