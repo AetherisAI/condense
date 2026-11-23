@@ -219,7 +219,12 @@ async def run(
     abstention: AbstentionCheck | None = None
     if not skip_judge:
         judge, abstention = judges or build_judges(app, es)
-    container = container or build_container(app, ephemeral_conversations=True)
+    if container is None:
+        # Latency is measured on uncached searches: with the query caches on, the Ask surface
+        # would reuse the embedding the Find surface just made for the same question. Changing
+        # ``app`` (not just the container) records it in config.json.
+        app = app.model_copy(update={"cache_enabled": False})
+        container = build_container(app, ephemeral_conversations=True)
     await container.store.ensure_ready(app.embed_model, app.embed_dim, es.tenant)
 
     rows = await collect(container, items, es, surfaces, say)

@@ -220,7 +220,10 @@ def test_cli_run_skip_judge_on_an_empty_default_store(
     assert "report: " in out.out
     assert "[find 3/3] moon" in out.err
     (run_dir,) = (tmp_path / "runs").iterdir()
-    assert json.loads((run_dir / "config.json").read_text())["judge"] is None
+    config = json.loads((run_dir / "config.json").read_text())
+    assert config["judge"] is None
+    # Timings measure uncached searches, and the recorded settings say so.
+    assert config["settings"]["cache_enabled"] is False
 
 
 def test_cli_reports_golden_errors_with_exit_code_2(
